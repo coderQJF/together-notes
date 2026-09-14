@@ -1,0 +1,43 @@
+services:
+  app:
+    image: ${APP_IMAGE:-together-notes:latest}
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      DB_PATH: /data/app.sqlite
+      BACKUP_DIR: /data/backups
+      KEEP_BACKUPS: ${KEEP_BACKUPS:-14}
+      PUBLIC_DIR: /app/public
+      WX_APP_ID: ${WX_APP_ID:?请配置 WX_APP_ID}
+      WX_APP_SECRET: ${WX_APP_SECRET:?请配置 WX_APP_SECRET}
+    volumes:
+      - app-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?请配置 DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:

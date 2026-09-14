@@ -1,0 +1,43 @@
+name: Upload WeChat mini program
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - scripts/configure-wechat.mjs
+      - scripts/upload-wechat.mjs
+      - package.json
+      - package-lock.json
+  workflow_dispatch:
+
+concurrency:
+  group: wechat-upload
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    if: ${{ vars.WECHAT_APP_ID != '' && vars.API_BASE_URL != '' }}
+    runs-on: ubuntu-latest
+    env:
+      CI: 1
+      WECHAT_APP_ID: ${{ vars.WECHAT_APP_ID }}
+      WECHAT_PRIVATE_KEY: ${{ secrets.WECHAT_PRIVATE_KEY }}
+      WECHAT_CI_ROBOT: ${{ vars.WECHAT_CI_ROBOT || '1' }}
+      VITE_API_BASE: ${{ vars.API_BASE_URL }}
+      RELEASE_VERSION: ${{ github.run_number }}.${{ github.run_attempt }}.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install official upload client for this run only
+        run: npm install --no-save --package-lock=false miniprogram-ci@2.1.31
+      - run: node scripts/configure-wechat.mjs --require
+      - run: npm run build:mp-weixin
+      - run: npm run deploy:mp-weixin
