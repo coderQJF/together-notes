@@ -5,6 +5,7 @@ test('binding, private/shared access, attachments, due delivery',async()=>{
  try{
  const a=await call('/auth/test','POST',{name:'我'}),b=await call('/auth/test','POST',{name:'小金子'}),c=await call('/auth/test','POST',{name:'访客'});assert.ok(a.token);
  const note=await call('/items','POST',{kind:'note',title:'私密',content:'only me',links:[],scope:'mine'},a.token);assert.ok(note.id);assert.equal((await call('/items/'+note.id,'PUT',{...note,title:'偷改'},b.token)).status,404);
+ assert.equal((await call('/items/'+note.id,'GET',undefined,a.token)).title,'私密');assert.equal((await call('/items/'+note.id,'GET',undefined,b.token)).status,404);
  const invitation=await call('/invite','POST',{},a.token);assert.equal((await call('/invite/accept','POST',{code:invitation.code},a.token)).status,400);assert.equal((await call('/invite/preview','POST',{code:invitation.code},b.token)).nickname,'我');assert.equal((await call('/invite/accept','POST',{code:invitation.code},b.token)).partner.id,a.user.id);assert.equal((await call('/invite/accept','POST',{code:invitation.code},c.token)).status,400);
  assert.equal((await call('/items/'+note.id,'PUT',note,b.token)).status,404);
  const upload=await fetch(base+'/files',{method:'POST',headers:{Authorization:'Bearer '+a.token,'x-file-name':'example.txt'},body:'hello'}).then(r=>r.json());assert.ok(upload.id);assert.equal((await fetch(base+'/files/'+upload.id,{headers:{Authorization:'Bearer '+b.token}})).status,404);
