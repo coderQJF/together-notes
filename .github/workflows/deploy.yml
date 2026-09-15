@@ -41,34 +41,40 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    needs: image
-    if: ${{ vars.DEPLOY_HOST != '' && vars.DEPLOY_USER != '' && vars.DEPLOY_PATH != '' && vars.APP_IMAGE != '' }}
+    if: ${{ vars.ECS_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:h5
+        env:
+          CI: 1
+          VITE_API_BASE: /api
+      - name: Pack release
+        run: tar -czf together-notes-release.tgz server dist/build/h5
       - name: Configure SSH
         env:
-          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
         run: |
+          test -n "$SSH_KEY"
+          test -n "$ECS_HOST"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
-      - name: Upload deployment definition
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$ECS_HOST" >> ~/.ssh/known_hosts
+      - name: Upload and activate release
         env:
-          HOST: ${{ vars.DEPLOY_HOST }}
-          USER: ${{ vars.DEPLOY_USER }}
-          TARGET: ${{ vars.DEPLOY_PATH }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
         run: |
-          ssh "$USER@$HOST" "mkdir -p '$TARGET/deploy'"
-          scp compose.yaml "$USER@$HOST:$TARGET/compose.yaml"
-          scp deploy/Caddyfile "$USER@$HOST:$TARGET/deploy/Caddyfile"
-      - name: Roll out container
-        env:
-          HOST: ${{ vars.DEPLOY_HOST }}
-          USER: ${{ vars.DEPLOY_USER }}
-          TARGET: ${{ vars.DEPLOY_PATH }}
-          APP_IMAGE: ${{ vars.APP_IMAGE }}
-        run: |
-          ssh "$USER@$HOST" "cd '$TARGET' && if [ -n \"\$(APP_IMAGE='$APP_IMAGE' docker compose --env-file deploy/.env ps -q app)\" ]; then APP_IMAGE='$APP_IMAGE' docker compose --env-file deploy/.env exec -T app node server/backup.mjs; fi && APP_IMAGE='$APP_IMAGE' docker compose --env-file deploy/.env pull app && APP_IMAGE='$APP_IMAGE' docker compose --env-file deploy/.env up -d --remove-orphans && APP_IMAGE='$APP_IMAGE' docker compose --env-file deploy/.env exec -T app node -e \"fetch('http://127.0.0.1:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""
+          test -n "$ECS_USER"
+          remote_archive="/tmp/together-notes-${GITHUB_SHA}.tgz"
+          scp together-notes-release.tgz "$ECS_USER@$ECS_HOST:$remote_archive"
+          ssh "$ECS_USER@$ECS_HOST" \
+            "sh -s -- '$remote_archive' '$GITHUB_SHA'" < deploy/release-ecs.sh

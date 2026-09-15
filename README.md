@@ -112,20 +112,20 @@ docker compose --env-file deploy/.env exec app node server/backup.mjs
 `.github/workflows` 包含三条流程：
 
 - `ci.yml`：每次 push/PR 执行类型检查、后端测试和三端资源构建，并上传构建产物。
-- `deploy.yml`：`main` 更新后构建 Docker 镜像推送到 GHCR；配置服务器变量后，先备份数据库，再通过 SSH 滚动更新并做健康检查。
+- `deploy.yml`：`main` 更新后构建 Docker 镜像推送到 GHCR 作为灾备；启用 ECS 发布后，由 GitHub Runner 构建 H5、SSH 上传轻量发布包，先备份数据库，再通过 systemd 切换版本、健康检查并在失败时回滚。
 - `deploy-wechat.yml`：`main` 的小程序代码变化后，临时安装微信官方 `miniprogram-ci`，构建并上传代码；上传工具不会进入业务依赖或生产镜像。
 
-后端自动部署需要仓库 Variables：
+后端自动部署需要仓库 Variable：
 
-- `APP_IMAGE`：例如 `ghcr.io/your-account/together-notes:latest`
-- `DEPLOY_HOST`、`DEPLOY_USER`、`DEPLOY_PATH`
+- `ECS_DEPLOY_ENABLED=true`
 
 以及 Secrets：
 
-- `DEPLOY_SSH_KEY`
-- `DEPLOY_KNOWN_HOSTS`
+- `ECS_HOST`
+- `ECS_USER`
+- `ECS_SSH_KEY`
 
-服务器的 `${DEPLOY_PATH}/deploy/.env` 需事先创建；私有 GHCR 镜像还需在服务器执行一次 `docker login ghcr.io`。
+首次部署前在 ECS 执行 `deploy/bootstrap-ecs.sh`，并创建 `/opt/together-notes/shared/server.env`。日常发布不再依赖 ECS 从 GHCR 拉取镜像；容器镜像仍可用于新服务器恢复。
 
 小程序自动上传需要仓库 Variables：
 
