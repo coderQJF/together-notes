@@ -9,6 +9,7 @@
     "build:mp-weixin": "uni build -p mp-weixin",
     "build:app": "uni build -p app",
     "deploy:mp-weixin": "node scripts/upload-wechat.mjs",
+    "preview:mp-weixin": "node scripts/preview-wechat.mjs",
     "type-check": "vue-tsc --noEmit",
     "server": "node --env-file-if-exists=server/.env server/index.mjs",
     "backup": "node --env-file-if-exists=server/.env server/backup.mjs",
