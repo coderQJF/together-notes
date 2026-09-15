@@ -105,6 +105,8 @@ docker compose --env-file deploy/.env exec app node server/backup.mjs
 
 建议再把备份同步到独立对象存储或另一台服务器，避免主机磁盘同时损坏。
 
+现有多项目 ECS 使用 Nginx 时，默认只把应用映射到 `127.0.0.1:8787`，Caddy 被放入可选的 `standalone` profile，不会占用宿主机的 80/443。Nginx 配置见 `deploy/nginx-notes.conf`；独立服务器需要 Caddy 时执行 `docker compose --profile standalone --env-file deploy/.env up -d`。
+
 ## 自动化部署
 
 `.github/workflows` 包含三条流程：

@@ -13,6 +13,8 @@ services:
       WX_APP_SECRET: ${WX_APP_SECRET:?请配置 WX_APP_SECRET}
     volumes:
       - app-data:/data
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8787}:8787"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
@@ -22,6 +24,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
+    profiles: ["standalone"]
     restart: unless-stopped
     depends_on:
       app:
