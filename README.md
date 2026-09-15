@@ -41,6 +41,8 @@ WX_APP_SECRET=仅放服务端的真实Secret
 
 小程序 AppID 可以直接写入 `src/manifest.json`，也可以在构建时设置环境变量 `WECHAT_APP_ID`；`scripts/configure-wechat.mjs` 会在构建前写入。AppSecret、代码上传私钥和服务器私钥禁止提交到 Git。
 
+本地上传时可把微信代码上传密钥保存为项目根目录的 `private.<AppID>.key`；该文件已被 Git 忽略。GitHub Actions 不读取工作区密钥，仍使用仓库 Secret `WECHAT_PRIVATE_KEY`。
+
 微信公众平台还需要配置：
 
 - `https://notes.example.com` 为 request 与 downloadFile 合法域名。
