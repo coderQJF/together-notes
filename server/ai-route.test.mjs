@@ -13,7 +13,7 @@ test('AI search only sends the authenticated user visible notes to the model', a
       output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ answer: '找到一条有权限查看的小记。', source_ids: [local.documents[0].id] }), annotations: [] }] }],
     });
   };
-  const app = createApp({ dbPath: ':memory:', testAuth: true, fetchImpl, aiConfig: { apiKey: 'server-only-key', model: 'search-model-test' } });
+  const app = createApp({ dbPath: ':memory:', testAuth: true, fetchImpl, aiConfig: { apiKey: 'server-only-key', apiType: 'responses', model: 'search-model-test' } });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${app.server.address().port}/api`;
   const call = async (path, method = 'GET', data, token) => {

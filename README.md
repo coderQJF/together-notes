@@ -55,18 +55,19 @@ NEWS_RETENTION_DAYS=30
 NEWS_MAX_ARTICLES=1000
 SPORTS_SYNC_INTERVAL_MS=900000
 NEWS_SYNC_INTERVAL_MS=3600000
-AI_API_KEY=仅放服务端的 OpenAI API Key
-AI_BASE_URL=https://api.openai.com/v1
-AI_MODEL=gpt-5.6-luna
+AI_API_KEY=仅放服务端的微信 Coding Plan Token
+AI_API_TYPE=chat_completions
+AI_BASE_URL=https://chatapi.weixin.qq.com/openai/v1
+AI_MODEL=Deepseek-v4-flash
 AI_WEB_SEARCH_ENABLED=true
-AI_TIMEOUT_MS=45000
+AI_TIMEOUT_MS=55000
 AI_RATE_LIMIT_PER_MINUTE=5
 APP_TIME_ZONE=Asia/Shanghai
 ```
 
 内容服务会在启动后和上述间隔自动同步。密钥不能下发到 H5/小程序；GDELT 模式不需要注册或密钥，显式使用 NewsAPI 时缺少密钥会返回 `NEWS_API_UNCONFIGURED`。上游故障返回可追踪的结构化错误，不会伪造赛程或新闻。`MEDIA_DIR` 应与 SQLite 一样挂载到持久化磁盘；未显式配置时默认使用数据库文件的同级 `media` 目录。
 
-智能搜索使用 OpenAI [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create) 与内置 [Web Search](https://developers.openai.com/api/docs/guides/tools-web-search)。`AI_API_KEY` 只保存在服务端；本地候选会在不开放任何网页工具的独立请求中判断并整理，只有资料不足时才发起第二次网页搜索，且第二次请求只包含用户原问题。两类请求都显式使用 `store:false`；网页回答没有有效引用时会报错而不是展示无来源结论。未配置密钥时页面会明确显示服务未配置，不会回退到模拟答案。
+智能搜索默认按截图使用兼容 OpenAI [Chat Completions](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions) 的微信模型网关，请求地址为 `${AI_BASE_URL}/chat/completions`；也可把 `AI_API_TYPE` 改为 `responses` 后使用 OpenAI [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)。`AI_API_KEY` 只保存在服务端；本地候选会在不开放联网能力的独立请求中判断并整理，只有资料不足时才发起第二次联网请求，且第二次请求只包含用户原问题。Chat Completions 模式通过 `web_search_options` 请求搜索并读取 `search_results`，服务商不支持或没有返回可核验引用时会明确报错，不会把模型固有知识冒充实时搜索。未配置密钥时页面会明确显示服务未配置，不会回退到模拟答案。
 
 真实内容源与调度约定：
 
@@ -198,10 +199,11 @@ NEWS_MAX_ARTICLES=1000
 SPORTS_SYNC_INTERVAL_MS=900000
 NEWS_SYNC_INTERVAL_MS=3600000
 AI_API_KEY=仅放服务器
-AI_BASE_URL=https://api.openai.com/v1
-AI_MODEL=gpt-5.6-luna
+AI_API_TYPE=chat_completions
+AI_BASE_URL=https://chatapi.weixin.qq.com/openai/v1
+AI_MODEL=Deepseek-v4-flash
 AI_WEB_SEARCH_ENABLED=true
-AI_TIMEOUT_MS=45000
+AI_TIMEOUT_MS=55000
 AI_RATE_LIMIT_PER_MINUTE=5
 APP_TIME_ZONE=Asia/Shanghai
 ```

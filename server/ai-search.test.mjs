@@ -25,11 +25,34 @@ function structuredOutput(answer, sourceIds) {
 function service(fetchImpl, overrides = {}) {
   return createAiSearchService({
     apiKey: 'server-only-key',
+    apiType: 'responses',
     fetchImpl,
     now: () => FIXED_NOW,
     model: MODEL,
     webSearchEnabled: true,
     baseUrl: BASE_URL,
+    rateLimitPerMinute: 20,
+    ...overrides,
+  });
+}
+
+function chatOutput(content, searchResults = []) {
+  return Response.json({
+    id: 'chatcmpl_test',
+    model: 'Deepseek-v4-flash',
+    choices: [{ message: { role: 'assistant', content, ...(searchResults.length ? { search_results: searchResults } : {}) } }],
+  });
+}
+
+function chatService(fetchImpl, overrides = {}) {
+  return createAiSearchService({
+    apiKey: 'wechat-coding-plan-token',
+    apiType: 'chat_completions',
+    baseUrl: 'https://chatapi.weixin.qq.com/openai/v1',
+    model: 'Deepseek-v4-flash',
+    fetchImpl,
+    now: () => FIXED_NOW,
+    webSearchEnabled: true,
     rateLimitPerMinute: 20,
     ...overrides,
   });
@@ -214,4 +237,47 @@ test('every numbered web reference keeps a matching clickable citation', async (
   assert.equal(result.citations.length, 10);
   assert.match(result.answer, /\[10\]/);
   assert.equal(result.citations[9].index, 10);
+});
+
+test('compatible Chat Completions uses the configured endpoint for local answers', async () => {
+  let requestBody;
+  const search = chatService(async (input, init) => {
+    assert.equal(String(input), 'https://chatapi.weixin.qq.com/openai/v1/chat/completions');
+    assert.equal(init.headers.Authorization, 'Bearer wechat-coding-plan-token');
+    requestBody = JSON.parse(init.body);
+    return chatOutput('</think>\n{"answer":"周五晚上七点集合。","source_ids":["note-team-event"]}');
+  });
+  const result = await search.search({
+    query: '这周团建什么时候？', scope: 'all', userId: 'user-a',
+    documents: [{ id: 'note-team-event', type: 'note', title: '这周团建', content: '周五晚上七点集合。', updatedAt: '2026-09-15T10:00:00.000Z' }],
+  });
+  assert.equal(search.status().apiType, 'chat_completions');
+  assert.equal(search.status().provider, 'OpenAI-compatible Chat Completions');
+  assert.equal(requestBody.model, 'Deepseek-v4-flash');
+  assert.equal(requestBody.messages[0].role, 'system');
+  assert.equal(requestBody.web_search_options, undefined);
+  assert.equal(result.mode, 'local');
+  assert.match(result.answer, /周五晚上七点/);
+});
+
+test('compatible Chat Completions web fallback requests search and returns clickable sources', async () => {
+  let requestBody;
+  const search = chatService(async (_input, init) => {
+    requestBody = JSON.parse(init.body);
+    return chatOutput('明天是国际臭氧层保护日。[1]', [{ index: 1, name: '联合国国际日历', url: 'https://www.un.org/example-calendar' }]);
+  });
+  const result = await search.search({ query: '明天是什么特别的日子？', scope: 'all', userId: 'user-a', documents: [] });
+  assert.equal(requestBody.web_search_options.enable, true);
+  assert.equal(requestBody.web_search_options.user_location.timezone, 'Asia/Shanghai');
+  assert.equal(JSON.stringify(requestBody).includes('私人笔记'), false);
+  assert.equal(result.mode, 'web');
+  assert.deepEqual(result.citations, [{ index: 1, type: 'web', title: '联合国国际日历', url: 'https://www.un.org/example-calendar' }]);
+});
+
+test('compatible Chat Completions rejects web text without provider search_results', async () => {
+  const search = chatService(async () => chatOutput('这是模型已有知识，不是联网结果。'));
+  await assert.rejects(
+    search.search({ query: '明天是什么日子？', scope: 'all', userId: 'user-a', documents: [] }),
+    error => error?.status === 502 && error?.code === 'AI_CITATIONS_MISSING',
+  );
 });
