@@ -18,10 +18,6 @@ function responsesOutput(text, annotations = []) {
   });
 }
 
-function structuredOutput(answer, sourceIds) {
-  return responsesOutput(JSON.stringify({ answer, source_ids: sourceIds }));
-}
-
 function service(fetchImpl, overrides = {}) {
   return createAiSearchService({
     apiKey: 'server-only-key',
@@ -58,16 +54,13 @@ function chatService(fetchImpl, overrides = {}) {
   });
 }
 
-test('local matches use Responses JSON schema without enabling web search', async () => {
-  let requestBody;
-  const search = service(async (input, init) => {
-    assert.equal(String(input), `${BASE_URL}/responses`);
-    assert.equal(init.headers.Authorization, 'Bearer server-only-key');
-    requestBody = JSON.parse(init.body);
-    return structuredOutput('团建安排在周五晚上。', ['note-team-event']);
-  });
+test('local matches work without a configured model and never call upstream', async () => {
+  const search = service(async () => {
+    assert.fail('local search must not call the model service');
+  }, { apiKey: '' });
 
-  assert.equal(search.status().configured, true);
+  assert.equal(search.status().configured, false);
+  assert.equal(search.status().localSearch, true);
   const result = await search.search({
     query: '这周团建什么时候？',
     scope: 'all',
@@ -82,16 +75,11 @@ test('local matches use Responses JSON schema without enabling web search', asyn
     }],
   });
 
-  assert.equal(requestBody.model, MODEL);
-  assert.equal(requestBody.text?.format?.type, 'json_schema');
-  assert.equal(requestBody.text?.format?.strict, true);
-  assert.ok(requestBody.text?.format?.schema);
-  assert.equal((requestBody.tools || []).some(tool => tool.type === 'web_search'), false);
   assert.equal(result.mode, 'local');
   assert.match(result.answer, /周五晚上/);
   assert.deepEqual(result.citations.map(item => item.sourceId), ['note-team-event']);
   assert.equal(result.citations[0].route, '/pages/detail/detail?id=note-team-event');
-  assert.equal(result.model, MODEL);
+  assert.equal(result.model, '本地检索');
   assert.equal(result.generatedAt, new Date(FIXED_NOW).toISOString());
 });
 
@@ -135,11 +123,7 @@ test('insufficient local context enables web search and converts url citations t
 });
 
 test('a reminder scheduled tomorrow is a local match even without keyword overlap', async () => {
-  let requestBody;
-  const search = service(async (_input, init) => {
-    requestBody = JSON.parse(init.body);
-    return structuredOutput('明天下午四点有体检提醒。', ['reminder-checkup']);
-  });
+  const search = service(async () => assert.fail('relative-date local search must not call upstream'));
 
   const result = await search.search({
     query: '明天有什么安排？',
@@ -156,25 +140,24 @@ test('a reminder scheduled tomorrow is a local match even without keyword overla
     }],
   });
 
-  assert.equal((requestBody.tools || []).some(tool => tool.type === 'web_search'), false);
   assert.equal(result.mode, 'local');
   assert.deepEqual(result.citations.map(item => item.sourceId), ['reminder-checkup']);
 });
 
-test('an unconfigured service reports status and rejects searches explicitly', async () => {
+test('an unconfigured service returns an empty result when local search misses', async () => {
   const search = service(async () => {
     assert.fail('an unconfigured service must not call the upstream API');
   }, { apiKey: '' });
 
   assert.equal(search.status().configured, false);
-  await assert.rejects(
-    search.search({ query: '明天有什么安排？', scope: 'all', userId: 'user-a', documents: [] }),
-    error => error?.status === 503 && error?.code === 'AI_UNCONFIGURED',
-  );
+  const result = await search.search({ query: '明天有什么安排？', scope: 'all', userId: 'user-a', documents: [] });
+  assert.equal(result.mode, 'empty');
+  assert.equal(result.answer, '没有找到相关数据');
+  assert.equal(result.fallbackCode, 'AI_UNCONFIGURED');
 });
 
-test('model supplied local source ids are restricted to the caller-provided documents', async () => {
-  const search = service(async () => structuredOutput('只引用可见的小记。', ['note-visible', 'note-not-visible']));
+test('local results only contain caller-provided documents', async () => {
+  const search = service(async () => assert.fail('local search must not call upstream'));
   const result = await search.search({
     query: '纪念日晚餐订在哪里？',
     scope: 'all',
@@ -199,28 +182,33 @@ test('web fallback never copies local note content into the web-search request',
   const search = service(async (_input, init) => {
     const body = JSON.parse(init.body);
     bodies.push(body);
-    if (bodies.length === 1) return structuredOutput('', []);
     return responsesOutput(citedText, [{ type: 'url_citation', start_index: 0, end_index: citedText.length, title: '公开日历', url: 'https://example.com/calendar' }]);
   });
   const result = await search.search({
-    query: '纪念日是哪一天？',
+    query: '明天是什么公共节日？',
     scope: 'all',
     userId: 'user-a',
-    documents: [{ id: 'private-note', type: 'note', title: '纪念日', content: '绝不能进入网页搜索的私人正文', updatedAt: '2026-09-15T10:00:00.000Z', route: '/pages/detail/detail?id=private-note' }],
+    documents: [{ id: 'private-note', type: 'note', title: '购物草稿', content: '绝不能进入网页搜索的私人正文', updatedAt: '2026-09-15T10:00:00.000Z', route: '/pages/detail/detail?id=private-note' }],
   });
-  assert.equal(bodies.length, 2);
-  assert.equal((bodies[0].tools || []).length, 0);
-  assert.equal(bodies[1].tools[0].type, 'web_search');
-  assert.equal(JSON.stringify(bodies[1]).includes('私人正文'), false);
+  assert.equal(bodies.length, 1);
+  assert.equal(bodies[0].tools[0].type, 'web_search');
+  assert.equal(JSON.stringify(bodies[0]).includes('私人正文'), false);
   assert.equal(result.mode, 'web');
 });
 
-test('a web answer without clickable citation annotations is rejected', async () => {
+test('a web answer without clickable citations becomes a friendly empty result', async () => {
   const search = service(async () => responsesOutput('没有引用的答案'));
-  await assert.rejects(
-    search.search({ query: '今天有什么公开新闻？', scope: 'all', userId: 'user-a', documents: [] }),
-    error => error?.status === 502 && error?.code === 'AI_CITATIONS_MISSING',
-  );
+  const result = await search.search({ query: '今天有什么公开新闻？', scope: 'all', userId: 'user-a', documents: [] });
+  assert.equal(result.mode, 'empty');
+  assert.equal(result.fallbackCode, 'AI_CITATIONS_MISSING');
+});
+
+test('an unreachable online provider becomes a friendly empty result', async () => {
+  const search = service(async () => { throw new TypeError('fetch failed'); });
+  const result = await search.search({ query: '今天有什么公开新闻？', scope: 'all', userId: 'user-a', documents: [] });
+  assert.equal(result.mode, 'empty');
+  assert.equal(result.answer, '没有找到相关数据');
+  assert.equal(result.fallbackCode, 'AI_UPSTREAM_UNREACHABLE');
 });
 
 test('every numbered web reference keeps a matching clickable citation', async () => {
@@ -239,23 +227,14 @@ test('every numbered web reference keeps a matching clickable citation', async (
   assert.equal(result.citations[9].index, 10);
 });
 
-test('compatible Chat Completions uses the configured endpoint for local answers', async () => {
-  let requestBody;
-  const search = chatService(async (input, init) => {
-    assert.equal(String(input), 'https://chatapi.weixin.qq.com/openai/v1/chat/completions');
-    assert.equal(init.headers.Authorization, 'Bearer wechat-coding-plan-token');
-    requestBody = JSON.parse(init.body);
-    return chatOutput('</think>\n{"answer":"周五晚上七点集合。","source_ids":["note-team-event"]}');
-  });
+test('compatible Chat Completions also keeps local answers offline', async () => {
+  const search = chatService(async () => assert.fail('local search must not call Chat Completions'));
   const result = await search.search({
     query: '这周团建什么时候？', scope: 'all', userId: 'user-a',
     documents: [{ id: 'note-team-event', type: 'note', title: '这周团建', content: '周五晚上七点集合。', updatedAt: '2026-09-15T10:00:00.000Z' }],
   });
   assert.equal(search.status().apiType, 'chat_completions');
   assert.equal(search.status().provider, 'OpenAI-compatible Chat Completions');
-  assert.equal(requestBody.model, 'Deepseek-v4-flash');
-  assert.equal(requestBody.messages[0].role, 'system');
-  assert.equal(requestBody.web_search_options, undefined);
   assert.equal(result.mode, 'local');
   assert.match(result.answer, /周五晚上七点/);
 });
@@ -274,10 +253,9 @@ test('compatible Chat Completions web fallback requests search and returns click
   assert.deepEqual(result.citations, [{ index: 1, type: 'web', title: '联合国国际日历', url: 'https://www.un.org/example-calendar' }]);
 });
 
-test('compatible Chat Completions rejects web text without provider search_results', async () => {
+test('compatible Chat Completions returns empty when provider search_results are missing', async () => {
   const search = chatService(async () => chatOutput('这是模型已有知识，不是联网结果。'));
-  await assert.rejects(
-    search.search({ query: '明天是什么日子？', scope: 'all', userId: 'user-a', documents: [] }),
-    error => error?.status === 502 && error?.code === 'AI_CITATIONS_MISSING',
-  );
+  const result = await search.search({ query: '明天是什么日子？', scope: 'all', userId: 'user-a', documents: [] });
+  assert.equal(result.mode, 'empty');
+  assert.equal(result.fallbackCode, 'AI_CITATIONS_MISSING');
 });

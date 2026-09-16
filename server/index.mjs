@@ -47,7 +47,7 @@ export function createApp({dbPath='server/data/app.sqlite',testAuth=false,wxAppI
  if(path==='/me'&&req.method==='PUT'){const nickname=String(b.nickname||'').trim();if(!nickname||nickname.length>20)fail(400,'昵称请填写 1—20 个字');run('UPDATE users SET nickname=? WHERE id=?',nickname,user.id);return send(200,publicUser(one('SELECT * FROM users WHERE id=?',user.id)))}
  if(path==='/logout'&&req.method==='POST'){run('DELETE FROM sessions WHERE token=?',hash(token));return send(200,{ok:true})}
  if(path==='/ai/status'&&req.method==='GET')return send(200,ai.status());
- if(path==='/ai/search'&&req.method==='POST')return send(200,await ai.search({query:b.query,scope:b.scope,userId:user.id,documents:searchDocuments(user,b.scope||'all')}));
+ if(path==='/ai/search'&&req.method==='POST'){const result=await ai.search({query:b.query,scope:b.scope,userId:user.id,documents:searchDocuments(user,b.scope||'all')});if(result.mode==='empty'&&result.fallbackCode)console.warn(JSON.stringify({event:'ai_search_empty',requestId,scope:b.scope||'all',fallbackCode:result.fallbackCode}));return send(200,result)}
  if(path==='/content/competitions'&&req.method==='GET')return send(200,content.getCompetitions());
  if(/^\/content\/sports\/matches\/[^/]+$/.test(path)&&req.method==='GET')return send(200,content.getMatch(decodeURIComponent(path.slice('/content/sports/matches/'.length))));
  if(/^\/content\/sports\/[^/]+$/.test(path)&&req.method==='GET')return send(200,content.getSports(decodeURIComponent(path.slice('/content/sports/'.length))));

@@ -121,7 +121,7 @@ if (!baseUrl) {
     }
     throw new Error(`Unexpected QA network request: ${input}`)
   }
-  qaApp = createApp({ dbPath: ':memory:', testAuth: true, publicDir: resolve('dist/build/h5'), fetchImpl: qaFetch, aiConfig: { apiKey: 'qa-server-only-key', baseUrl: 'https://models.example/v1', model: 'qa-search-model' } })
+  qaApp = createApp({ dbPath: ':memory:', testAuth: true, publicDir: resolve('dist/build/h5'), fetchImpl: qaFetch, aiConfig: { apiKey: '', baseUrl: 'https://models.example/v1', model: 'qa-search-model', rateLimitPerMinute: 100 } })
   await new Promise((resolveListen, reject) => {
     qaApp.server.once('error', reject)
     qaApp.server.listen(0, '127.0.0.1', resolveListen)
@@ -164,7 +164,8 @@ const screens = [
   { name: 'index-notes', path: '/pages/index/index', ready: '周末一起去看展' },
   { name: 'index-reminders', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事' },
   { name: 'index-search', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记' },
-  { name: 'index-search-result', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '周末看什么？', answered: '周末可以一起去看展' },
+  { name: 'index-search-result', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '周末看什么？', answered: '找到 1 条相关内容' },
+  { name: 'index-search-empty', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '不存在的外部事实 9988', answered: '没有找到相关数据' },
   { name: 'index-us', path: '/pages/index/index', ready: '周末一起去看展', click: '我', clicked: '我们的小空间' },
   ...(itemId ? [{ name: 'detail-note', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '周末一起去看展' }] : []),
   { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },

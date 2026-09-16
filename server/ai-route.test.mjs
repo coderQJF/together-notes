@@ -2,17 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from './index.mjs';
 
-test('AI search only sends the authenticated user visible notes to the model', async () => {
-  const upstreamBodies = [];
-  const fetchImpl = async (_url, init) => {
-    const body = JSON.parse(init.body);
-    upstreamBodies.push(body);
-    const local = JSON.parse(body.input[1].content[0].text);
-    return Response.json({
-      model: 'search-model-test',
-      output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ answer: '找到一条有权限查看的小记。', source_ids: [local.documents[0].id] }), annotations: [] }] }],
-    });
-  };
+test('local search returns only the authenticated user visible notes without a model call', async () => {
+  const fetchImpl = async () => assert.fail('local search must not call the model service');
   const app = createApp({ dbPath: ':memory:', testAuth: true, fetchImpl, aiConfig: { apiKey: 'server-only-key', apiType: 'responses', model: 'search-model-test' } });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${app.server.address().port}/api`;
@@ -31,16 +22,17 @@ test('AI search only sends the authenticated user visible notes to the model', a
     await call('/items', 'POST', { kind: 'note', title: '权限词 B 私人', content: '不能发给伴侣', links: [], scope: 'mine' }, b.token);
 
     assert.equal((await call('/ai/search', 'POST', { query: '权限词', scope: 'notes' })).status, 401);
-    assert.equal((await call('/ai/search', 'POST', { query: '权限词', scope: 'notes' }, a.token)).status, 200);
-    assert.equal((await call('/ai/search', 'POST', { query: '权限词', scope: 'notes' }, b.token)).status, 200);
+    const aSearch = await call('/ai/search', 'POST', { query: '权限词', scope: 'notes' }, a.token);
+    const bSearch = await call('/ai/search', 'POST', { query: '权限词', scope: 'notes' }, b.token);
+    assert.equal(aSearch.status, 200);
+    assert.equal(bSearch.status, 200);
 
-    const aDocs = JSON.parse(upstreamBodies[0].input[1].content[0].text).documents.map(item => item.title).sort();
-    const bDocs = JSON.parse(upstreamBodies[1].input[1].content[0].text).documents.map(item => item.title).sort();
+    const aDocs = aSearch.body.citations.map(item => item.title).sort();
+    const bDocs = bSearch.body.citations.map(item => item.title).sort();
     assert.deepEqual(aDocs, ['权限词 A 私人', '权限词 双方共享']);
     assert.deepEqual(bDocs, ['权限词 B 私人', '权限词 双方共享']);
-    assert.equal(JSON.stringify(upstreamBodies).includes('不能发给伴侣'), true);
-    assert.equal(JSON.stringify(upstreamBodies[0]).includes('权限词 B 私人'), false);
-    assert.equal(JSON.stringify(upstreamBodies[1]).includes('权限词 A 私人'), false);
+    assert.equal(JSON.stringify(aSearch.body).includes('权限词 B 私人'), false);
+    assert.equal(JSON.stringify(bSearch.body).includes('权限词 A 私人'), false);
     assert.equal((await call('/ai/status', 'GET', undefined, stranger.token)).body.configured, true);
   } finally {
     await new Promise(resolve => app.server.close(resolve));

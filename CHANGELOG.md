@@ -20,7 +20,9 @@
 
 ### 修复
 
-- Chat Completions 模式会请求 `/chat/completions`、解析 `choices[0].message.content` 与 `search_results`，不再把兼容服务错误地当作 Responses API；无可核验搜索来源时继续显式报错。
+- 搜搜不再因模型未配置而禁用发送箭头：登录后可始终执行服务端本地检索，本地无匹配时才尝试联网；联网未配置、不可达或缺少真实引用时统一显示“没有找到相关数据”。
+- 本地搜索改为确定性权限内检索，不再把私人小记片段发送给模型；联网阶段仍只发送当前问题，并在服务端记录不可用原因便于排查。
+- Chat Completions 模式会请求 `/chat/completions`、解析 `choices[0].message.content` 与 `search_results`，不再把兼容服务错误地当作 Responses API；无可核验搜索来源时转换为无数据状态。
 - 修复 GDELT 在国内服务器连接失败后新闻页完全无数据的问题，同时保留可追踪的实际 provider 标记。
 - 赛事分类固定为英超、欧冠、英雄联盟、西甲；切换赛事后自动回到近期赛程，赛程/赛果/积分榜使用弹性滑动胶囊反馈。
 - PandaScore 未提供某个淘汰赛阶段积分榜时保留真实赛程和赛果，并显示友好说明，不再暴露上游 404 JSON。
