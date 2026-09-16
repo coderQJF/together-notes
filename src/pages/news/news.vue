@@ -26,6 +26,16 @@ const remainingStories = computed(() => visibleStories.value.slice(1))
 const storyImageVisible = (story: NewsStory) => Boolean(story.imageUrl && !brokenImages.value[story.id])
 const markImageBroken = (story: NewsStory) => { brokenImages.value = { ...brokenImages.value, [story.id]: true } }
 
+function openProvider(url?: string | null) {
+  if (!url || !/^https:\/\//i.test(url)) return
+  // #ifdef H5
+  window.open(url, '_blank', 'noopener,noreferrer')
+  // #endif
+  // #ifndef H5
+  uni.setClipboardData({ data: url, success: () => uni.showToast({ title: '数据源链接已复制', icon: 'none' }) })
+  // #endif
+}
+
 function openStory(story: NewsStory) {
   uni.navigateTo({ url: `/pages/news-detail/news-detail?id=${encodeURIComponent(story.id)}` })
 }
@@ -114,10 +124,10 @@ onLoad(() => loadNews())
 
     <view class="headline"><text>今天，有什么</text><text>新鲜事。</text></view>
     <text class="subtitle">先看重要的市场变化，也别错过正在发生的热点。</text>
-    <view v-if="payload" class="data-state" :class="{ warning: payload.meta.stale }">
+    <button v-if="payload" class="data-state" :class="{ warning: payload.meta.stale }" hover-class="none" :disabled="!payload.meta.providerUrl" @click="openProvider(payload.meta.providerUrl)">
       <view class="state-dot" />
-      <text>{{ payload.meta.provider }}{{ payload.meta.stale ? ' · 已显示最后成功数据' : ' · 实时数据' }}</text>
-    </view>
+      <text>{{ payload.meta.provider }}{{ payload.meta.stale ? ' · 已显示最后成功数据' : ' · 实时数据' }}{{ payload.meta.providerUrl ? ' · 来源说明' : '' }}</text>
+    </button>
 
     <view class="channel-tabs">
       <button hover-class="none" :class="{ active: channel === 'featured' }" :aria-pressed="channel === 'featured'" @click="selectChannel('featured')"><text>精选</text></button>
@@ -141,7 +151,7 @@ onLoad(() => loadNews())
         <view class="lead-content">
           <view class="lead-meta"><view class="topic"><text class="pulse" />{{ leadStory.topic }}</view><text>最新</text></view>
           <text class="lead-title">{{ leadStory.title }}</text>
-          <text class="lead-summary">{{ leadStory.summary }}</text>
+          <text v-if="leadStory.summary" class="lead-summary">{{ leadStory.summary }}</text>
           <view class="lead-footer"><text>{{ leadStory.source }} · {{ formatRelativeTime(leadStory.publishedAt) }}</text><view class="round-arrow"><view /></view></view>
         </view>
       </view>
@@ -159,14 +169,14 @@ onLoad(() => loadNews())
       <view v-if="!leadStory" class="empty-card">当前筛选下暂无真实资讯，可取消主题筛选或稍后刷新。</view>
       <view v-for="story in remainingStories" :key="story.id" class="story-card" hover-class="card-pressed" role="button" :aria-label="`${story.title}，查看新闻详情`" @click="openStory(story)">
         <view class="story-layout">
-          <view class="story-main"><view class="story-meta"><text>{{ story.topic }}</text><text>·</text><text>{{ story.source }}</text></view><text class="story-title">{{ story.title }}</text><text class="story-summary">{{ story.summary }}</text></view>
+          <view class="story-main"><view class="story-meta"><text>{{ story.topic }}</text><text>·</text><text>{{ story.source }}</text></view><text class="story-title">{{ story.title }}</text><text v-if="story.summary" class="story-summary">{{ story.summary }}</text></view>
           <image v-if="storyImageVisible(story)" class="story-image" :src="apiAssetUrl(story.imageUrl)" mode="aspectFill" @error="markImageBroken(story)" />
         </view>
         <view class="story-footer"><text>{{ formatRelativeTime(story.publishedAt) }}</text><view class="ticker-list"><text v-for="tag in story.tags.slice(0, 2)" :key="tag">{{ tag }}</text></view></view>
       </view>
 
       <view v-if="payload.meta.warning" class="disclaimer warning-note"><text class="disclaimer-title">数据同步告警 · {{ payload.meta.warning.code }}</text><text>{{ payload.meta.warning.message }}</text></view>
-      <view class="disclaimer"><text class="disclaimer-title">资讯仅供参考</text><text>标题、摘要、发布时间与图片均来自标注的真实来源；内容不构成任何投资建议。</text></view>
+      <view class="disclaimer"><text class="disclaimer-title">资讯仅供参考</text><text>标题、来源、时间与原文链接均来自标注的真实数据源；频道由服务端按真实标题和时间整理，缺少摘要或图片时不会本地补造，内容不构成任何投资建议。</text></view>
     </template>
   </view>
 </template>
@@ -174,7 +184,7 @@ onLoad(() => loadNews())
 <style scoped>
 .card-pressed{opacity:.86}
 .shell{max-width:640px;min-height:100vh;margin:auto;padding:calc(8px + var(--status-bar-height)) 24px calc(48px + env(safe-area-inset-bottom));background:#faf8f2;color:#3e382d}.update-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px}.eyebrow{display:block;color:#786d5b;font-size:12px}.refresh{display:flex;align-items:center;justify-content:center;gap:6px;width:auto;height:44px;min-height:44px;margin:0 -7px 0 0;padding:0 7px;border:0;background:transparent;color:#786d5b;font-size:12px;line-height:normal}.refresh::after{border:0}.refresh[disabled]{opacity:.5}.refresh-icon{display:block;width:15px;height:15px}.spinning{animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
-.headline{display:block;margin:4px 0 0;font-size:32px;font-weight:600;line-height:1.3;letter-spacing:-.8px}.headline text{display:block}.subtitle{display:block;margin-top:12px;color:#786d5b;font-size:14px;line-height:1.7}.data-state{display:flex;align-items:flex-start;gap:7px;margin-top:13px;color:#6f7d57;font-size:11px;line-height:1.55}.data-state.warning{color:#8a6422}.state-dot{width:6px;height:6px;flex:0 0 6px;margin-top:5px;border-radius:50%;background:currentColor}
+.headline{display:block;margin:4px 0 0;font-size:32px;font-weight:600;line-height:1.3;letter-spacing:-.8px}.headline text{display:block}.subtitle{display:block;margin-top:12px;color:#786d5b;font-size:14px;line-height:1.7}.data-state{display:flex;align-items:center;justify-content:flex-start;gap:7px;width:auto;min-height:44px;margin:3px 0 -10px;padding:0;border:0;background:transparent;color:#6f7d57;font-size:11px;line-height:1.55;text-align:left}.data-state::after{border:0}.data-state[disabled]{opacity:1}.data-state.warning{color:#8a6422}.state-dot{width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:currentColor}
 .channel-tabs{display:flex;gap:8px;margin:22px 0 16px}.channel-tabs button{display:flex;align-items:center;justify-content:center;min-width:76px;height:46px;min-height:46px;margin:0;padding:0 18px;border:1px solid #e5dece;border-radius:23px;background:#fff;color:#6f6555;font-size:13px;line-height:normal;box-sizing:border-box}.channel-tabs button text{display:block;line-height:20px}.channel-tabs button::after{border:0}.channel-tabs button.active{border-color:#494032;background:#494032;color:#fff9e9}.channel-tabs button:active{opacity:.86}
 .state-card{padding:22px;margin-top:17px;border:1px solid #e7e0d2;border-radius:20px;background:#fff}.loading-card{color:#786d5b;font-size:12px}.loading-line{width:74%;height:11px;margin-bottom:10px;border-radius:7px;background:#eee9dd;animation:pulse 1.2s ease-in-out infinite}.loading-line.wide{width:100%}.loading-line.short{width:48%;margin-bottom:18px}@keyframes pulse{50%{opacity:.45}}.error-card{display:flex;flex-direction:column;align-items:flex-start}.state-title{font-size:17px;font-weight:600}.state-message{margin-top:8px;color:#786d5b;font-size:13px;line-height:1.65}.error-code{margin-top:8px;color:#a35243;font-family:monospace;font-size:11px;word-break:break-all}.retry-button{display:flex;align-items:center;justify-content:center;height:44px;min-height:44px;margin:18px 0 0;padding:0 18px;border:0;border-radius:13px;background:#494032;color:#fff9e9;font-size:13px;line-height:normal}.retry-button::after{border:0}.empty-card{padding:28px 20px;border:1px dashed #ddd4c3;border-radius:18px;color:#786d5b;font-size:13px;line-height:1.7;text-align:center}
 .lead-card{overflow:hidden;margin-top:8px;border:1px solid #efd98d;border-radius:22px;background:#f7e7ad}.lead-image{display:block;width:100%;height:174px;background:#e9ddba}.lead-content{padding:22px}.lead-meta{display:flex;align-items:center;justify-content:space-between;color:#806b3c;font-size:11px}.topic{display:flex;align-items:center;gap:7px}.pulse{width:7px;height:7px;border-radius:50%;background:#9d7421;box-shadow:0 0 0 4px rgba(157,116,33,.12)}.lead-title{display:block;margin-top:18px;font-size:24px;font-weight:600;line-height:1.42;letter-spacing:-.4px}.lead-summary{display:-webkit-box;margin-top:11px;overflow:hidden;color:#6e6041;font-size:13px;line-height:1.75;-webkit-box-orient:vertical;-webkit-line-clamp:3}.lead-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:21px;padding-top:14px;border-top:1px solid rgba(129,103,47,.16);color:#806f49;font-size:11px}.lead-footer>text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.round-arrow{display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex:0 0 36px;border-radius:50%;background:#494032}.round-arrow view{width:8px;height:8px;margin-left:-2px;border-top:1.6px solid #fff9e9;border-right:1.6px solid #fff9e9;transform:rotate(45deg)}

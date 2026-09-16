@@ -11,9 +11,9 @@ UniApp + Vue 3 + TypeScript 的双人备忘与提醒应用。保留 01 奶油黄
 - 双账号邀请码绑定；邀请码 24 小时有效且只能使用一次，防止自绑定和重复绑定。
 - 共享内容双方可编辑；仅创建者能删除或改为私人；历史私人内容不会自动共享。
 - 单次、每日、每周提醒，支持提前提醒和站内消息；未读数显示在“提醒”Tab 角标。
-- 比赛使用 football-data.org（英超、西甲、欧冠）和 PandaScore（英雄联盟）的真实赛程、赛果与积分榜；新闻使用 NewsAPI 的精选、股市与热点频道，不会在失败时回退到本地模拟数据。
+- 比赛使用 football-data.org（英超、西甲、欧冠）和 PandaScore（英雄联盟）的真实赛程、赛果与积分榜；新闻生产默认使用 GDELT Project 的真实中文资讯并整理为精选、股市与热点频道，也可显式切换到 NewsAPI，不会在失败时回退到本地模拟数据。
 - 服务端定时同步并将最后一次成功的真实内容缓存到 SQLite；刷新失败时可返回带警告的过期真实缓存，没有缓存则明确返回 provider 配置或上游错误码。
-- 新闻配图与球队图标由服务端校验、内网地址阻断、限大小后按 SHA-256 内容寻址保存到持久化 `MEDIA_DIR`，小程序不直连任意第三方图片域名。
+- 球队图标与获准使用的新闻配图由服务端校验、内网地址阻断、限大小后按 SHA-256 内容寻址保存到持久化 `MEDIA_DIR`，小程序不直连任意第三方图片域名；GDELT 返回的出版方图片默认不下载或重托管。
 - SQLite 持久化、自动备份脚本、H5 静态托管、Docker/Caddy HTTPS 部署和 GitHub Actions。
 
 ## 正式配置
@@ -47,21 +47,23 @@ WX_APP_ID=wx0000000000000000
 WX_APP_SECRET=仅放服务端的真实Secret
 FOOTBALL_DATA_API_KEY=仅放服务端的 football-data.org 密钥
 PANDASCORE_API_TOKEN=仅放服务端的 PandaScore token
-NEWS_API_KEY=仅放服务端的 NewsAPI 密钥
+NEWS_PROVIDER=gdelt
+GDELT_BASE_URL=https://api.gdeltproject.org/api/v2/doc/doc
+NEWS_API_KEY=仅在 NEWS_PROVIDER=newsapi 时填写
 NEWS_RETENTION_DAYS=30
 NEWS_MAX_ARTICLES=1000
 SPORTS_SYNC_INTERVAL_MS=900000
 NEWS_SYNC_INTERVAL_MS=3600000
 ```
 
-内容服务会在启动后和上述间隔自动同步。密钥不能下发到 H5/小程序；缺少密钥时 API 返回 `*_UNCONFIGURED`，上游故障返回可追踪的结构化错误，不会伪造赛程或新闻。`MEDIA_DIR` 应与 SQLite 一样挂载到持久化磁盘；未显式配置时默认使用数据库文件的同级 `media` 目录。
+内容服务会在启动后和上述间隔自动同步。密钥不能下发到 H5/小程序；GDELT 模式不需要注册或密钥，显式使用 NewsAPI 时缺少密钥会返回 `NEWS_API_UNCONFIGURED`。上游故障返回可追踪的结构化错误，不会伪造赛程或新闻。`MEDIA_DIR` 应与 SQLite 一样挂载到持久化磁盘；未显式配置时默认使用数据库文件的同级 `media` 目录。
 
 真实内容源与调度约定：
 
-- 足球数据来自 [football-data.org](https://www.football-data.org/documentation/quickstart)，英雄联盟数据来自 [PandaScore](https://developers.pandascore.co/reference/get_lol_matches)，新闻来自 [NewsAPI Everything](https://newsapi.org/docs/endpoints/everything)。
-- 单实例服务启动后立即拉取，之后赛事默认每 15 分钟、新闻默认每 60 分钟更新；手动刷新有 60 秒限流。若以后扩为多实例，应把调度器拆成单独 worker，避免重复消耗第三方额度。
-- 新闻详情只保存 provider 返回的摘要并保留原文链接，不抓取网页正文。NewsAPI Developer 方案仅限开发测试；正式发布前需要使用允许生产用途的方案，并确认第三方图片的缓存、展示和署名权利。
-- 队徽和获准使用的新闻配图不放进前端包，而是由服务端下载到持久化 `MEDIA_DIR` 后再通过 `/api/media/*` 提供；下载会校验公网 HTTPS、文件大小、类型与文件特征。
+- 足球数据来自 [football-data.org](https://www.football-data.org/documentation/quickstart)，英雄联盟数据来自 [PandaScore](https://developers.pandascore.co/reference/get_lol_matches)。新闻生产默认来自 [GDELT Project](https://www.gdeltproject.org/)；其数据可免费用于商业项目，但使用或再分发时必须注明并链接 GDELT Project。
+- GDELT 默认每小时同步一次，每轮只使用一个聚合查询获取最近 24 小时的中文财经、商业与科技资讯；遇到 429 最多延迟重试一次，用户手动刷新有 60 秒全局限流。服务端按真实标题和收录时间去重、做来源多样化，并按标题关键词分流频道；这只是本地整理，不冒充平台热榜。赛事默认每 15 分钟更新。若以后扩为多实例，应把调度器拆成单独 worker。
+- 新闻详情只保存 provider 实际给出的元数据并保留原文链接，不抓取网页正文，也不会拿标题拼成摘要。GDELT DOC 结果通常不含摘要、正文或作者，界面会明确提示。兼容的 [NewsAPI Everything](https://newsapi.org/docs/endpoints/everything) 需显式设置 `NEWS_PROVIDER=newsapi`；Developer 免费方案仅限开发测试，生产必须购买允许生产用途的方案。
+- 队徽和已确认展示权的新闻配图不放进前端包，而是由服务端下载到持久化 `MEDIA_DIR` 后再通过 `/api/media/*` 提供；下载会校验公网 HTTPS、文件大小、类型与文件特征。GDELT 的 `socialimage` 属于原始出版方，开放数据许可不等于图片版权授权，因此默认不缓存或展示。
 - 媒体缓存默认限制为 512MB/5000 个文件并清理未引用内容；新闻摘要历史默认保留 30 天、最多 1000 条，使已收藏文章在滚出当前资讯流后仍可打开。
 
 小程序 AppID 可以直接写入 `src/manifest.json`，也可以在构建时设置环境变量 `WECHAT_APP_ID`；`scripts/configure-wechat.mjs` 会在构建前写入。AppSecret、代码上传私钥和服务器私钥禁止提交到 Git。
@@ -114,7 +116,7 @@ npm run build:app
 
 ## 移动端视觉回归
 
-一条命令即可构建 H5、启动仅监听本机且使用内存数据库的临时测试服务，并批量检查常见手机宽度下的页面溢出、点击区域和截图。备忘/提醒使用隔离的 QA 记录；比赛和新闻不注入模拟内容，默认核验 provider 未配置时的真实错误态：
+一条命令即可构建 H5、启动仅监听本机且使用内存数据库的临时测试服务，并批量检查常见手机宽度下的页面溢出、点击区域和截图。备忘/提醒使用隔离的 QA 记录；比赛和新闻不注入模拟内容，默认核验无缓存时的真实错误态：
 
 ```powershell
 npm run qa:mobile
@@ -178,7 +180,9 @@ WX_APP_ID=wx0000000000000000
 WX_APP_SECRET=仅放服务器
 FOOTBALL_DATA_API_KEY=仅放服务器
 PANDASCORE_API_TOKEN=仅放服务器
-NEWS_API_KEY=仅放服务器且需允许生产用途的方案
+NEWS_PROVIDER=gdelt
+GDELT_BASE_URL=https://api.gdeltproject.org/api/v2/doc/doc
+NEWS_API_KEY=仅在 NEWS_PROVIDER=newsapi 且方案允许生产用途时填写
 NEWS_RETENTION_DAYS=30
 NEWS_MAX_ARTICLES=1000
 SPORTS_SYNC_INTERVAL_MS=900000

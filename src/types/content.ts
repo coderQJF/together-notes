@@ -10,6 +10,7 @@ export interface ContentWarning {
 
 export interface ContentMeta {
   provider: string
+  providerUrl?: string | null
   updatedAt: string
   stale: boolean
   warning?: ContentWarning | null
@@ -19,7 +20,7 @@ export interface ContentRefreshResult {
   ok: boolean
   target: 'sports' | 'news'
   refreshed: string[]
-  errors: Array<{ id: string; code: string; message: string; retryable: boolean }>
+  errors: Array<{ id: string; status?: number; code: string; message: string; retryable: boolean }>
   refreshedAt: string
 }
 

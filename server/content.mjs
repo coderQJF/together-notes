@@ -77,9 +77,10 @@ function providerError(provider, response, text) {
   }
   const suffix = text ? `：${text.slice(0, 180)}` : '';
   const upstreamStatus = response?.status || 0;
+  const rateLimited = upstreamStatus === 429;
   const authFailure = upstreamStatus === 401 || upstreamStatus === 403;
   const requestFailure = upstreamStatus >= 400 && upstreamStatus < 500 && upstreamStatus !== 429;
-  const code = authFailure ? `${provider}_AUTH_FAILED` : requestFailure ? `${provider}_REQUEST_REJECTED` : `${provider}_UPSTREAM_HTTP_ERROR`;
+  const code = rateLimited ? `${provider}_RATE_LIMITED` : authFailure ? `${provider}_AUTH_FAILED` : requestFailure ? `${provider}_REQUEST_REJECTED` : `${provider}_UPSTREAM_HTTP_ERROR`;
   return new ContentError(upstreamStatus === 429 ? 429 : authFailure ? 503 : 502, code, `${provider} 返回 ${upstreamStatus || '未知状态'}${suffix}`, {
     retryable: !requestFailure,
     retryAfterSeconds: Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : undefined
@@ -350,12 +351,22 @@ function transformPandaStandings(body) {
 }
 
 const NEWS_CHANNELS = Object.freeze({
-  featured: { query: '(财经 OR 科技 OR 商业 OR 全球)', topic: '精选' },
-  market: { query: '(股票 OR 股市 OR A股 OR 港股 OR 美股 OR 财报 OR 央行)', topic: '市场' },
-  hot: { query: '(热点 OR 突发 OR 科技 OR 商业)', topic: '热点' }
+  featured: { newsApiQuery: '(财经 OR 科技 OR 商业 OR 全球)', topic: '精选' },
+  market: { newsApiQuery: '(股票 OR 股市 OR A股 OR 港股 OR 美股 OR 财报 OR 央行)', topic: '市场' },
+  hot: { newsApiQuery: '(热点 OR 突发 OR 科技 OR 商业)', topic: '热点' }
 });
 
-function transformNewsArticle(article, channel) {
+const GDELT_NEWS_QUERY = '("stock market" OR stocks OR equities OR economy OR finance OR business OR technology OR "artificial intelligence" OR startup OR "interest rates" OR earnings OR IPO) sourcelang:zho';
+const MARKET_TITLE_PATTERN = /(股票|股市|A股|港股|美股|证券|指数|上证|深证|创业板|科创板|恒生|道指|纳指|标普|财报|业绩|营收|利润|央行|利率|降息|加息|通胀|经济|金融|银行|基金|债券|汇率|人民币|美元|投资|IPO|上市|市值|期货|黄金|油价|stock|market|equities|earnings|economy|finance|investment|interest rate)/i;
+const HOT_TITLE_PATTERN = /(热点|突发|科技|人工智能|AI\b|芯片|机器人|互联网|软件|硬件|创业|商业|公司|能源|汽车|政策|全球|国际|科学|气候|technology|artificial intelligence|startup|business|science|climate)/i;
+const PROVIDER_URLS = Object.freeze({
+  'football-data.org': 'https://www.football-data.org/',
+  PandaScore: 'https://www.pandascore.co/',
+  NewsAPI: 'https://newsapi.org/',
+  'GDELT Project': 'https://www.gdeltproject.org/'
+});
+
+function transformNewsApiArticle(article, channel) {
   const originalUrl = asHttpUrl(article.url);
   const source = asText(article.source?.name) || '未知来源';
   return {
@@ -374,6 +385,72 @@ function transformNewsArticle(article, channel) {
   };
 }
 
+function gdeltSeenAt(value) {
+  const text = asText(value);
+  const compact = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(text);
+  const normalized = compact ? `${compact[1]}-${compact[2]}-${compact[3]}T${compact[4]}:${compact[5]}:${compact[6]}Z` : text;
+  return Number.isFinite(Date.parse(normalized)) ? iso(normalized) : '';
+}
+
+function gdeltSource(article, originalUrl) {
+  const declared = asText(article.domain);
+  if (declared) return declared;
+  try { return new URL(originalUrl).hostname; } catch { return '未知来源'; }
+}
+
+function transformGdeltArticle(article, channel) {
+  const originalUrl = asHttpUrl(article.url);
+  const source = gdeltSource(article, originalUrl);
+  return {
+    id: `news:${channel}:${sha(originalUrl).slice(0, 24)}`,
+    channel,
+    topic: NEWS_CHANNELS[channel].topic,
+    title: asText(article.title),
+    summary: '',
+    content: '',
+    source,
+    author: null,
+    publishedAt: gdeltSeenAt(article.seendate),
+    originalUrl,
+    imageUrl: null,
+    tags: unique([NEWS_CHANNELS[channel].topic, source, asText(article.language)]).slice(0, 5)
+  };
+}
+
+function selectDiverse(items, limit = 30) {
+  const selected = [];
+  const deferred = [];
+  const sourceCounts = new Map();
+  for (const item of items) {
+    const count = sourceCounts.get(item.source) || 0;
+    if (count >= 2) deferred.push(item);
+    else {
+      selected.push(item);
+      sourceCounts.set(item.source, count + 1);
+    }
+    if (selected.length >= limit) return selected;
+  }
+  for (const item of deferred) {
+    selected.push(item);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
+
+function buildGdeltFeeds(articles) {
+  const valid = articles.filter(article => asHttpUrl(article?.url) && asText(article?.title) && gdeltSeenAt(article?.seendate));
+  valid.sort((left, right) => Date.parse(gdeltSeenAt(right.seendate)) - Date.parse(gdeltSeenAt(left.seendate)));
+  const uniqueByUrl = new Map();
+  for (const article of valid) if (!uniqueByUrl.has(asHttpUrl(article.url))) uniqueByUrl.set(asHttpUrl(article.url), article);
+  const byUrl = [...uniqueByUrl.values()];
+  const market = byUrl.filter(article => MARKET_TITLE_PATTERN.test(asText(article.title)));
+  const hot = byUrl.filter(article => HOT_TITLE_PATTERN.test(asText(article.title)));
+  return Object.fromEntries(Object.keys(NEWS_CHANNELS).map(channel => {
+    const source = channel === 'market' ? market : channel === 'hot' ? hot : byUrl;
+    return [channel, selectDiverse(source.map(article => transformGdeltArticle(article, channel)))];
+  }));
+}
+
 export function createContentService({
   db,
   dbPath = 'server/data/app.sqlite',
@@ -385,10 +462,13 @@ export function createContentService({
   publicBaseUrl = '',
   footballDataToken = '',
   pandaScoreToken = '',
+  newsProvider = 'gdelt',
   newsApiKey = '',
   footballDataBaseUrl = 'https://api.football-data.org/v4',
   pandaScoreBaseUrl = 'https://api.pandascore.co',
   newsApiBaseUrl = 'https://newsapi.org/v2',
+  gdeltBaseUrl = 'https://api.gdeltproject.org/api/v2/doc/doc',
+  gdeltRetryDelayMs = 6_000,
   sportsTtlMs = 20 * 60_000,
   newsTtlMs = 75 * 60_000,
   refreshCooldownMs = 60_000,
@@ -402,10 +482,14 @@ export function createContentService({
 }) {
   footballDataToken = asText(footballDataToken);
   pandaScoreToken = asText(pandaScoreToken);
+  newsProvider = asText(newsProvider).toLowerCase() || 'gdelt';
   newsApiKey = asText(newsApiKey);
+  if (!['gdelt', 'newsapi'].includes(newsProvider)) throw new Error('NEWS_PROVIDER 必须是 gdelt 或 newsapi');
   footballDataBaseUrl = footballDataBaseUrl.replace(/\/$/, '');
   pandaScoreBaseUrl = pandaScoreBaseUrl.replace(/\/$/, '');
   newsApiBaseUrl = newsApiBaseUrl.replace(/\/$/, '');
+  gdeltBaseUrl = gdeltBaseUrl.replace(/\/$/, '');
+  gdeltRetryDelayMs = Math.max(0, Math.floor(Number(gdeltRetryDelayMs) || 0));
   mediaMaxTotalBytes = Math.max(1, Math.floor(Number(mediaMaxTotalBytes) || 512 * MB));
   mediaMaxFiles = Math.max(1, Math.floor(Number(mediaMaxFiles) || 5_000));
   newsRetentionMs = Math.max(60_000, Math.floor(Number(newsRetentionMs) || 30 * 24 * 60 * 60_000));
@@ -506,12 +590,15 @@ export function createContentService({
     db.prepare('DELETE FROM news_articles WHERE id IN (SELECT id FROM news_articles ORDER BY published_at DESC,updated_at DESC LIMIT -1 OFFSET ?)').run(Math.max(1, newsMaxArticles));
   }
 
-  function archiveNewsArticles(stories) {
-    const updatedAt = iso(now());
+  function writeNewsArticles(stories, provider, updatedAt = iso(now())) {
+    for (const story of stories) setNewsArticle.run(story.id, provider, JSON.stringify(story), story.publishedAt, updatedAt);
+    pruneNewsArticles();
+  }
+
+  function archiveNewsArticles(stories, provider) {
     db.exec('BEGIN IMMEDIATE');
     try {
-      for (const story of stories) setNewsArticle.run(story.id, 'NewsAPI', JSON.stringify(story), story.publishedAt, updatedAt);
-      pruneNewsArticles();
+      writeNewsArticles(stories, provider);
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -560,8 +647,8 @@ export function createContentService({
     });
   }
 
-  for (const row of db.prepare("SELECT payload FROM content_cache WHERE cache_key LIKE 'news:%'").all()) {
-    try { archiveNewsArticles(JSON.parse(row.payload)); } catch (error) { logger.warn?.(`News cache migration skipped: ${error.message}`); }
+  for (const row of db.prepare("SELECT provider,payload FROM content_cache WHERE cache_key LIKE 'news:%'").all()) {
+    try { archiveNewsArticles(JSON.parse(row.payload), row.provider); } catch (error) { logger.warn?.(`News cache migration skipped: ${error.message}`); }
   }
 
   async function cacheImage(sourceUrl) {
@@ -668,7 +755,7 @@ export function createContentService({
     if (!pandaScoreToken) throw new ContentError(503, 'PANDASCORE_UNCONFIGURED', '服务端未配置 PANDASCORE_API_TOKEN', { retryable: false });
   };
   const requireNews = () => {
-    if (!newsApiKey) throw new ContentError(503, 'NEWS_API_UNCONFIGURED', '服务端未配置 NEWS_API_KEY', { retryable: false });
+    if (newsProvider === 'newsapi' && !newsApiKey) throw new ContentError(503, 'NEWS_API_UNCONFIGURED', 'NEWS_PROVIDER=newsapi 时必须配置 NEWS_API_KEY', { retryable: false });
   };
 
   async function refreshFootball(competition) {
@@ -752,17 +839,18 @@ export function createContentService({
     return [{ status: 'fulfilled', value: matchResult }, standingResult];
   }
 
-  async function refreshNewsChannel(channel) {
+  async function refreshNewsApiChannel(channel) {
     requireNews();
     const config = NEWS_CHANNELS[channel];
     if (!config) throw new ContentError(400, 'NEWS_CHANNEL_INVALID', '无效的新闻频道');
     const key = `news:${channel}`;
     return synchronize(key, 'NewsAPI', async () => {
-      const params = new URLSearchParams({ q: config.query, language: 'zh', sortBy: 'publishedAt', pageSize: '30', page: '1' });
+      const params = new URLSearchParams({ q: config.newsApiQuery, language: 'zh', sortBy: 'publishedAt', pageSize: '30', page: '1' });
       const body = await fetchJson(fetchImpl, `${newsApiBaseUrl}/everything?${params}`, { headers: { 'X-Api-Key': newsApiKey, Accept: 'application/json' } }, 'NEWS_API');
       if (body?.status !== 'ok' || !Array.isArray(body.articles)) throw new ContentError(502, 'NEWS_API_INVALID_RESPONSE', 'NewsAPI 未返回新闻列表', { retryable: true });
-      const transformed = body.articles.filter(article => asHttpUrl(article.url) && asText(article.title) && article.publishedAt && Number.isFinite(Date.parse(article.publishedAt))).map(article => transformNewsArticle(article, channel));
+      const transformed = body.articles.filter(article => asHttpUrl(article.url) && asText(article.title) && article.publishedAt && Number.isFinite(Date.parse(article.publishedAt))).map(article => transformNewsApiArticle(article, channel));
       const stories = [...new Map(transformed.map(story => [story.id, story])).values()];
+      if (!stories.length) throw new ContentError(502, 'NEWS_API_NEWS_EMPTY', 'NewsAPI 未返回可用新闻', { retryable: true });
       await eachLimited(stories, 4, async story => {
         if (!story.imageUrl) return;
         try { story.imageUrl = await cacheImage(story.imageUrl); } catch (error) {
@@ -770,9 +858,76 @@ export function createContentService({
           logger.warn?.(`News image cache skipped: ${error.message}`);
         }
       });
-      archiveNewsArticles(stories);
+      archiveNewsArticles(stories, 'NewsAPI');
       return stories;
     });
+  }
+
+  async function fetchGdeltNews() {
+    const params = new URLSearchParams({
+      query: GDELT_NEWS_QUERY,
+      mode: 'artlist',
+      maxrecords: '100',
+      timespan: '24h',
+      sort: 'datedesc',
+      format: 'json'
+    });
+    const request = () => fetchJson(fetchImpl, `${gdeltBaseUrl}?${params}`, { headers: { Accept: 'application/json' } }, 'GDELT');
+    try {
+      return await request();
+    } catch (error) {
+      if (error?.code !== 'GDELT_RATE_LIMITED' || gdeltRetryDelayMs <= 0) throw error;
+      const retryDelay = Math.min(30_000, Math.max(gdeltRetryDelayMs, (error.retryAfterSeconds || 0) * 1_000));
+      await new Promise(resolveDelay => setTimeout(resolveDelay, retryDelay));
+      return request();
+    }
+  }
+
+  async function refreshGdeltNews() {
+    requireNews();
+    const inflightKey = 'news:gdelt:all';
+    if (refreshInflight.has(inflightKey)) return refreshInflight.get(inflightKey);
+    const provider = 'GDELT Project';
+    const keys = Object.keys(NEWS_CHANNELS).map(channel => ({ channel, key: `news:${channel}` }));
+    const pending = (async () => {
+      for (const item of keys) markAttempt(item.key, provider);
+      try {
+        const body = await fetchGdeltNews();
+        if (!Array.isArray(body?.articles)) throw new ContentError(502, 'GDELT_INVALID_RESPONSE', 'GDELT 未返回新闻列表', { retryable: true });
+        const feeds = buildGdeltFeeds(body.articles);
+        if (!feeds.featured.length) throw new ContentError(502, 'GDELT_NEWS_EMPTY', 'GDELT 未返回可用的中文新闻', { retryable: true });
+        const updatedAt = iso(now());
+        const refreshed = [];
+        const errors = [];
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          writeNewsArticles(Object.values(feeds).flat(), provider, updatedAt);
+          for (const item of keys) {
+            if (feeds[item.channel].length) {
+              setCache.run(item.key, provider, JSON.stringify(feeds[item.channel]), updatedAt);
+              markSuccess(item.key, provider, updatedAt);
+              refreshed.push(item.channel);
+            } else {
+              const code = `GDELT_${item.channel.toUpperCase()}_EMPTY`;
+              const error = new ContentError(502, code, `GDELT 本轮没有筛选出可用的${NEWS_CHANNELS[item.channel].topic}资讯`, { retryable: true });
+              markFailure(item.key, provider, error);
+              errors.push({ id: item.channel, status: error.status, code: error.code, message: error.message, retryable: error.retryable });
+            }
+          }
+          db.exec('COMMIT');
+        } catch (error) {
+          db.exec('ROLLBACK');
+          throw error;
+        }
+        return { refreshed, errors, updatedAt };
+      } catch (error) {
+        let contentError;
+        for (const item of keys) contentError = markFailure(item.key, provider, error);
+        throw contentError;
+      }
+    })().finally(() => refreshInflight.delete(inflightKey));
+    refreshInflight.set(inflightKey, pending);
+    return pending;
   }
 
   function competitionById(id) {
@@ -792,6 +947,7 @@ export function createContentService({
     const age = now() - Date.parse(row.updated_at);
     return {
       provider: row.provider,
+      providerUrl: PROVIDER_URLS[row.provider] || null,
       updatedAt: row.updated_at,
       stale: age > ttlMs || Boolean(warning),
       warning
@@ -870,7 +1026,7 @@ export function createContentService({
           story,
           meta: feed && feed.value?.some?.(item => item.id === id)
             ? metaFor(feed, `news:${story.channel}`, newsTtlMs)
-            : { provider: archived.provider, updatedAt: archived.updated_at, stale: now() - Date.parse(archived.updated_at) > newsTtlMs, warning: null }
+            : { provider: archived.provider, providerUrl: PROVIDER_URLS[archived.provider] || null, updatedAt: archived.updated_at, stale: now() - Date.parse(archived.updated_at) > newsTtlMs, warning: null }
         };
       } catch {}
     }
@@ -892,12 +1048,20 @@ export function createContentService({
     } else if (target === 'news') {
       const channels = channel ? [channel] : Object.keys(NEWS_CHANNELS);
       if (channels.some(item => !NEWS_CHANNELS[item])) throw new ContentError(400, 'NEWS_CHANNEL_INVALID', '无效的新闻频道');
-      for (const id of channels) tasks.push({ id, run: () => refreshNewsChannel(id) });
+      if (newsProvider === 'gdelt') tasks.push({ id: channel || 'all', run: async () => {
+        const result = await refreshGdeltNews();
+        return channel ? {
+          ...result,
+          refreshed: result.refreshed.filter(id => id === channel),
+          errors: result.errors.filter(error => error.id === channel)
+        } : result;
+      } });
+      else for (const id of channels) tasks.push({ id, run: () => refreshNewsApiChannel(id) });
     } else {
       throw new ContentError(400, 'CONTENT_REFRESH_TARGET_INVALID', 'target 必须是 sports 或 news');
     }
     if (!scheduled && refreshCooldownMs > 0) {
-      const refreshKey = `${target}:${competitionId || channel || '*'}`;
+      const refreshKey = target === 'news' && newsProvider === 'gdelt' ? 'news:*' : `${target}:${competitionId || channel || '*'}`;
       const elapsed = now() - (manualRefreshAt.get(refreshKey) || 0);
       if (elapsed < refreshCooldownMs) {
         const retryAfterSeconds = Math.max(1, Math.ceil((refreshCooldownMs - elapsed) / 1000));
@@ -915,21 +1079,24 @@ export function createContentService({
     }
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
-        refreshed.push(tasks[index].id);
+        if (Array.isArray(result.value?.refreshed) && Array.isArray(result.value?.errors)) {
+          refreshed.push(...result.value.refreshed);
+          errors.push(...result.value.errors);
+        } else refreshed.push(tasks[index].id);
         if (Array.isArray(result.value)) for (const part of result.value) if (part.status === 'rejected') {
           const error = part.reason?.isContentError ? part.reason : new ContentError(502, 'CONTENT_SYNC_FAILED', part.reason?.message || '同步失败', { retryable: true });
-          errors.push({ id: `${tasks[index].id}:standings`, code: error.code, message: error.message, retryable: error.retryable, retryAfterSeconds: error.retryAfterSeconds });
+          errors.push({ id: `${tasks[index].id}:standings`, status: error.status, code: error.code, message: error.message, retryable: error.retryable, retryAfterSeconds: error.retryAfterSeconds });
         }
       }
       else {
         const error = result.reason?.isContentError ? result.reason : new ContentError(502, 'CONTENT_SYNC_FAILED', result.reason?.message || '同步失败', { retryable: true });
-        errors.push({ id: tasks[index].id, code: error.code, message: error.message, retryable: error.retryable, retryAfterSeconds: error.retryAfterSeconds });
+        errors.push({ id: tasks[index].id, status: error.status, code: error.code, message: error.message, retryable: error.retryable, retryAfterSeconds: error.retryAfterSeconds });
       }
     });
     if (!refreshed.length && errors.length) {
       if (errors.length === 1) {
         const error = errors[0];
-        throw new ContentError(error.retryable ? 502 : 503, error.code, error.message, { retryable: error.retryable, retryAfterSeconds: error.retryAfterSeconds });
+        throw new ContentError(error.status || (error.retryable ? 502 : 503), error.code, error.message, { retryable: error.retryable, retryAfterSeconds: error.retryAfterSeconds });
       }
       const retryable = errors.some(error => error.retryable);
       const retryAfterSeconds = errors.map(error => error.retryAfterSeconds).filter(Number.isFinite).sort((a, b) => a - b)[0];

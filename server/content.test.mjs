@@ -29,7 +29,7 @@ async function setup(contentConfig = {}, fetchImpl = async () => { throw new Err
 }
 
 test('content endpoints report unconfigured real providers without fallback data', async () => {
-  const context = await setup();
+  const context = await setup({ newsProvider: 'newsapi' });
   try {
     const competitions = await context.call('/content/competitions');
     assert.equal(competitions.status, 200);
@@ -138,7 +138,7 @@ test('PandaScore and NewsAPI payloads stay real while unsafe remote images are r
     ] });
     throw new Error(`unexpected URL ${url}`);
   };
-  const context = await setup({ pandaScoreToken: 'panda-token', newsApiKey: 'news-token' }, fetchImpl);
+  const context = await setup({ pandaScoreToken: 'panda-token', newsProvider: 'newsapi', newsApiKey: 'news-token' }, fetchImpl);
   try {
     const sportsRefresh = await context.call('/content/refresh', 'POST', { target: 'sports', competitionId: 'lol' });
     assert.equal(sportsRefresh.status, 200);
@@ -165,6 +165,117 @@ test('PandaScore and NewsAPI payloads stay real while unsafe remote images are r
     assert.equal(detail.status, 200);
     assert.equal(detail.body.story.source, 'Market Wire');
     assert.equal(detail.body.story.content, 'A real provider excerpt.');
+  } finally { await context.close(); }
+});
+
+test('GDELT uses one real response for all news channels without inventing missing content', async () => {
+  const requested = [];
+  const fetchImpl = async input => {
+    const url = new URL(String(input));
+    requested.push(url);
+    assert.equal(url.origin + url.pathname, 'https://api.gdeltproject.org/api/v2/doc/doc');
+    assert.match(url.searchParams.get('query'), /sourcelang:zho/);
+    assert.equal(url.searchParams.get('mode'), 'artlist');
+    assert.equal(url.searchParams.get('maxrecords'), '100');
+    return Response.json({ articles: [
+      { url: 'https://finance.example/market-1', title: '央行利率变化推动股市走强', seendate: '20260916T021500Z', domain: 'finance.example', language: 'Chinese', socialimage: 'https://images.example/should-not-download.jpg' },
+      { url: 'https://tech.example/ai-1', title: '人工智能芯片公司发布新产品', seendate: '20260916T020000Z', domain: '', language: 'Chinese' },
+      { url: 'https://finance.example/market-1', title: '重复地址不得重复展示', seendate: '20260916T015900Z', domain: 'duplicate.example', language: 'Chinese' },
+      { url: 'javascript:alert(1)', title: '无效地址', seendate: '20260916T015800Z', domain: 'invalid.example', language: 'Chinese' }
+    ] });
+  };
+  const context = await setup({ newsProvider: 'gdelt' }, fetchImpl);
+  try {
+    const refresh = await context.call('/content/refresh', 'POST', { target: 'news', channel: 'market' });
+    assert.equal(refresh.status, 200);
+    assert.deepEqual(refresh.body.refreshed, ['market']);
+    assert.equal(requested.length, 1);
+
+    const featured = await context.call('/content/news?channel=featured');
+    assert.equal(featured.status, 200);
+    assert.equal(featured.body.stories.length, 2);
+    assert.equal(featured.body.meta.provider, 'GDELT Project');
+    assert.equal(featured.body.meta.providerUrl, 'https://www.gdeltproject.org/');
+    assert.equal(featured.body.stories[0].publishedAt, '2026-09-16T02:15:00.000Z');
+    assert.equal(featured.body.stories[0].summary, '');
+    assert.equal(featured.body.stories[0].content, '');
+    assert.equal(featured.body.stories[0].imageUrl, null);
+
+    const market = await context.call('/content/news?channel=market');
+    assert.equal(market.body.stories.length, 1);
+    assert.equal(market.body.stories[0].source, 'finance.example');
+    const hot = await context.call('/content/news?channel=hot');
+    assert.equal(hot.body.stories.length, 1);
+    assert.equal(hot.body.stories[0].source, 'tech.example');
+
+    const detail = await context.call('/content/news/' + encodeURIComponent(featured.body.stories[0].id));
+    assert.equal(detail.body.meta.provider, 'GDELT Project');
+    const limited = await context.call('/content/refresh', 'POST', { target: 'news', channel: 'hot' });
+    assert.equal(limited.status, 429);
+    assert.equal(limited.body.error.code, 'CONTENT_REFRESH_RATE_LIMITED');
+    assert.equal(requested.length, 1);
+  } finally { await context.close(); }
+});
+
+test('GDELT rate limits preserve the last successful real cache and HTTP status', async () => {
+  let currentTime = Date.parse('2026-09-16T03:00:00.000Z');
+  let requests = 0;
+  const fetchImpl = async () => {
+    requests += 1;
+    if (requests === 1) return Response.json({ articles: [
+      { url: 'https://finance.example/market-2', title: '证券市场公布最新交易数据', seendate: '20260916T025500Z', domain: 'finance.example', language: 'Chinese' }
+    ] });
+    return new Response('slow down', { status: 429, headers: { 'Retry-After': '7' } });
+  };
+  const context = await setup({ newsProvider: 'gdelt', now: () => currentTime, newsTtlMs: 60_000, refreshCooldownMs: 0, gdeltRetryDelayMs: 0 }, fetchImpl);
+  try {
+    const first = await context.call('/content/refresh', 'POST', { target: 'news' });
+    assert.equal(first.status, 200);
+    currentTime += 120_000;
+    const failed = await context.call('/content/refresh', 'POST', { target: 'news' });
+    assert.equal(failed.status, 429);
+    assert.equal(failed.body.error.code, 'GDELT_RATE_LIMITED');
+    assert.equal(failed.headers.get('retry-after'), '7');
+    const stale = await context.call('/content/news?channel=market');
+    assert.equal(stale.status, 200);
+    assert.equal(stale.body.stories[0].title, '证券市场公布最新交易数据');
+    assert.equal(stale.body.meta.stale, true);
+    assert.equal(stale.body.meta.warning.code, 'GDELT_RATE_LIMITED');
+  } finally { await context.close(); }
+});
+
+test('GDELT keeps each last successful channel when a later classification is empty', async () => {
+  let sequence = 1;
+  const fetchImpl = async () => sequence === 1
+    ? Response.json({ articles: [
+      { url: 'https://finance.example/market-old', title: '股票市场迎来最新投资机会', seendate: '20260916T030000Z', domain: 'finance.example', language: 'Chinese' },
+      { url: 'https://tech.example/hot-old', title: '人工智能公司公布芯片计划', seendate: '20260916T025500Z', domain: 'tech.example', language: 'Chinese' }
+    ] })
+    : Response.json({ articles: [
+      { url: 'https://news.example/briefing', title: '今日财经简报', seendate: '20260916T040000Z', domain: 'news.example', language: 'Chinese' }
+    ] });
+  const context = await setup({ newsProvider: 'gdelt', refreshCooldownMs: 0 }, fetchImpl);
+  try {
+    const first = await context.call('/content/refresh', 'POST', { target: 'news' });
+    assert.equal(first.status, 200);
+    assert.equal(first.body.ok, true);
+    sequence = 2;
+    const partial = await context.call('/content/refresh', 'POST', { target: 'news' });
+    assert.equal(partial.status, 200);
+    assert.equal(partial.body.ok, false);
+    assert.deepEqual(partial.body.refreshed, ['featured']);
+    assert.deepEqual(partial.body.errors.map(item => item.code), ['GDELT_MARKET_EMPTY', 'GDELT_HOT_EMPTY']);
+
+    const featured = await context.call('/content/news?channel=featured');
+    assert.equal(featured.body.stories[0].title, '今日财经简报');
+    assert.equal(featured.body.meta.stale, false);
+    const market = await context.call('/content/news?channel=market');
+    assert.equal(market.body.stories[0].title, '股票市场迎来最新投资机会');
+    assert.equal(market.body.meta.stale, true);
+    assert.equal(market.body.meta.warning.code, 'GDELT_MARKET_EMPTY');
+    const hot = await context.call('/content/news?channel=hot');
+    assert.equal(hot.body.stories[0].title, '人工智能公司公布芯片计划');
+    assert.equal(hot.body.meta.warning.code, 'GDELT_HOT_EMPTY');
   } finally { await context.close(); }
 });
 
@@ -219,7 +330,7 @@ test('news article history survives feed replacement and remains bounded', async
     if (String(input).includes('/everything?')) return Response.json({ status: 'ok', articles: [article(sequence)] });
     throw new Error(`unexpected URL ${input}`);
   };
-  const context = await setup({ newsApiKey: 'news-token', refreshCooldownMs: 0, newsMaxArticles: 2, newsRetentionMs: 60 * 24 * 60 * 60_000 }, fetchImpl);
+  const context = await setup({ newsProvider: 'newsapi', newsApiKey: 'news-token', refreshCooldownMs: 0, newsMaxArticles: 2, newsRetentionMs: 60 * 24 * 60 * 60_000 }, fetchImpl);
   try {
     await context.app.content.refresh({ target: 'news', channel: 'market', scheduled: true });
     const firstFeed = await context.call('/content/news?channel=market');
@@ -246,7 +357,7 @@ test('content-addressed media keeps old referenced URLs readable and collects th
     if (url.includes('/everything?')) return Response.json({ status: 'ok', articles: [{ source: { name: 'Shared Image Wire' }, title: 'Shared article', description: 'Summary', content: 'Excerpt', url: 'https://publisher.example/shared', urlToImage: 'https://cdn.example/shared.png', publishedAt: '2026-09-16T01:00:00Z' }] });
     throw new Error(`unexpected URL ${url}`);
   };
-  const context = await setup({ newsApiKey: 'news-token', now: () => currentTime, mediaTtlMs: 1, refreshCooldownMs: 0, mediaMaxFiles: 10 }, fetchImpl);
+  const context = await setup({ newsProvider: 'newsapi', newsApiKey: 'news-token', now: () => currentTime, mediaTtlMs: 1, refreshCooldownMs: 0, mediaMaxFiles: 10 }, fetchImpl);
   try {
     await context.app.content.refresh({ target: 'news', channel: 'market', scheduled: true });
     const market = await context.call('/content/news?channel=market');

@@ -51,6 +51,16 @@ function openOriginal() {
   // #endif
 }
 
+function openProvider(url?: string | null) {
+  if (!url || !/^https:\/\//i.test(url)) return
+  // #ifdef H5
+  window.open(url, '_blank', 'noopener,noreferrer')
+  // #endif
+  // #ifndef H5
+  uni.setClipboardData({ data: url, success: () => uni.showToast({ title: '数据源链接已复制', icon: 'none' }) })
+  // #endif
+}
+
 onLoad(options => {
   storyId = typeof options?.id === 'string' ? decodeURIComponent(options.id) : ''
   if (!storyId) { loading.value = false; error.value = new ApiError('缺少文章编号', 400, 'NEWS_ID_MISSING'); return }
@@ -68,7 +78,8 @@ onLoad(options => {
     <template v-else-if="story">
       <view class="article-meta"><text class="topic">{{ story.topic }}</text><text>{{ story.source }} · {{ formatCompactDateTime(story.publishedAt) }}</text></view>
       <text class="headline">{{ story.title }}</text>
-      <text class="dek">{{ story.summary }}</text>
+      <text v-if="story.summary" class="dek">{{ story.summary }}</text>
+      <text v-else class="dek metadata-only">数据源未提供摘要；为避免补写失真，请阅读原文。</text>
       <view v-if="story.tags.length" class="ticker-row"><text v-for="tag in story.tags" :key="tag">{{ tag }}</text></view>
 
       <image v-if="story.imageUrl && !imageBroken" class="hero-image" :src="apiAssetUrl(story.imageUrl)" mode="aspectFill" @error="imageBroken = true" />
@@ -78,13 +89,18 @@ onLoad(options => {
         <!-- #ifndef H5 -->复制原文链接<!-- #endif -->
       </text></button></view>
 
-      <view class="article-body"><text>{{ story.content || story.summary }}</text></view>
+      <view v-if="story.content || story.summary" class="article-body"><text>{{ story.content || story.summary }}</text></view>
 
       <view v-if="meta" class="sync-card" :class="{ warning: meta.stale }"><text class="sync-title">{{ meta.provider }} · {{ formatRelativeTime(meta.updatedAt) }}同步</text><text v-if="meta.warning">{{ meta.warning.code }}：{{ meta.warning.message }}</text><text v-else>文章信息来自服务端保存的最后成功同步结果。</text></view>
 
+      <view v-if="meta?.providerUrl" class="provider-source"><view><text class="source-label">聚合数据来源</text><text class="source-name">{{ meta.provider }}</text></view><button hover-class="none" @click="openProvider(meta.providerUrl)"><text>
+        <!-- #ifdef H5 -->了解数据源<!-- #endif -->
+        <!-- #ifndef H5 -->复制数据源链接<!-- #endif -->
+      </text></button></view>
+
       <button class="save" hover-class="none" :class="{ saved }" @click="toggleSaved"><image class="heart" :src="saved ? '/static/nav-icons/heart-filled.png' : '/static/nav-icons/heart-inactive.png'" mode="aspectFit" /><text>{{ saved ? '已收藏，留着慢慢看' : '收藏这条' }}</text></button>
 
-      <view class="risk-note"><text>资讯仅供参考</text><text>页面展示的标题、摘要与原文链接来自标注的真实数据源，不构成任何投资建议。</text></view>
+      <view class="risk-note"><text>资讯仅供参考</text><text>页面只展示数据源实际提供的元数据，并保留原始媒体链接；不构成任何投资建议。</text></view>
     </template>
   </view>
 </template>
@@ -93,6 +109,7 @@ onLoad(options => {
 .retry-button{display:flex;align-items:center;justify-content:center;height:44px;min-height:44px;margin:18px 0 0;padding:0 18px;border:0;border-radius:13px;background:#494032;color:#fff9e9;font-size:13px;line-height:normal}.retry-button::after{border:0}
 .shell{max-width:640px;min-height:100vh;margin:auto;padding:calc(8px + var(--status-bar-height)) 24px calc(48px + env(safe-area-inset-bottom));background:#faf8f2;color:#3e382d}.state-card{padding:22px;margin-top:18px;border:1px solid #e7e0d2;border-radius:20px;background:#fff;color:#786d5b;font-size:12px}.loading-line{width:74%;height:11px;margin-bottom:10px;border-radius:7px;background:#eee9dd;animation:pulse 1.2s ease-in-out infinite}.loading-line.wide{width:100%}@keyframes pulse{50%{opacity:.45}}.error-card{display:flex;flex-direction:column}.state-title{color:#3e382d;font-size:18px;font-weight:600}.state-message{margin-top:8px;line-height:1.7}.error-code{margin-top:8px;color:#a35243;font-family:monospace;font-size:11px}.article-meta{display:flex;align-items:flex-start;gap:9px;margin-top:2px;color:#786d5b;font-size:11px;line-height:1.5;font-variant-numeric:tabular-nums}.article-meta>text:last-child{min-width:0}.topic{display:inline-flex;align-items:center;height:25px;flex:0 0 auto;padding:0 9px;border-radius:8px;background:#f7e7ad;color:#745b23;line-height:25px}.headline{display:block;margin:16px 0 0;font-size:31px;font-weight:600;line-height:1.4;letter-spacing:-.7px}.dek{display:block;margin-top:15px;color:#6f6555;font-size:15px;line-height:1.85}.ticker-row{display:flex;flex-wrap:wrap;gap:7px;margin-top:18px}.ticker-row text{display:inline-flex;align-items:center;height:27px;padding:0 9px;border:1px solid #ece5d6;border-radius:9px;background:#fff;color:#806b3c;font-size:11px;line-height:27px}.hero-image{display:block;width:100%;height:210px;margin-top:22px;border-radius:20px;background:#eee8d8}
 .source-card{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:16px 17px;margin-top:18px;border:1px solid #ece5d6;border-radius:17px;background:#fff}.source-card>view{min-width:0}.source-label{display:block;color:#958a76;font-size:10px}.source-name{display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600}.source-card button{display:flex;align-items:center;justify-content:center;width:auto;height:40px;min-height:40px;flex:0 0 auto;margin:0;padding:0 13px;border:1px solid #decf9f;border-radius:12px;background:#fff9e9;color:#6f5824;font-size:12px;line-height:normal}.source-card button::after{border:0}.article-body{padding:22px 0 5px;margin-top:23px;border-top:1px solid #e8e1d3;color:#514a3e;font-size:16px;line-height:2;white-space:pre-wrap;word-break:break-word}.sync-card{padding:18px;margin-top:27px;border-radius:18px;background:#f1ede3;color:#786d5b;font-size:12px;line-height:1.75}.sync-card.warning{background:#f4e8df;color:#8c523f}.sync-title{display:block;margin-bottom:5px;color:#493f30;font-size:13px;font-weight:600}.save{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;height:50px;min-height:50px;margin-top:14px;border:0;border-radius:15px;background:#494032;color:#fff9e9;font-size:14px;line-height:normal}.save::after{border:0}.save.saved{border:1px solid #e3d39e;background:#fff9e9;color:#6f5824}.heart{display:block;width:19px;height:19px}.risk-note{padding:17px;margin-top:24px;border-top:1px solid #e8e1d3;color:#786d5b;font-size:11px;line-height:1.7;text-align:center}.risk-note text{display:block}.risk-note text:first-child{margin-bottom:4px;font-size:12px;font-weight:600}
+.metadata-only{color:#8b806e}.provider-source{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:16px 17px;margin-top:14px;border:1px solid #ece5d6;border-radius:17px;background:#fff}.provider-source>view{min-width:0}.provider-source button{display:flex;align-items:center;justify-content:center;width:auto;height:44px;min-height:44px;flex:0 0 auto;margin:0;padding:0 13px;border:1px solid #decf9f;border-radius:12px;background:#fff9e9;color:#6f5824;font-size:12px;line-height:normal}.provider-source button::after{border:0}
 .source-card button{height:44px;min-height:44px}
 /* #ifdef MP-WEIXIN */
 .shell{padding-top:0}
