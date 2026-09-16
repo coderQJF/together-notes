@@ -113,7 +113,15 @@ class Cdp {
 
 if (!baseUrl) {
   if (process.env.QA_SKIP_BUILD !== '1') await buildQaH5()
-  qaApp = createApp({ dbPath: ':memory:', testAuth: true, publicDir: resolve('dist/build/h5') })
+  const qaFetch = async (input, init = {}) => {
+    if (String(input).endsWith('/responses')) {
+      const body = JSON.parse(String(init.body || '{}'))
+      const local = JSON.parse(body.input?.[1]?.content?.[0]?.text || '{}')
+      return Response.json({ model: 'qa-search-model', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ answer: '周末可以一起去看展，出发时间已经记在小记里。', source_ids: [local.documents?.[0]?.id].filter(Boolean) }), annotations: [] }] }] })
+    }
+    throw new Error(`Unexpected QA network request: ${input}`)
+  }
+  qaApp = createApp({ dbPath: ':memory:', testAuth: true, publicDir: resolve('dist/build/h5'), fetchImpl: qaFetch, aiConfig: { apiKey: 'qa-server-only-key', baseUrl: 'https://models.example/v1', model: 'qa-search-model' } })
   await new Promise((resolveListen, reject) => {
     qaApp.server.once('error', reject)
     qaApp.server.listen(0, '127.0.0.1', resolveListen)
@@ -155,8 +163,9 @@ const screenNames = new Set((process.env.CAPTURE_SCREENS || '').split(',').map(v
 const screens = [
   { name: 'index-notes', path: '/pages/index/index', ready: '周末一起去看展' },
   { name: 'index-reminders', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事' },
-  { name: 'index-search', path: '/pages/index/index', ready: '周末一起去看展', click: '问问', clicked: '问问我们的小记' },
-  { name: 'index-us', path: '/pages/index/index', ready: '周末一起去看展', click: '我们', clicked: '我们的小空间' },
+  { name: 'index-search', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记' },
+  { name: 'index-search-result', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '周末看什么？', answered: '周末可以一起去看展' },
+  { name: 'index-us', path: '/pages/index/index', ready: '周末一起去看展', click: '我', clicked: '我们的小空间' },
   ...(itemId ? [{ name: 'detail-note', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '周末一起去看展' }] : []),
   { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },
   { name: 'editor-reminder', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间' },
@@ -227,6 +236,20 @@ try {
           if (!clickResult.result.value) throw new Error(`Could not find control: ${screen.click}`)
           await waitForText(page, screen.clicked)
         }
+      }
+      if (screen.ask) {
+        const askResult = await page.call('Runtime.evaluate', {
+          expression: `(() => { const field = document.querySelector('textarea'); if (!field) return false; const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set; setter?.call(field, ${JSON.stringify(screen.ask)}); field.dispatchEvent(new Event('input', { bubbles: true, composed: true })); field.dispatchEvent(new Event('change', { bubbles: true, composed: true })); return true })()`,
+          returnByValue: true,
+        })
+        if (!askResult.result.value) throw new Error(`Could not fill AI question: ${screen.ask}`)
+        await wait(100)
+        const submitResult = await page.call('Runtime.evaluate', {
+          expression: `(() => { const controls = [...document.querySelectorAll('uni-button, button')]; const node = controls.find(item => String(item.getAttribute('aria-label') || '').startsWith('发送问题')); if (!node) return false; node.click(); return true })()`,
+          returnByValue: true,
+        })
+        if (!submitResult.result.value) throw new Error('Could not submit AI question')
+        await waitForText(page, screen.answered, 15000)
       }
       await wait(120)
 

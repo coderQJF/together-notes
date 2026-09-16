@@ -1,6 +1,6 @@
 # 两个人的小记
 
-UniApp + Vue 3 + TypeScript 的双人备忘与提醒应用。保留 01 奶油黄主题、悬浮胶囊导航，以及“随记、提醒、我们”三个入口，兼容 H5、微信小程序和 App 资源构建。
+UniApp + Vue 3 + TypeScript 的双人备忘与提醒应用。保留 01 奶油黄主题、悬浮胶囊导航，以及“随记、提醒、搜搜”三个底部入口；“我们”由左上角头像进入。兼容 H5、微信小程序和 App 资源构建。
 
 ## 已实现
 
@@ -14,6 +14,7 @@ UniApp + Vue 3 + TypeScript 的双人备忘与提醒应用。保留 01 奶油黄
 - 比赛使用 football-data.org（英超、西甲、欧冠）和 PandaScore（仅 LPL、全球总决赛）的真实赛程、赛果与积分榜，足球球队与比赛阶段在服务端统一转为中文；新闻生产默认使用 GDELT Project 的真实中文资讯并整理为精选、股市与热点频道，GDELT 网络不可达时使用公开中文 RSS，也可显式切换到 NewsAPI，任何路径都不会回退到本地模拟数据。
 - 服务端定时同步并将最后一次成功的真实内容缓存到 SQLite；刷新失败时可返回带警告的过期真实缓存，没有缓存则明确返回 provider 配置或上游错误码。
 - 球队图标与获准使用的新闻配图由服务端校验、内网地址阻断、限大小后按 SHA-256 内容寻址保存到持久化 `MEDIA_DIR`，小程序不直连任意第三方图片域名；GDELT 返回的出版方图片默认不下载或重托管。
+- “搜搜”先检索当前账号有权查看的小记、提醒及已同步内容，再由服务端模型整理；本地资料不足时才以原问题调用 OpenAI Responses API 的网页搜索，并展示可点击来源。联网请求不会携带私人笔记。
 - SQLite 持久化、自动备份脚本、H5 静态托管、Docker/Caddy HTTPS 部署和 GitHub Actions。
 
 ## 正式配置
@@ -54,9 +55,18 @@ NEWS_RETENTION_DAYS=30
 NEWS_MAX_ARTICLES=1000
 SPORTS_SYNC_INTERVAL_MS=900000
 NEWS_SYNC_INTERVAL_MS=3600000
+AI_API_KEY=仅放服务端的 OpenAI API Key
+AI_BASE_URL=https://api.openai.com/v1
+AI_MODEL=gpt-5.6-luna
+AI_WEB_SEARCH_ENABLED=true
+AI_TIMEOUT_MS=45000
+AI_RATE_LIMIT_PER_MINUTE=5
+APP_TIME_ZONE=Asia/Shanghai
 ```
 
 内容服务会在启动后和上述间隔自动同步。密钥不能下发到 H5/小程序；GDELT 模式不需要注册或密钥，显式使用 NewsAPI 时缺少密钥会返回 `NEWS_API_UNCONFIGURED`。上游故障返回可追踪的结构化错误，不会伪造赛程或新闻。`MEDIA_DIR` 应与 SQLite 一样挂载到持久化磁盘；未显式配置时默认使用数据库文件的同级 `media` 目录。
+
+智能搜索使用 OpenAI [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create) 与内置 [Web Search](https://developers.openai.com/api/docs/guides/tools-web-search)。`AI_API_KEY` 只保存在服务端；本地候选会在不开放任何网页工具的独立请求中判断并整理，只有资料不足时才发起第二次网页搜索，且第二次请求只包含用户原问题。两类请求都显式使用 `store:false`；网页回答没有有效引用时会报错而不是展示无来源结论。未配置密钥时页面会明确显示服务未配置，不会回退到模拟答案。
 
 真实内容源与调度约定：
 
@@ -187,6 +197,13 @@ NEWS_RETENTION_DAYS=30
 NEWS_MAX_ARTICLES=1000
 SPORTS_SYNC_INTERVAL_MS=900000
 NEWS_SYNC_INTERVAL_MS=3600000
+AI_API_KEY=仅放服务器
+AI_BASE_URL=https://api.openai.com/v1
+AI_MODEL=gpt-5.6-luna
+AI_WEB_SEARCH_ENABLED=true
+AI_TIMEOUT_MS=45000
+AI_RATE_LIMIT_PER_MINUTE=5
+APP_TIME_ZONE=Asia/Shanghai
 ```
 
 小程序自动上传需要仓库 Variables：

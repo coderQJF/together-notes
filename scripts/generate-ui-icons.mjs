@@ -12,13 +12,19 @@ const edge = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\
 const remotePort = Number(process.env.ICON_CDP_PORT || 9232)
 const profileDir = await mkdtemp(join(tmpdir(), 'together-notes-icons-'))
 const icons = [
+  ['note.svg', 'note-inactive.png', '#fff9e9'],
+  ['note.svg', 'note-active.png', '#494032'],
+  ['bell.svg', 'bell-inactive.png', '#fff9e9'],
+  ['bell.svg', 'bell-active.png', '#494032'],
+  ['search.svg', 'search-inactive.png', '#fff9e9'],
+  ['search.svg', 'search-active.png', '#494032'],
+  ['heart.svg', 'heart-inactive.png', '#fff9e9'],
+  ['heart.svg', 'heart-active.png', '#494032'],
   ['attachment.svg', 'attachment-active.png', '#494032'],
   ['link.svg', 'link-active.png', '#494032'],
   ['location.svg', 'location-active.png', '#8b6b25'],
   ['refresh.svg', 'refresh-active.png', '#786d5b'],
   ['heart-filled.svg', 'heart-filled.png', '#494032'],
-  ['search.svg', 'search-inactive.png', '#fff9e9'],
-  ['search.svg', 'search-active.png', '#494032'],
 ]
 
 const wait = ms => new Promise(resolveWait => setTimeout(resolveWait, ms))
