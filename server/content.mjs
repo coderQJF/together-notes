@@ -6,6 +6,7 @@ import https from 'node:https';
 import { mkdirSync } from 'node:fs';
 import { readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve, sep } from 'node:path';
+import { footballTeamNameZh } from './team-names.zh-CN.mjs';
 
 const dnsLookup = promisify(dnsLookupCallback);
 const MB = 1024 * 1024;
@@ -14,7 +15,7 @@ export const COMPETITIONS = Object.freeze([
   { id: 'epl', name: '英超', mark: 'PL', kind: '足球', description: '英格兰顶级联赛', provider: 'football-data.org', providerId: 'PL' },
   { id: 'laliga', name: '西甲', mark: 'LL', kind: '足球', description: '西班牙顶级联赛', provider: 'football-data.org', providerId: 'PD' },
   { id: 'ucl', name: '欧冠', mark: 'CL', kind: '足球', description: '欧洲冠军联赛', provider: 'football-data.org', providerId: 'CL' },
-  { id: 'lol', name: '英雄联盟', mark: 'LOL', kind: '电竞', description: '全球职业赛事', provider: 'PandaScore', providerId: 'lol' }
+  { id: 'lol', name: '英雄联盟', mark: 'LOL', kind: '电竞', description: '仅关注 LPL 与全球总决赛', provider: 'PandaScore', providerId: 'lol' }
 ]);
 
 export class ContentError extends Error {
@@ -103,6 +104,23 @@ async function fetchJson(fetchImpl, url, options, provider) {
     return await response.json();
   } catch {
     throw new ContentError(502, `${provider}_INVALID_RESPONSE`, `${provider} 返回了无法解析的数据`, { retryable: true });
+  }
+}
+
+async function fetchText(fetchImpl, url, options, provider) {
+  let response;
+  try {
+    response = await fetchImpl(url, { ...options, signal: AbortSignal.timeout(12_000) });
+  } catch (error) {
+    throw new ContentError(504, `${provider}_UPSTREAM_UNREACHABLE`, `${provider} 连接失败：${error?.message || '请求超时'}`, { retryable: true });
+  }
+  if (!response.ok) {
+    let text = '';
+    try { text = await response.text(); } catch {}
+    throw providerError(provider, response, text);
+  }
+  try { return await response.text(); } catch {
+    throw new ContentError(502, `${provider}_INVALID_RESPONSE`, `${provider} 返回了无法读取的数据`, { retryable: true });
   }
 }
 
@@ -243,12 +261,30 @@ function pandaStatus(value) {
 }
 
 function footballTeam(team = {}) {
+  const localized = footballTeamNameZh(team);
   return {
     id: `football:${team.id ?? sha(team.name || 'unknown').slice(0, 12)}`,
-    name: asText(team.name) || '待定',
-    shortName: asText(team.tla) || asText(team.shortName) || asText(team.name).slice(0, 6) || 'TBD',
+    name: localized?.name || asText(team.name) || '待定',
+    shortName: localized?.shortName || asText(team.shortName) || asText(team.tla) || asText(team.name).slice(0, 6) || 'TBD',
     logoUrl: asText(team.crest) || null
   };
+}
+
+function applyFootballTeamZh(team) {
+  const localized = footballTeamNameZh(team);
+  if (localized && team) Object.assign(team, localized);
+  return team;
+}
+
+const FOOTBALL_STAGES_ZH = Object.freeze({
+  REGULAR_SEASON: '常规赛', LEAGUE_STAGE: '联赛阶段', GROUP_STAGE: '小组赛',
+  LAST_16: '1/8 决赛', QUARTER_FINALS: '1/4 决赛', SEMI_FINALS: '半决赛', FINAL: '决赛',
+  PLAYOFFS: '附加赛', QUALIFICATION: '资格赛', THIRD_PLACE: '季军赛'
+});
+
+function footballStageZh(value) {
+  const text = asText(value);
+  return FOOTBALL_STAGES_ZH[text.toUpperCase().replace(/\s+/g, '_')] || text.replaceAll('_', ' ') || '联赛';
 }
 
 function transformFootballMatch(match, competitionId) {
@@ -260,7 +296,7 @@ function transformFootballMatch(match, competitionId) {
     competitionId,
     status: footballStatus(match.status),
     startsAt: iso(match.utcDate),
-    stage: asText(match.stage)?.replaceAll('_', ' ') || '联赛',
+    stage: footballStageZh(match.stage),
     group: asText(match.group) || null,
     round: Number.isFinite(match.matchday) ? `第 ${match.matchday} 轮` : null,
     format: null,
@@ -350,6 +386,29 @@ function transformPandaStandings(body) {
   }).filter(row => row.team.name !== '待定');
 }
 
+const PANDA_LPL_PATTERN = /(^|[^a-z0-9])lpl([^a-z0-9]|$)|league of legends pro league/i;
+const PANDA_WORLDS_PATTERN = /(^|[^a-z0-9])worlds([^a-z0-9]|$)|world[\s-]+championship/i;
+
+function pandaCompetitionText(value = {}) {
+  return [value.name, value.slug, value.full_name].map(asText).filter(Boolean).join(' ');
+}
+
+function isWantedPandaLeague(league = {}) {
+  const text = pandaCompetitionText(league);
+  return PANDA_LPL_PATTERN.test(text) || PANDA_WORLDS_PATTERN.test(text);
+}
+
+function isWantedPandaMatch(match = {}, targetLeagueIds = new Set()) {
+  if (match.league?.id != null && targetLeagueIds.has(String(match.league.id))) return true;
+  const text = [match.league, match.serie, match.tournament].map(pandaCompetitionText).join(' ');
+  return PANDA_LPL_PATTERN.test(text) || PANDA_WORLDS_PATTERN.test(text);
+}
+
+function isWantedCachedPandaMatch(match = {}) {
+  const text = [match.stage, match.round, match.group].map(asText).filter(Boolean).join(' ');
+  return PANDA_LPL_PATTERN.test(text) || PANDA_WORLDS_PATTERN.test(text);
+}
+
 const NEWS_CHANNELS = Object.freeze({
   featured: { newsApiQuery: '(财经 OR 科技 OR 商业 OR 全球)', topic: '精选' },
   market: { newsApiQuery: '(股票 OR 股市 OR A股 OR 港股 OR 美股 OR 财报 OR 央行)', topic: '市场' },
@@ -357,6 +416,10 @@ const NEWS_CHANNELS = Object.freeze({
 });
 
 const GDELT_NEWS_QUERY = '("stock market" OR stocks OR equities OR economy OR finance OR business OR technology OR "artificial intelligence" OR startup OR "interest rates" OR earnings OR IPO) sourcelang:zho';
+const RSS_NEWS_SOURCES = Object.freeze([
+  { name: '36氪', url: 'https://www.36kr.com/feed', channel: 'hot' },
+  { name: '中新网财经', url: 'https://www.chinanews.com.cn/rss/finance.xml', channel: 'market' }
+]);
 const MARKET_TITLE_PATTERN = /(股票|股市|A股|港股|美股|证券|指数|上证|深证|创业板|科创板|恒生|道指|纳指|标普|财报|业绩|营收|利润|央行|利率|降息|加息|通胀|经济|金融|银行|基金|债券|汇率|人民币|美元|投资|IPO|上市|市值|期货|黄金|油价|stock|market|equities|earnings|economy|finance|investment|interest rate)/i;
 const HOT_TITLE_PATTERN = /(热点|突发|科技|人工智能|AI\b|芯片|机器人|互联网|软件|硬件|创业|商业|公司|能源|汽车|政策|全球|国际|科学|气候|technology|artificial intelligence|startup|business|science|climate)/i;
 const PROVIDER_URLS = Object.freeze({
@@ -417,6 +480,70 @@ function transformGdeltArticle(article, channel) {
   };
 }
 
+function decodeXml(value) {
+  return String(value || '')
+    .replace(/^\s*<!\[CDATA\[|\]\]>\s*$/g, '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_match, decimal) => String.fromCodePoint(Number(decimal)))
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function rssElement(block, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`<${escaped}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${escaped}>`, 'i').exec(block);
+  return match ? decodeXml(match[1]) : '';
+}
+
+function parseRssFeed(xml, source) {
+  const items = String(xml || '').match(/<item(?:\s[^>]*)?>[\s\S]*?<\/item>/gi) || [];
+  return items.map(item => {
+    const originalUrl = asHttpUrl(rssElement(item, 'link'));
+    const published = rssElement(item, 'pubDate') || rssElement(item, 'dc:date');
+    return {
+      title: rssElement(item, 'title'),
+      originalUrl,
+      publishedAt: Number.isFinite(Date.parse(published)) ? iso(published) : '',
+      source: source.name,
+      sourceChannel: source.channel
+    };
+  }).filter(item => item.title && item.originalUrl && item.publishedAt);
+}
+
+function transformRssArticle(article, channel) {
+  return {
+    id: `news:${channel}:${sha(article.originalUrl).slice(0, 24)}`,
+    channel,
+    topic: NEWS_CHANNELS[channel].topic,
+    title: article.title,
+    summary: '',
+    content: '',
+    source: article.source,
+    author: null,
+    publishedAt: article.publishedAt,
+    originalUrl: article.originalUrl,
+    imageUrl: null,
+    tags: unique([NEWS_CHANNELS[channel].topic, article.source]).slice(0, 5)
+  };
+}
+
+function buildRssFeeds(articles) {
+  const ordered = [...new Map(articles.sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt)).map(article => [article.originalUrl, article])).values()];
+  const market = ordered.filter(article => article.sourceChannel === 'market' || MARKET_TITLE_PATTERN.test(article.title));
+  const hot = ordered.filter(article => article.sourceChannel === 'hot' || HOT_TITLE_PATTERN.test(article.title));
+  return Object.fromEntries(Object.keys(NEWS_CHANNELS).map(channel => {
+    const source = channel === 'market' ? market : channel === 'hot' ? hot : ordered;
+    return [channel, selectDiverse(source.map(article => transformRssArticle(article, channel)))];
+  }));
+}
+
 function selectDiverse(items, limit = 30) {
   const selected = [];
   const deferred = [];
@@ -468,6 +595,7 @@ export function createContentService({
   pandaScoreBaseUrl = 'https://api.pandascore.co',
   newsApiBaseUrl = 'https://newsapi.org/v2',
   gdeltBaseUrl = 'https://api.gdeltproject.org/api/v2/doc/doc',
+  rssNewsSources = RSS_NEWS_SOURCES,
   gdeltRetryDelayMs = 6_000,
   sportsTtlMs = 20 * 60_000,
   newsTtlMs = 75 * 60_000,
@@ -489,6 +617,7 @@ export function createContentService({
   pandaScoreBaseUrl = pandaScoreBaseUrl.replace(/\/$/, '');
   newsApiBaseUrl = newsApiBaseUrl.replace(/\/$/, '');
   gdeltBaseUrl = gdeltBaseUrl.replace(/\/$/, '');
+  rssNewsSources = Array.isArray(rssNewsSources) ? rssNewsSources.filter(source => asText(source?.name) && asHttpUrl(source?.url) && ['market', 'hot'].includes(source?.channel)) : [];
   gdeltRetryDelayMs = Math.max(0, Math.floor(Number(gdeltRetryDelayMs) || 0));
   mediaMaxTotalBytes = Math.max(1, Math.floor(Number(mediaMaxTotalBytes) || 512 * MB));
   mediaMaxFiles = Math.max(1, Math.floor(Number(mediaMaxFiles) || 5_000));
@@ -758,6 +887,22 @@ export function createContentService({
     if (newsProvider === 'newsapi' && !newsApiKey) throw new ContentError(503, 'NEWS_API_UNCONFIGURED', 'NEWS_PROVIDER=newsapi 时必须配置 NEWS_API_KEY', { retryable: false });
   };
 
+  let pandaLeagueCache = { ids: [], expiresAt: 0 };
+
+  async function pandaTargetLeagueIds(headers) {
+    if (pandaLeagueCache.ids.length && pandaLeagueCache.expiresAt > now()) return pandaLeagueCache.ids;
+    const searches = ['LPL', 'World Championship', 'Worlds'];
+    const responses = await Promise.all(searches.map(name => {
+      const params = new URLSearchParams({ 'search[name]': name, per_page: '100' });
+      return fetchJson(fetchImpl, `${pandaScoreBaseUrl}/lol/leagues?${params}`, { headers }, 'PANDASCORE');
+    }));
+    if (responses.some(body => !Array.isArray(body))) throw new ContentError(502, 'PANDASCORE_INVALID_RESPONSE', 'PandaScore 未返回可用的联赛列表', { retryable: true });
+    const ids = unique(responses.flat().filter(league => league?.id != null && isWantedPandaLeague(league)).map(league => String(league.id)));
+    if (!ids.length) throw new ContentError(502, 'PANDASCORE_TARGET_LEAGUES_UNAVAILABLE', 'PandaScore 未找到 LPL 或全球总决赛', { retryable: true });
+    pandaLeagueCache = { ids, expiresAt: now() + 6 * 60 * 60_000 };
+    return ids;
+  }
+
   async function refreshFootball(competition) {
     requireFootball();
     const headers = { 'X-Auth-Token': footballDataToken, Accept: 'application/json' };
@@ -794,19 +939,24 @@ export function createContentService({
     const matchesKey = 'sports:lol:matches';
     const standingsKey = 'sports:lol:standings';
     const matchResult = await synchronize(matchesKey, 'PandaScore', async () => {
+      const leagueIds = await pandaTargetLeagueIds(headers);
+      const leagueFilter = encodeURIComponent(leagueIds.join(','));
       const endpoints = [
-        `${pandaScoreBaseUrl}/lol/matches/running?per_page=20`,
-        `${pandaScoreBaseUrl}/lol/matches/upcoming?sort=begin_at&per_page=20`,
-        `${pandaScoreBaseUrl}/lol/matches/past?sort=-begin_at&per_page=20`
+        `${pandaScoreBaseUrl}/lol/matches/running?filter[league_id]=${leagueFilter}&per_page=100`,
+        `${pandaScoreBaseUrl}/lol/matches/upcoming?filter[league_id]=${leagueFilter}&sort=begin_at&per_page=100`,
+        `${pandaScoreBaseUrl}/lol/matches/past?filter[league_id]=${leagueFilter}&sort=-begin_at&per_page=100`
       ];
       const responses = await Promise.all(endpoints.map(url => fetchJson(fetchImpl, url, { headers }, 'PANDASCORE')));
       if (responses.some(body => !Array.isArray(body))) throw new ContentError(502, 'PANDASCORE_INVALID_RESPONSE', 'PandaScore 未返回可用的比赛列表', { retryable: true });
       const byId = new Map();
       for (const match of responses.flat()) {
-        if (match?.id == null) continue;
+        if (match?.id == null || !isWantedPandaMatch(match, new Set(leagueIds))) continue;
         try { byId.set(String(match.id), transformPandaMatch(match)); } catch {}
       }
-      const selected = [...byId.values()].filter(item => Number.isFinite(Date.parse(item.startsAt))).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+      const transformed = [...byId.values()].filter(item => Number.isFinite(Date.parse(item.startsAt)));
+      const upcoming = transformed.filter(item => !['finished', 'cancelled'].includes(item.status)).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt)).slice(0, 20);
+      const history = transformed.filter(item => ['finished', 'cancelled'].includes(item.status)).sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt)).slice(0, 20);
+      const selected = [...upcoming, ...history];
       await localizeTeams(selected, [item => item.home, item => item.away]);
       return selected;
     });
@@ -883,19 +1033,44 @@ export function createContentService({
     }
   }
 
+  async function fetchRssNews() {
+    if (!rssNewsSources.length) throw new ContentError(503, 'RSS_NEWS_UNCONFIGURED', '未配置新闻 RSS 兜底来源', { retryable: false });
+    const results = await Promise.allSettled(rssNewsSources.map(async source => {
+      const xml = await fetchText(fetchImpl, source.url, { headers: { Accept: 'application/rss+xml, application/xml, text/xml;q=0.9' } }, 'RSS_NEWS');
+      return parseRssFeed(xml, source);
+    }));
+    const articles = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
+    if (!articles.length) {
+      const firstError = results.find(result => result.status === 'rejected')?.reason;
+      throw firstError || new ContentError(502, 'RSS_NEWS_EMPTY', '公开 RSS 未返回可用新闻', { retryable: true });
+    }
+    return buildRssFeeds(articles);
+  }
+
   async function refreshGdeltNews() {
     requireNews();
     const inflightKey = 'news:gdelt:all';
     if (refreshInflight.has(inflightKey)) return refreshInflight.get(inflightKey);
-    const provider = 'GDELT Project';
+    let provider = 'GDELT Project';
     const keys = Object.keys(NEWS_CHANNELS).map(channel => ({ channel, key: `news:${channel}` }));
     const pending = (async () => {
       for (const item of keys) markAttempt(item.key, provider);
       try {
-        const body = await fetchGdeltNews();
-        if (!Array.isArray(body?.articles)) throw new ContentError(502, 'GDELT_INVALID_RESPONSE', 'GDELT 未返回新闻列表', { retryable: true });
-        const feeds = buildGdeltFeeds(body.articles);
-        if (!feeds.featured.length) throw new ContentError(502, 'GDELT_NEWS_EMPTY', 'GDELT 未返回可用的中文新闻', { retryable: true });
+        let feeds;
+        let gdeltError;
+        try {
+          const body = await fetchGdeltNews();
+          if (!Array.isArray(body?.articles)) throw new ContentError(502, 'GDELT_INVALID_RESPONSE', 'GDELT 未返回新闻列表', { retryable: true });
+          feeds = buildGdeltFeeds(body.articles);
+          if (!feeds.featured.length) throw new ContentError(502, 'GDELT_NEWS_EMPTY', 'GDELT 未返回可用的中文新闻', { retryable: true });
+        } catch (error) {
+          gdeltError = error;
+          if (!['GDELT_UPSTREAM_UNREACHABLE', 'GDELT_UPSTREAM_HTTP_ERROR', 'GDELT_INVALID_RESPONSE', 'GDELT_NEWS_EMPTY'].includes(error?.code)) throw error;
+          feeds = await fetchRssNews();
+          provider = '36氪 / 中新网 RSS';
+          logger.warn?.(`GDELT unavailable, using public RSS fallback: ${error.message}`);
+        }
+        if (!feeds.featured.length) throw gdeltError || new ContentError(502, 'RSS_NEWS_EMPTY', '公开 RSS 未返回可用新闻', { retryable: true });
         const updatedAt = iso(now());
         const refreshed = [];
         const errors = [];
@@ -908,8 +1083,8 @@ export function createContentService({
               markSuccess(item.key, provider, updatedAt);
               refreshed.push(item.channel);
             } else {
-              const code = `GDELT_${item.channel.toUpperCase()}_EMPTY`;
-              const error = new ContentError(502, code, `GDELT 本轮没有筛选出可用的${NEWS_CHANNELS[item.channel].topic}资讯`, { retryable: true });
+              const code = `${provider === 'GDELT Project' ? 'GDELT' : 'RSS_NEWS'}_${item.channel.toUpperCase()}_EMPTY`;
+              const error = new ContentError(502, code, `${provider} 本轮没有筛选出可用的${NEWS_CHANNELS[item.channel].topic}资讯`, { retryable: true });
               markFailure(item.key, provider, error);
               errors.push({ id: item.channel, status: error.status, code: error.code, message: error.message, retryable: error.retryable });
             }
@@ -972,21 +1147,40 @@ export function createContentService({
     if (!matches) unavailableForCompetition(competition);
     const standings = parseCache(`sports:${competitionId}:standings`);
     const standingsValue = standings?.value;
-    const standingsRows = Array.isArray(standingsValue) ? standingsValue : Array.isArray(standingsValue?.rows) ? standingsValue.rows : [];
+    const cachedStandingsRows = Array.isArray(standingsValue) ? standingsValue : Array.isArray(standingsValue?.rows) ? standingsValue.rows : [];
     const standingsContext = Array.isArray(standingsValue) ? null : standingsValue?.context || null;
+    if (competitionId !== 'lol') {
+      for (const match of matches.value) {
+        applyFootballTeamZh(match.home);
+        applyFootballTeamZh(match.away);
+        match.stage = footballStageZh(match.stage);
+      }
+      for (const row of cachedStandingsRows) applyFootballTeamZh(row.team);
+    }
+    const matchesValue = competitionId === 'lol' ? matches.value.filter(isWantedCachedPandaMatch) : matches.value;
+    const validLolStandings = competitionId !== 'lol' || (standingsContext && isWantedCachedPandaMatch({ stage: standingsContext.series, round: standingsContext.name }));
+    const standingsRows = validLolStandings ? cachedStandingsRows : [];
     const providerStandingsWarning = standings ? warningFor(`sports:${competitionId}:standings`) : warningFor(`sports:${competitionId}:standings`) || { code: 'STANDINGS_CACHE_EMPTY', message: '暂无真实积分榜数据' };
     const scopeWarning = competitionId === 'lol' && standingsRows.length
       ? standingsContext
         ? { code: 'PANDASCORE_TOURNAMENT_SCOPE', message: `当前积分榜仅对应 ${standingsContext.series} · ${standingsContext.name}，不代表全部英雄联盟赛事。` }
         : { code: 'PANDASCORE_TOURNAMENT_CONTEXT_MISSING', message: '该积分榜来自旧缓存且缺少赛事范围，请刷新后再查看。' }
       : null;
+    const filteredScopeWarning = competitionId === 'lol' && cachedStandingsRows.length && !validLolStandings
+      ? { code: 'PANDASCORE_SCOPE_FILTERED', message: '旧积分榜不属于 LPL 或全球总决赛，已隐藏并等待重新同步。' }
+      : null;
+    const meta = metaFor(matches, `sports:${competitionId}:matches`, sportsTtlMs);
+    if (competitionId === 'lol' && matches.value.length && !matchesValue.length) {
+      meta.stale = true;
+      meta.warning = { code: 'PANDASCORE_SCOPE_FILTERED', message: '旧赛程不属于 LPL 或全球总决赛，已隐藏并等待重新同步。' };
+    }
     return {
       competition: publicCompetition(competition),
-      matches: matches.value,
+      matches: matchesValue,
       standings: standingsRows,
       standingsContext,
-      standingsWarning: providerStandingsWarning || scopeWarning,
-      meta: metaFor(matches, `sports:${competitionId}:matches`, sportsTtlMs)
+      standingsWarning: providerStandingsWarning || filteredScopeWarning || scopeWarning,
+      meta
     };
   }
 
@@ -994,7 +1188,14 @@ export function createContentService({
     for (const competition of COMPETITIONS) {
       const row = parseCache(`sports:${competition.id}:matches`);
       const match = row?.value?.find?.(item => item.id === id);
-      if (match) return { match, meta: metaFor(row, `sports:${competition.id}:matches`, sportsTtlMs) };
+      if (match && (competition.id !== 'lol' || isWantedCachedPandaMatch(match))) {
+        if (competition.id !== 'lol') {
+          applyFootballTeamZh(match.home);
+          applyFootballTeamZh(match.away);
+          match.stage = footballStageZh(match.stage);
+        }
+        return { match, meta: metaFor(row, `sports:${competition.id}:matches`, sportsTtlMs) };
+      }
     }
     throw new ContentError(404, 'MATCH_NOT_FOUND', '比赛不存在或已下架');
   }

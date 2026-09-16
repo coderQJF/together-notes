@@ -71,11 +71,11 @@ test('football data is transformed, images are localized, and a failed refresh s
     if (url === 'https://images.example/home.png') return new Response(png, { status: 200, headers: { 'Content-Type': 'image/png' } });
     if (upstreamFails) return new Response(JSON.stringify({ message: 'maintenance' }), { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '17' } });
     if (url.endsWith('/competitions/PL/matches')) return Response.json({ matches: [
-      { id: 101, utcDate: '2026-09-18T18:00:00Z', status: 'TIMED', stage: 'REGULAR_SEASON', matchday: 4, homeTeam: { id: 1, name: 'Home FC', shortName: 'Home', tla: 'HOM', crest: 'https://images.example/home.png' }, awayTeam: { id: 2, name: 'Away FC', shortName: 'Away', tla: 'AWY', crest: null }, score: { winner: null, fullTime: { home: null, away: null } }, season: { id: 22 } },
-      { id: 100, utcDate: '2026-09-12T18:00:00Z', status: 'FINISHED', stage: 'REGULAR_SEASON', matchday: 3, homeTeam: { id: 2, name: 'Away FC', tla: 'AWY' }, awayTeam: { id: 1, name: 'Home FC', tla: 'HOM', crest: 'https://images.example/home.png' }, score: { winner: 'AWAY_TEAM', fullTime: { home: 1, away: 2 } }, season: { id: 22 } }
+      { id: 101, utcDate: '2026-09-18T18:00:00Z', status: 'TIMED', stage: 'REGULAR_SEASON', matchday: 4, homeTeam: { id: 1, name: 'Brentford FC', shortName: 'Brentford', tla: 'BRE', crest: 'https://images.example/home.png' }, awayTeam: { id: 2, name: 'Chelsea FC', shortName: 'Chelsea', tla: 'CHE', crest: null }, score: { winner: null, fullTime: { home: null, away: null } }, season: { id: 22 } },
+      { id: 100, utcDate: '2026-09-12T18:00:00Z', status: 'FINISHED', stage: 'REGULAR_SEASON', matchday: 3, homeTeam: { id: 2, name: 'Chelsea FC', tla: 'CHE' }, awayTeam: { id: 1, name: 'Brentford FC', tla: 'BRE', crest: 'https://images.example/home.png' }, score: { winner: 'AWAY_TEAM', fullTime: { home: 1, away: 2 } }, season: { id: 22 } }
     ] });
     if (url.endsWith('/competitions/PL/standings')) return Response.json({ standings: [
-      { type: 'TOTAL', table: [{ position: 1, team: { id: 1, name: 'Home FC', tla: 'HOM', crest: 'https://images.example/home.png' }, playedGames: 4, won: 3, draw: 1, lost: 0, goalDifference: 6, points: 10 }] },
+      { type: 'TOTAL', table: [{ position: 1, team: { id: 1, name: 'Brentford FC', tla: 'BRE', crest: 'https://images.example/home.png' }, playedGames: 4, won: 3, draw: 1, lost: 0, goalDifference: 6, points: 10 }] },
       { type: 'HOME', table: [{ position: 1, team: { id: 3, name: 'Home-only table must not leak', tla: 'BAD' }, playedGames: 2, won: 2, draw: 0, lost: 0, goalDifference: 4, points: 6 }] },
       { type: 'AWAY', table: [{ position: 1, team: { id: 4, name: 'Away-only table must not leak', tla: 'BAD' }, playedGames: 2, won: 2, draw: 0, lost: 0, goalDifference: 3, points: 6 }] }
     ] });
@@ -91,6 +91,10 @@ test('football data is transformed, images are localized, and a failed refresh s
     assert.equal(sports.status, 200);
     assert.equal(sports.body.matches.length, 2);
     assert.equal(sports.body.matches[0].id, 'football:101');
+    assert.equal(sports.body.matches[0].home.name, '布伦特福德');
+    assert.equal(sports.body.matches[0].home.shortName, '布伦特福德');
+    assert.equal(sports.body.matches[0].away.name, '切尔西');
+    assert.equal(sports.body.matches[0].stage, '常规赛');
     assert.equal(sports.body.matches[0].score, null);
     assert.equal(sports.body.matches[1].score.away, 2);
     assert.equal(sports.body.standings.length, 1);
@@ -105,7 +109,7 @@ test('football data is transformed, images are localized, and a failed refresh s
 
     const detail = await context.call('/content/sports/matches/' + encodeURIComponent('football:101'));
     assert.equal(detail.status, 200);
-    assert.equal(detail.body.match.home.name, 'Home FC');
+    assert.equal(detail.body.match.home.name, '布伦特福德');
 
     currentTime += 120_000;
     upstreamFails = true;
@@ -119,6 +123,15 @@ test('football data is transformed, images are localized, and a failed refresh s
     assert.equal(stale.body.meta.stale, true);
     assert.equal(stale.body.meta.warning.code, 'FOOTBALL_DATA_UPSTREAM_HTTP_ERROR');
     assert.equal(stale.body.matches[0].id, 'football:101');
+    const legacyMatches = structuredClone(stale.body.matches);
+    legacyMatches[0].home = { ...legacyMatches[0].home, name: 'Brentford FC', shortName: 'BRE' };
+    legacyMatches[0].away = { ...legacyMatches[0].away, name: 'Chelsea FC', shortName: 'CHE' };
+    legacyMatches[0].stage = 'REGULAR SEASON';
+    context.app.db.prepare('UPDATE content_cache SET payload=? WHERE cache_key=?').run(JSON.stringify(legacyMatches), 'sports:epl:matches');
+    const legacy = await context.call('/content/sports/epl');
+    assert.equal(legacy.body.matches[0].home.shortName, '布伦特福德');
+    assert.equal(legacy.body.matches[0].away.shortName, '切尔西');
+    assert.equal(legacy.body.matches[0].stage, '常规赛');
   } finally { await context.close(); }
 });
 
@@ -128,8 +141,18 @@ test('PandaScore and NewsAPI payloads stay real while unsafe remote images are r
     const url = String(input);
     requested.push(url);
     if (url === 'https://cdn.example/news.png' || url === 'https://cdn.example/team.png') return new Response(png, { status: 200, headers: { 'Content-Type': 'image/png' } });
+    if (url.includes('/lol/leagues?')) {
+      const search = new URL(url).searchParams.get('search[name]');
+      if (search === 'LPL') return Response.json([{ id: 10, name: 'LPL', slug: 'lpl' }, { id: 11, name: 'LCK', slug: 'lck' }]);
+      if (search === 'World Championship') return Response.json([{ id: 20, name: 'World Championship', slug: 'world-championship' }]);
+      if (search === 'Worlds') return Response.json([{ id: 20, name: 'World Championship', slug: 'world-championship' }]);
+    }
     if (url.includes('/lol/matches/running')) return Response.json([]);
-    if (url.includes('/lol/matches/upcoming')) return Response.json([{ id: 501, begin_at: '2026-09-18T09:00:00Z', status: 'not_started', number_of_games: 3, league: { name: 'LPL' }, serie: { full_name: '2026 Regional Finals' }, tournament: { id: 88, name: 'Winner Bracket' }, tournament_id: 88, opponents: [{ opponent: { id: 11, name: 'Alpha', acronym: 'ALP', image_url: 'https://cdn.example/team.png' } }, { opponent: { id: 12, name: 'Beta', acronym: 'BET' } }], results: [] }]);
+    if (url.includes('/lol/matches/upcoming')) return Response.json([
+      { id: 501, begin_at: '2026-09-18T09:00:00Z', status: 'not_started', number_of_games: 3, league: { id: 10, name: 'LPL', slug: 'lpl' }, serie: { full_name: '2026 Regional Finals' }, tournament: { id: 88, name: 'Winner Bracket' }, tournament_id: 88, opponents: [{ opponent: { id: 11, name: 'Alpha', acronym: 'ALP', image_url: 'https://cdn.example/team.png' } }, { opponent: { id: 12, name: 'Beta', acronym: 'BET' } }], results: [] },
+      { id: 502, begin_at: '2026-10-08T09:00:00Z', status: 'not_started', number_of_games: 5, league: { id: 20, name: 'World Championship', slug: 'world-championship' }, serie: { full_name: '2026 Worlds' }, tournament: { id: 99, name: 'Swiss Stage' }, tournament_id: 99, opponents: [{ opponent: { id: 13, name: 'Gamma', acronym: 'GAM' } }, { opponent: { id: 14, name: 'Delta', acronym: 'DEL' } }], results: [] },
+      { id: 503, begin_at: '2026-09-19T09:00:00Z', status: 'not_started', number_of_games: 3, league: { id: 11, name: 'LCK', slug: 'lck' }, serie: { full_name: '2026 LCK' }, tournament: { id: 77, name: 'Playoffs' }, tournament_id: 77, opponents: [{ opponent: { id: 15, name: 'Other One', acronym: 'ONE' } }, { opponent: { id: 16, name: 'Other Two', acronym: 'TWO' } }], results: [] }
+    ]);
     if (url.includes('/lol/matches/past')) return Response.json([]);
     if (url.includes('/tournaments/88/standings')) return Response.json([{ rank: 1, team: { id: 11, name: 'Alpha', acronym: 'ALP', image_url: 'https://cdn.example/team.png' }, wins: 3, losses: 0 }]);
     if (url.includes('/everything?')) return Response.json({ status: 'ok', articles: [
@@ -144,6 +167,8 @@ test('PandaScore and NewsAPI payloads stay real while unsafe remote images are r
     assert.equal(sportsRefresh.status, 200);
     const sports = await context.call('/content/sports/lol');
     assert.equal(sports.status, 200);
+    assert.equal(sports.body.matches.length, 2);
+    assert.deepEqual(sports.body.matches.map(match => match.id), ['pandascore:501', 'pandascore:502']);
     assert.equal(sports.body.matches[0].format, 'BO3');
     assert.equal(sports.body.matches[0].tournamentId, '88');
     assert.equal(sports.body.standings[0].record, '3胜 0负');
@@ -151,6 +176,9 @@ test('PandaScore and NewsAPI payloads stay real while unsafe remote images are r
     assert.equal(sports.body.standingsContext.name, 'Winner Bracket');
     assert.equal(sports.body.standingsWarning.code, 'PANDASCORE_TOURNAMENT_SCOPE');
     assert.match(sports.body.matches[0].home.logoUrl, /^\/api\/media\//);
+    for (const url of requested.filter(value => value.includes('/lol/matches/'))) {
+      assert.equal(new URL(url).searchParams.get('filter[league_id]'), '10,20');
+    }
 
     const newsRefresh = await context.call('/content/refresh', 'POST', { target: 'news', channel: 'market' });
     assert.equal(newsRefresh.status, 200);
@@ -214,6 +242,34 @@ test('GDELT uses one real response for all news channels without inventing missi
     assert.equal(limited.status, 429);
     assert.equal(limited.body.error.code, 'CONTENT_REFRESH_RATE_LIMITED');
     assert.equal(requested.length, 1);
+  } finally { await context.close(); }
+});
+
+test('unreachable GDELT falls back to fresh public Chinese RSS without mock content', async () => {
+  const rss = {
+    'https://www.36kr.com/feed': `<?xml version="1.0"?><rss><channel><item><title><![CDATA[AI 芯片企业完成新一轮融资]]></title><link>https://www.36kr.com/p/100</link><pubDate>Wed, 16 Sep 2026 14:35:10 +0800</pubDate></item></channel></rss>`,
+    'https://www.chinanews.com.cn/rss/finance.xml': `<?xml version="1.0"?><rss><channel><item><title>A股市场成交额出现新变化</title><link>https://www.chinanews.com.cn/cj/2026/09-16/100.shtml</link><pubDate>Wed, 16 Sep 2026 14:56:52 +0800</pubDate></item></channel></rss>`
+  };
+  const fetchImpl = async input => {
+    const url = String(input);
+    if (url.startsWith('https://api.gdeltproject.org/')) throw new Error('fetch failed');
+    if (rss[url]) return new Response(rss[url], { status: 200, headers: { 'Content-Type': 'application/rss+xml; charset=utf-8' } });
+    throw new Error(`unexpected URL ${url}`);
+  };
+  const context = await setup({ newsProvider: 'gdelt', logger: { warn() {}, error() {} } }, fetchImpl);
+  try {
+    const refresh = await context.call('/content/refresh', 'POST', { target: 'news' });
+    assert.equal(refresh.status, 200);
+    assert.equal(refresh.body.ok, true);
+    const featured = await context.call('/content/news?channel=featured');
+    assert.equal(featured.status, 200);
+    assert.equal(featured.body.meta.provider, '36氪 / 中新网 RSS');
+    assert.equal(featured.body.stories.length, 2);
+    assert.ok(featured.body.stories.every(story => story.summary === '' && story.content === ''));
+    const market = await context.call('/content/news?channel=market');
+    assert.equal(market.body.stories.some(story => story.source === '中新网财经'), true);
+    const hot = await context.call('/content/news?channel=hot');
+    assert.equal(hot.body.stories.some(story => story.source === '36氪'), true);
   } finally { await context.close(); }
 });
 
