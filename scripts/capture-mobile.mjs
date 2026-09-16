@@ -12,6 +12,7 @@ let session = process.env.QA_SESSION || ''
 let itemId = process.env.QA_ITEM_ID || ''
 const widths = (process.env.CAPTURE_WIDTHS || '320,375,390,430').split(',').map(Number).filter(Boolean)
 const remotePort = Number(process.env.CDP_PORT || 9231)
+const sportsCompetition = process.env.QA_SPORTS_COMPETITION || ''
 const profileDir = await mkdtemp(join(tmpdir(), 'together-notes-cdp-'))
 let qaApp
 
@@ -158,15 +159,10 @@ const screens = [
   ...(itemId ? [{ name: 'detail-note', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '周末一起去看展' }] : []),
   { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },
   { name: 'editor-reminder', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间' },
-  { name: 'sports-upcoming', path: '/pages/sports/sports', ready: '一起等开球' },
-  { name: 'sports-results', path: '/pages/sports/sports', ready: '一起等开球', click: '历史赛果', clicked: '最近结束' },
-  { name: 'sports-standings', path: '/pages/sports/sports', ready: '一起等开球', click: '积分榜', clicked: '示例排名' },
-  { name: 'match-detail', path: '/pages/match-detail/match-detail?id=epl-ars-mci', ready: '设置开赛提醒' },
-  { name: 'news-featured', path: '/pages/news/news', ready: '新鲜事' },
-  { name: 'news-market', path: '/pages/news/news', ready: '新鲜事', click: '股市', clicked: 'AI 基建热度之外' },
-  { name: 'news-hot', path: '/pages/news/news', ready: '新鲜事', click: '热点', clicked: '年轻人的新消费' },
-  { name: 'news-detail', path: '/pages/news-detail/news-detail?id=market-opening-signals', ready: '开盘前先看这三类信号' },
-  { name: 'news-detail-saved', path: '/pages/news-detail/news-detail?id=market-opening-signals', ready: '开盘前先看这三类信号', click: '收藏这条', selector: '.save', clicked: '已收藏，留着慢慢看' },
+  { name: 'sports-provider-error', path: '/pages/sports/sports', ready: '赛事数据获取失败' },
+  { name: 'match-provider-error', path: '/pages/match-detail/match-detail?id=unavailable', ready: '无法显示这场比赛' },
+  { name: 'news-provider-error', path: '/pages/news/news', ready: '新闻数据获取失败' },
+  { name: 'news-detail-error', path: '/pages/news-detail/news-detail?id=unavailable', ready: '无法显示这条新闻' },
   { name: 'pair-invite', path: '/pages/pair/pair?mode=invite', ready: '把小记' },
   { name: 'pair-join', path: '/pages/pair/pair?mode=join', ready: '加入彼此' },
   { name: 'inbox', path: '/pages/inbox/inbox', ready: '到时间了' },
@@ -196,7 +192,7 @@ try {
   await wait(700)
   if (session) {
     await page.call('Runtime.evaluate', {
-      expression: `localStorage.setItem('session', ${JSON.stringify(session)}); localStorage.removeItem('saved-demo-stories')`,
+      expression: `localStorage.setItem('session', ${JSON.stringify(session)}); localStorage.removeItem('saved-news-stories'); ${sportsCompetition ? `localStorage.setItem('sports-competition', ${JSON.stringify(sportsCompetition)})` : "localStorage.removeItem('sports-competition')"}`,
     })
   }
 

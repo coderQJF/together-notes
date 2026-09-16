@@ -1,8 +1,54 @@
 export interface Attachment {id:string;name:string;size:number}
 export interface User {id:string;nickname:string;partner:{id:string;nickname:string}|null}
-export interface Item {id?:string;owner?:string;kind:'note'|'reminder';title:string;content:string;scope:'mine'|'shared';pinned?:boolean;attachments?:Attachment[];links:string[];nextAt?:string;repeat?:string;recipient?:string;advance?:number;done?:boolean;updatedAt?:string}
+export interface Item {id?:string;owner?:string;kind:'note'|'reminder';title:string;content:string;scope:'mine'|'shared';pinned?:boolean;attachments?:Attachment[];links:string[];sourceKey?:string;nextAt?:string;repeat?:string;recipient?:string;advance?:number;done?:boolean;updatedAt?:string}
 export interface Message {id:string;title:string;due:string;seen:number}
-export const request=<T>(path:string,method:'GET'|'POST'|'PUT'|'DELETE'='GET',data?:unknown):Promise<T>=>new Promise((resolve,reject)=>uni.request({url:(import.meta.env.VITE_API_BASE||'/api')+path,method,data:data as any,header:{Authorization:'Bearer '+(uni.getStorageSync('session')||'')},success:r=>{if(r.statusCode>=200&&r.statusCode<300)resolve(r.data as T);else{if(r.statusCode===401)uni.removeStorageSync('session');reject(new Error((r.data as any)?.message||'请求失败'))}},fail:()=>reject(new Error('连接失败，请检查网络或后端服务'))}));
+
+export class ApiError extends Error {
+  status: number
+  code: string
+
+  constructor(message: string, status = 0, code = 'NETWORK_ERROR') {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+const apiBase = () => String(import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')
+
+export function apiAssetUrl(value?: string | null) {
+  if (!value || /^https?:\/\//i.test(value)) return value || ''
+  if (!value.startsWith('/')) return value
+  const base = apiBase()
+  if (base.startsWith('/')) return value
+  return base.replace(/\/api$/i, '') + value
+}
+
+export const request = <T>(path: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', data?: unknown, options: { timeout?: number } = {}): Promise<T> => new Promise((resolve, reject) => uni.request({
+  url: apiBase() + path,
+  method,
+  timeout: options.timeout ?? 15000,
+  data: data as any,
+  header: { Authorization: 'Bearer ' + (uni.getStorageSync('session') || '') },
+  success: response => {
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      resolve(response.data as T)
+      return
+    }
+    if (response.statusCode === 401) uni.removeStorageSync('session')
+    const body = response.data as { message?: string; code?: string; error?: { message?: string; code?: string } } | undefined
+    reject(new ApiError(body?.error?.message || body?.message || '请求失败', response.statusCode, body?.error?.code || body?.code || `HTTP_${response.statusCode}`))
+  },
+  fail: failure => {
+    const timedOut = /timeout/i.test(String(failure?.errMsg || ''))
+    reject(new ApiError(
+      timedOut ? (options.timeout && options.timeout > 15000 ? '同步等待超时，服务器可能仍在继续更新，请稍后再试' : '请求超时，请稍后重试') : '连接失败，请检查网络或后端服务',
+      0,
+      timedOut ? 'REQUEST_TIMEOUT' : 'NETWORK_ERROR',
+    ))
+  },
+}))
 export async function login(){let result:{token:string;user:User};
 // #ifdef MP-WEIXIN
 const code=await new Promise<string>((resolve,reject)=>uni.login({provider:'weixin',success:r=>resolve(r.code),fail:()=>reject(new Error('微信登录失败'))}));result=await request('/auth/wechat','POST',{code});

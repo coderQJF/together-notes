@@ -22,12 +22,13 @@ async function load() {
   loading.value = !item.value
   error.value = ''
   try {
-    const [nextItem, nextUser] = await Promise.all([
+    const [itemResult, userResult] = await Promise.allSettled([
       request<Item>(`/items/${encodeURIComponent(itemId)}`),
       request<User>('/me'),
     ])
-    item.value = nextItem
-    user.value = nextUser
+    if (itemResult.status === 'rejected') throw itemResult.reason
+    item.value = itemResult.value
+    user.value = userResult.status === 'fulfilled' ? userResult.value : null
   } catch (e) {
     error.value = e instanceof Error ? e.message : '内容加载失败'
   } finally {
@@ -174,8 +175,8 @@ onUnload(() => { active = false })
       </view>
 
       <view class="actions">
-        <button class="primary" @click="edit">编辑</button>
-        <button v-if="item.owner === user?.id" class="danger" :disabled="pending === 'delete'" @click="remove">
+        <button class="primary" hover-class="none" @click="edit">编辑</button>
+        <button v-if="item.owner === user?.id" class="danger" hover-class="none" :disabled="pending === 'delete'" @click="remove">
           {{ pending === 'delete' ? '删除中…' : '删除' }}
         </button>
       </view>
@@ -191,7 +192,7 @@ onUnload(() => { active = false })
 .headline{display:block;margin:24px 0 14px;font-size:32px;font-weight:600;line-height:1.35;letter-spacing:-.6px;word-break:break-word}.body-text{display:block;min-height:48px;margin:0 0 28px;color:#4b4438;font-size:16px;line-height:1.9;white-space:pre-wrap;word-break:break-word}
 .reminder-card{padding:21px;margin:8px 0 28px;border:1px solid #ece5d6;border-radius:21px;background:#fff}.card-kicker,.section-label{display:block;margin-bottom:12px;color:#786d5b;font-size:12px}.reminder-time{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}.reminder-date{color:#62594a;font-size:14px;line-height:1.5}.reminder-clock{font-size:26px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums;white-space:nowrap}.reminder-meta{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:14px;color:#786d5b;font-size:13px}.dot{color:#a99b82}
 .section{margin:26px 0}.resource{display:flex;align-items:center;gap:12px;width:100%;min-height:68px;margin:10px 0;padding:12px 14px;border:1px solid #ece5d6;border-radius:16px;background:#fff;color:#3e382d;text-align:left;line-height:1.4}.resource::after{border:0}.resource-mark{display:flex;align-items:center;justify-content:center;width:38px;height:38px;flex:0 0 38px;border-radius:12px;background:#f7e7ad}.resource-icon{display:block;width:20px;height:20px}.resource-copy{min-width:0;flex:1}.resource-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.link-title{color:#83692e}.small{display:block;margin-top:4px;font-size:11px}.muted{color:#786d5b}.chevron{width:8px;height:8px;flex:0 0 8px;margin-right:3px;border-top:1.5px solid #a79b87;border-right:1.5px solid #a79b87;transform:rotate(45deg)}
-.actions{display:flex;gap:12px;margin-top:34px}.actions button{display:flex;align-items:center;justify-content:center;height:50px;margin:0;border-radius:15px;font-size:15px;line-height:1}.actions button::after{border:0}.primary{flex:1;background:#494032;color:#fff9e9}.danger{width:38%;border:1px solid #eadfd1;background:#fff;color:#ae4b3b}.secondary{min-width:140px;height:46px;margin-top:8px;border:1px solid #ece5d6;border-radius:14px;background:#fff;color:#494032}.secondary::after{border:0}
+.actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:34px}.actions button{display:flex;align-items:center;justify-content:center;width:100%;height:50px;min-height:50px;margin:0;padding:0 16px;border-radius:15px;font-size:15px;line-height:normal}.actions button:only-child{grid-column:1/-1}.actions button::after{border:0}.primary{background:#494032;color:#fff9e9}.danger{border:1px solid #eadfd1;background:#fff;color:#ae4b3b}.secondary{min-width:140px;height:46px;margin-top:8px;border:1px solid #ece5d6;border-radius:14px;background:#fff;color:#494032}.secondary::after{border:0}
 /* #ifdef MP-WEIXIN */
 .shell{padding-top:0}
 /* #endif */
