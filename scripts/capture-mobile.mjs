@@ -155,6 +155,7 @@ const screenNames = new Set((process.env.CAPTURE_SCREENS || '').split(',').map(v
 const screens = [
   { name: 'index-notes', path: '/pages/index/index', ready: '周末一起去看展' },
   { name: 'index-reminders', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事' },
+  { name: 'index-search', path: '/pages/index/index', ready: '周末一起去看展', click: '问问', clicked: '问问我们的小记' },
   { name: 'index-us', path: '/pages/index/index', ready: '周末一起去看展', click: '我们', clicked: '我们的小空间' },
   ...(itemId ? [{ name: 'detail-note', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '周末一起去看展' }] : []),
   { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },

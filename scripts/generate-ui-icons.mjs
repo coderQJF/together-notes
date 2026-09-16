@@ -17,6 +17,8 @@ const icons = [
   ['location.svg', 'location-active.png', '#8b6b25'],
   ['refresh.svg', 'refresh-active.png', '#786d5b'],
   ['heart-filled.svg', 'heart-filled.png', '#494032'],
+  ['search.svg', 'search-inactive.png', '#fff9e9'],
+  ['search.svg', 'search-active.png', '#494032'],
 ]
 
 const wait = ms => new Promise(resolveWait => setTimeout(resolveWait, ms))
