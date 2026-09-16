@@ -33,7 +33,7 @@ test('content endpoints report unconfigured real providers without fallback data
   try {
     const competitions = await context.call('/content/competitions');
     assert.equal(competitions.status, 200);
-    assert.deepEqual(competitions.body.competitions.map(item => item.id), ['epl', 'laliga', 'ucl', 'lol']);
+    assert.deepEqual(competitions.body.competitions.map(item => item.id), ['epl', 'ucl', 'lol', 'laliga']);
     assert.equal(competitions.body.meta.stale, true);
 
     const sports = await context.call('/content/sports/epl');
@@ -196,6 +196,39 @@ test('PandaScore and NewsAPI payloads stay real while unsafe remote images are r
   } finally { await context.close(); }
 });
 
+test('PandaScore tournament without standings keeps matches and exposes a friendly notice', async () => {
+  const fetchImpl = async input => {
+    const url = String(input);
+    if (url.includes('/lol/leagues?')) {
+      const search = new URL(url).searchParams.get('search[name]');
+      if (search === 'LPL') return Response.json([{ id: 10, name: 'LPL', slug: 'lpl' }]);
+      return Response.json([{ id: 20, name: 'World Championship', slug: 'world-championship' }]);
+    }
+    if (url.includes('/lol/matches/running') || url.includes('/lol/matches/past')) return Response.json([]);
+    if (url.includes('/lol/matches/upcoming')) return Response.json([
+      { id: 601, begin_at: '2026-09-18T09:00:00Z', status: 'not_started', number_of_games: 3, league: { id: 10, name: 'LPL', slug: 'lpl' }, serie: { full_name: '2026 LPL' }, tournament: { id: 188, name: 'Playoffs' }, tournament_id: 188, opponents: [{ opponent: { id: 21, name: 'Alpha', acronym: 'ALP' } }, { opponent: { id: 22, name: 'Beta', acronym: 'BET' } }], results: [] }
+    ]);
+    if (url.includes('/tournaments/188/standings')) return new Response('{"error":"Record not found"}', { status: 404, headers: { 'Content-Type': 'application/json' } });
+    throw new Error(`unexpected URL ${url}`);
+  };
+  const context = await setup({ pandaScoreToken: 'panda-token' }, fetchImpl);
+  try {
+    const refresh = await context.call('/content/refresh', 'POST', { target: 'sports', competitionId: 'lol' });
+    assert.equal(refresh.status, 200);
+    assert.equal(refresh.body.ok, false);
+    assert.equal(refresh.body.errors[0].code, 'PANDASCORE_STANDINGS_UNAVAILABLE');
+
+    const sports = await context.call('/content/sports/lol');
+    assert.equal(sports.status, 200);
+    assert.equal(sports.body.matches.length, 1);
+    assert.deepEqual(sports.body.standings, []);
+    assert.equal(sports.body.standingsContext, null);
+    assert.equal(sports.body.standingsWarning.code, 'PANDASCORE_STANDINGS_UNAVAILABLE');
+    assert.equal(sports.body.standingsWarning.message, 'PandaScore 暂未提供该阶段积分榜，赛程和赛果不受影响。');
+    assert.doesNotMatch(sports.body.standingsWarning.message, /Record not found|404/);
+  } finally { await context.close(); }
+});
+
 test('GDELT uses one real response for all news channels without inventing missing content', async () => {
   const requested = [];
   const fetchImpl = async input => {
@@ -247,7 +280,7 @@ test('GDELT uses one real response for all news channels without inventing missi
 
 test('unreachable GDELT falls back to fresh public Chinese RSS without mock content', async () => {
   const rss = {
-    'https://www.36kr.com/feed': `<?xml version="1.0"?><rss><channel><item><title><![CDATA[AI 芯片企业完成新一轮融资]]></title><link>https://www.36kr.com/p/100</link><pubDate>Wed, 16 Sep 2026 14:35:10 +0800</pubDate></item></channel></rss>`,
+    'https://www.36kr.com/feed': `<?xml version="1.0"?><rss><channel><item><title><![CDATA[AI 芯片企业完成新一轮融资]]></title><description><![CDATA[<p>企业宣布完成融资，资金将用于先进制程研发与团队扩充。</p>]]></description><link>https://www.36kr.com/p/100</link><pubDate>Wed, 16 Sep 2026 14:35:10 +0800</pubDate></item></channel></rss>`,
     'https://www.chinanews.com.cn/rss/finance.xml': `<?xml version="1.0"?><rss><channel><item><title>A股市场成交额出现新变化</title><link>https://www.chinanews.com.cn/cj/2026/09-16/100.shtml</link><pubDate>Wed, 16 Sep 2026 14:56:52 +0800</pubDate></item></channel></rss>`
   };
   const fetchImpl = async input => {
@@ -265,7 +298,8 @@ test('unreachable GDELT falls back to fresh public Chinese RSS without mock cont
     assert.equal(featured.status, 200);
     assert.equal(featured.body.meta.provider, '36氪 / 中新网 RSS');
     assert.equal(featured.body.stories.length, 2);
-    assert.ok(featured.body.stories.every(story => story.summary === '' && story.content === ''));
+    assert.equal(featured.body.stories.find(story => story.source === '36氪').summary, '企业宣布完成融资，资金将用于先进制程研发与团队扩充。');
+    assert.ok(featured.body.stories.every(story => story.content === ''));
     const market = await context.call('/content/news?channel=market');
     assert.equal(market.body.stories.some(story => story.source === '中新网财经'), true);
     const hot = await context.call('/content/news?channel=hot');

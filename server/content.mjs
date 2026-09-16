@@ -13,9 +13,9 @@ const MB = 1024 * 1024;
 
 export const COMPETITIONS = Object.freeze([
   { id: 'epl', name: '英超', mark: 'PL', kind: '足球', description: '英格兰顶级联赛', provider: 'football-data.org', providerId: 'PL' },
-  { id: 'laliga', name: '西甲', mark: 'LL', kind: '足球', description: '西班牙顶级联赛', provider: 'football-data.org', providerId: 'PD' },
   { id: 'ucl', name: '欧冠', mark: 'CL', kind: '足球', description: '欧洲冠军联赛', provider: 'football-data.org', providerId: 'CL' },
-  { id: 'lol', name: '英雄联盟', mark: 'LOL', kind: '电竞', description: '仅关注 LPL 与全球总决赛', provider: 'PandaScore', providerId: 'lol' }
+  { id: 'lol', name: '英雄联盟', mark: 'LOL', kind: '电竞', description: '仅关注 LPL 与全球总决赛', provider: 'PandaScore', providerId: 'lol' },
+  { id: 'laliga', name: '西甲', mark: 'LL', kind: '足球', description: '西班牙顶级联赛', provider: 'football-data.org', providerId: 'PD' }
 ]);
 
 export class ContentError extends Error {
@@ -483,7 +483,8 @@ function transformGdeltArticle(article, channel) {
 function decodeXml(value) {
   return String(value || '')
     .replace(/^\s*<!\[CDATA\[|\]\]>\s*$/g, '')
-    .replace(/<[^>]*>/g, ' ')
+    .replace(/<script(?:\s[^>]*)?>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style(?:\s[^>]*)?>[\s\S]*?<\/style>/gi, ' ')
     .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
     .replace(/&#(\d+);/g, (_match, decimal) => String.fromCodePoint(Number(decimal)))
     .replace(/&nbsp;/gi, ' ')
@@ -492,8 +493,15 @@ function decodeXml(value) {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&apos;/gi, "'")
+    .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function compactExcerpt(value, limit = 360) {
+  const normalized = asText(value);
+  const points = [...normalized];
+  return points.length > limit ? `${points.slice(0, limit).join('').replace(/[，。；：、,.!?！？\s]+$/u, '')}…` : normalized;
 }
 
 function rssElement(block, name) {
@@ -507,8 +515,11 @@ function parseRssFeed(xml, source) {
   return items.map(item => {
     const originalUrl = asHttpUrl(rssElement(item, 'link'));
     const published = rssElement(item, 'pubDate') || rssElement(item, 'dc:date');
+    const title = rssElement(item, 'title');
+    const description = rssElement(item, 'description') || rssElement(item, 'content:encoded');
     return {
-      title: rssElement(item, 'title'),
+      title,
+      summary: description && description !== title ? compactExcerpt(description) : '',
       originalUrl,
       publishedAt: Number.isFinite(Date.parse(published)) ? iso(published) : '',
       source: source.name,
@@ -523,7 +534,7 @@ function transformRssArticle(article, channel) {
     channel,
     topic: NEWS_CHANNELS[channel].topic,
     title: article.title,
-    summary: '',
+    summary: article.summary || '',
     content: '',
     source: article.source,
     author: null,
@@ -984,7 +995,13 @@ export function createContentService({
           return { rows, context: standingsContext };
         });
         standingResult = { status: 'fulfilled', value };
-      } catch (reason) { standingResult = { status: 'rejected', reason }; }
+      } catch (reason) {
+        if (reason?.code === 'PANDASCORE_REQUEST_REJECTED' && /返回 404/.test(reason.message || '')) {
+          const unavailable = new ContentError(404, 'PANDASCORE_STANDINGS_UNAVAILABLE', 'PandaScore 暂未提供该阶段积分榜，赛程和赛果不受影响。');
+          markFailure(standingsKey, 'PandaScore', unavailable);
+          standingResult = { status: 'rejected', reason: unavailable };
+        } else standingResult = { status: 'rejected', reason };
+      }
     }
     return [{ status: 'fulfilled', value: matchResult }, standingResult];
   }
@@ -1178,7 +1195,7 @@ export function createContentService({
       competition: publicCompetition(competition),
       matches: matchesValue,
       standings: standingsRows,
-      standingsContext,
+      standingsContext: validLolStandings ? standingsContext : null,
       standingsWarning: providerStandingsWarning || filteredScopeWarning || scopeWarning,
       meta
     };

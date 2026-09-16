@@ -62,7 +62,7 @@ NEWS_SYNC_INTERVAL_MS=3600000
 
 - 足球数据来自 [football-data.org](https://www.football-data.org/documentation/quickstart)，英雄联盟数据来自 [PandaScore](https://developers.pandascore.co/reference/get_lol_matches)。PandaScore 同步前会动态查询 LPL 与 World Championship 联赛 ID，再通过 `filter[league_id]` 拉取并在服务端二次过滤；不会展示 LCK、MSI 等其他赛事。新闻生产默认来自 [GDELT Project](https://www.gdeltproject.org/)；其数据可免费用于商业项目，但使用或再分发时必须注明并链接 GDELT Project。
 - GDELT 默认每小时同步一次，每轮只使用一个聚合查询获取最近 24 小时的中文财经、商业与科技资讯；遇到 429 最多延迟重试一次。若服务器无法连接 GDELT 或返回异常数据，则读取 36氪与中新网财经公开 RSS，并在响应中标记实际来源。用户手动刷新有 60 秒全局限流。服务端按真实标题和收录时间去重、做来源多样化，并按标题关键词分流频道；这只是本地整理，不冒充平台热榜。赛事默认每 15 分钟更新。若以后扩为多实例，应把调度器拆成单独 worker。
-- 新闻详情只保存 provider 实际给出的元数据并保留原文链接，不抓取网页正文，也不会拿标题拼成摘要；RSS 兜底同样只保存标题、时间、来源和链接。GDELT DOC 结果通常不含摘要、正文或作者，界面会明确提示。兼容的 [NewsAPI Everything](https://newsapi.org/docs/endpoints/everything) 需显式设置 `NEWS_PROVIDER=newsapi`；Developer 免费方案仅限开发测试，生产必须购买允许生产用途的方案。
+- 新闻详情只保存 provider 实际给出的元数据并保留原文链接，不抓取网页正文，也不会拿标题拼成摘要；RSS 兜底会保留来源实际发布的摘要，未提供时明确提示阅读原文。GDELT DOC 结果通常不含摘要、正文或作者。兼容的 [NewsAPI Everything](https://newsapi.org/docs/endpoints/everything) 需显式设置 `NEWS_PROVIDER=newsapi`；Developer 免费方案仅限开发测试，生产必须购买允许生产用途的方案。
 - 队徽和已确认展示权的新闻配图不放进前端包，而是由服务端下载到持久化 `MEDIA_DIR` 后再通过 `/api/media/*` 提供；下载会校验公网 HTTPS、文件大小、类型与文件特征。GDELT 的 `socialimage` 属于原始出版方，开放数据许可不等于图片版权授权，因此默认不缓存或展示。
 - 媒体缓存默认限制为 512MB/5000 个文件并清理未引用内容；新闻摘要历史默认保留 30 天、最多 1000 条，使已收藏文章在滚出当前资讯流后仍可打开。
 

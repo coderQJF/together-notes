@@ -89,7 +89,7 @@ onLoad(options => {
         <!-- #ifndef H5 -->复制原文链接<!-- #endif -->
       </text></button></view>
 
-      <view v-if="story.content || story.summary" class="article-body"><text>{{ story.content || story.summary }}</text></view>
+      <view v-if="story.content && story.content !== story.summary" class="article-body"><text>{{ story.content }}</text></view>
 
       <view v-if="meta" class="sync-card" :class="{ warning: meta.stale }"><text class="sync-title">{{ meta.provider }} · {{ formatRelativeTime(meta.updatedAt) }}同步</text><text v-if="meta.warning">{{ meta.warning.code }}：{{ meta.warning.message }}</text><text v-else>文章信息来自服务端保存的最后成功同步结果。</text></view>
 
