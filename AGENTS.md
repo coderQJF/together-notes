@@ -31,6 +31,8 @@ After a requested change is implemented and verified, commit all in-scope files,
 - Profile fields are read-only by default. Show an explicit edit action; reveal input plus save/cancel actions only while editing.
 - Search results with citations render as compact, one-result-per-row links. Do not repeat a generated summary above a local result list. A model-only answer may render prose when there are no citations.
 - List metadata and tags must stay vertically centered, single-line, ellipsized, and contained within the card at narrow widths.
+- Custom-navigation subpages keep `SubpageHeader` as the sticky safe-area guard. Scrolled content must never render beneath the WeChat status bar or menu capsule.
+- Do not repeat topic/source tags in a card footer when the same metadata is already visible at the top of the card.
 - Preserve the product palette and geometry already used by the shared primitives: dark brown `#494032`, butter `#f7e7ad`, canvas `#faf8f2`, white cards, 16–22 px card radii.
 
 ## Definition of done
