@@ -27,6 +27,8 @@ const loading = ref(true)
 const pending = ref('')
 const error = ref('')
 const editingExisting = ref(false)
+const wechatStatus = ref<{ configured: boolean; templateId: string | null }>({ configured: false, templateId: null })
+const wechatAccepted = ref(false)
 let active = true
 let closing = false
 
@@ -35,6 +37,11 @@ const pageLabel = computed(() => editingExisting.value
   : `添加${draft.value.kind === 'note' ? '随记' : '提醒'}`)
 const headline = computed(() => draft.value.id ? '再改一改。' : draft.value.kind === 'note' ? '记一笔。' : '别忘了这场。')
 const isGuestEditor = computed(() => Boolean(draft.value.owner && draft.value.owner !== user.value?.id))
+const canSubscribeSelf = computed(() => {
+  if (draft.value.kind !== 'reminder' || !user.value) return false
+  if (draft.value.recipient === 'both') return true
+  return isGuestEditor.value ? draft.value.recipient === 'partner' : draft.value.recipient === 'me'
+})
 
 function syncDateFields() {
   const source = draft.value.nextAt ? new Date(draft.value.nextAt) : new Date(Date.now() + 3600000)
@@ -62,6 +69,9 @@ async function load(options?: Record<string, string | undefined>) {
     }
     linkText.value = (draft.value.links || []).join('\n')
     syncDateFields()
+    // #ifdef MP-WEIXIN
+    try { wechatStatus.value = await request('/wechat/subscription/status') } catch { wechatStatus.value = { configured: false, templateId: null } }
+    // #endif
   } catch (e) {
     error.value = e instanceof Error ? e.message : '内容加载失败'
   } finally {
@@ -90,6 +100,23 @@ async function addAttachment() {
 function recipientChange(event: any) {
   draft.value.recipient = ['me', 'partner', 'both'][Number(event.detail.value)]
   if (draft.value.recipient !== 'me') draft.value.scope = 'shared'
+  if (!canSubscribeSelf.value) wechatAccepted.value = false
+}
+
+async function wechatChange(event: any) {
+  if (!event.detail.value) { wechatAccepted.value = false; return }
+  const templateId = wechatStatus.value.templateId
+  if (!templateId || !canSubscribeSelf.value) return
+  // #ifdef MP-WEIXIN
+  try {
+    const result = await new Promise<Record<string, string>>((resolve, reject) => (uni as any).requestSubscribeMessage({ tmplIds: [templateId], success: resolve, fail: reject }))
+    wechatAccepted.value = result[templateId] === 'accept'
+    if (!wechatAccepted.value) uni.showToast({ title: '未授权，将保留站内提醒', icon: 'none' })
+  } catch {
+    wechatAccepted.value = false
+    uni.showToast({ title: '微信提醒授权未完成', icon: 'none' })
+  }
+  // #endif
 }
 
 function setPinned(event: any) {
@@ -124,10 +151,10 @@ async function save() {
   }
   pending.value = 'save'
   try {
-    await request(draft.value.id ? `/items/${encodeURIComponent(draft.value.id)}` : '/items', draft.value.id ? 'PUT' : 'POST', draft.value)
+    const saved = await request<Item & { wechatSubscribed?: boolean }>(draft.value.id ? `/items/${encodeURIComponent(draft.value.id)}` : '/items', draft.value.id ? 'PUT' : 'POST', { ...draft.value, wechatSubscribe: wechatAccepted.value && canSubscribeSelf.value })
     if (!active) return
     closing = true
-    uni.showToast({ title: '已保存', icon: 'success' })
+    uni.showToast({ title: saved.wechatSubscribed ? '已保存并开启微信提醒' : '已保存', icon: 'success' })
     returnToPrevious()
   } catch (e) {
     if (active) uni.showToast({ title: e instanceof Error ? e.message : '保存失败', icon: 'none' })
@@ -229,7 +256,22 @@ onUnload(() => { active = false })
             <view class="chevron-down" />
           </view>
         </picker>
+        <!-- #ifdef MP-WEIXIN -->
+        <text class="muted small hint">站内提醒始终保留；微信服务通知需要你单次授权。</text>
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
         <text class="muted small hint">当前提供站内消息，关闭应用后不会弹出系统通知。</text>
+        <!-- #endif -->
+        <!-- #ifdef MP-WEIXIN -->
+        <view v-if="wechatStatus.configured" class="setting wechat-setting">
+          <view class="setting-copy">
+            <text class="setting-title">微信服务通知</text>
+            <text class="muted small">{{ canSubscribeSelf ? (wechatAccepted ? '已授权，本次提醒将发送一次微信通知' : '打开后由微信申请本次通知授权') : '提醒对象不包含你，需由对方自行授权' }}</text>
+          </view>
+          <switch color="#b28b35" :checked="wechatAccepted" :disabled="!canSubscribeSelf" @change="wechatChange" />
+        </view>
+        <text v-if="wechatStatus.configured && draft.repeat !== 'none'" class="muted small hint">一次授权只用于下一次提醒；重复提醒的后续周期需要再次授权。</text>
+        <!-- #endif -->
       </template>
 
       <view v-else class="setting pin-setting">
@@ -251,6 +293,7 @@ onUnload(() => { active = false })
 <style scoped>
 .shell{max-width:640px;min-height:100vh;margin:auto;padding:calc(8px + var(--status-bar-height)) 24px calc(42px + env(safe-area-inset-bottom));background:#faf8f2;color:#3e382d}.state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:50vh;text-align:center;color:#786d5b}.state-title{font-size:20px;font-weight:600;color:#3e382d}.muted{color:#786d5b}.small{font-size:11px}.headline{display:block;margin:2px 0 8px;font-size:31px;font-weight:600;line-height:1.35;letter-spacing:-.6px}.label{display:block;margin:22px 0 9px;color:#786d5b;font-size:13px}.form input,.form textarea,.picker{width:100%;border:1px solid #ece5d6;border-radius:14px;background:#fff;color:#3e382d}.form input{height:50px;padding:0 14px}.form textarea{min-height:148px;padding:14px;line-height:1.65}.form .links-input{min-height:82px}.picker{display:flex;align-items:center;justify-content:space-between;min-height:50px;padding:0 14px;overflow-wrap:anywhere}.readonly{background:#f4f0e7}.chevron-down{width:8px;height:8px;flex:0 0 8px;margin:-4px 3px 0 12px;border-right:1.5px solid #786d5b;border-bottom:1.5px solid #786d5b;transform:rotate(45deg)}
 .form .links-input{height:82px;min-height:82px}.date-row{display:flex;gap:12px}.date-row picker{min-width:0;flex:1}.setting{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:62px;padding:12px 0;border-bottom:1px solid #ece5d6}.setting-copy{min-width:0;flex:1}.setting-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hint{display:block;margin-top:9px;line-height:1.6}.remove-file{width:auto;min-width:56px;height:44px;min-height:44px;margin:0;padding:0 10px;border:0;background:transparent;color:#ae4b3b;font-size:12px}.remove-file::after{border:0}.attachment-button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:48px;margin-top:12px;border:1px solid #ece5d6;border-radius:14px;background:#fff;color:#494032}.attachment-button::after{border:0}.mini-plus{position:relative;width:14px;height:14px}.mini-plus::before,.mini-plus::after{content:'';position:absolute;left:1px;top:6px;width:12px;height:1.5px;border-radius:2px;background:#494032}.mini-plus::after{transform:rotate(90deg)}.pin-setting{margin-top:20px}.pin-setting .small{display:block;margin-top:5px}
+.wechat-setting{margin-top:13px;padding:14px;border:1px solid #e9dfc9;border-radius:16px;background:#fff}.wechat-setting .small{display:block;margin-top:5px;line-height:1.55;white-space:normal}.wechat-setting switch{flex:0 0 auto}
 .primary{display:flex;align-items:center;justify-content:center;width:100%;height:50px;margin:28px 0 10px;border:0;border-radius:15px;background:#494032;color:#fff9e9;font-size:15px}.primary::after{border:0}.spinner{width:16px;height:16px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 /* #ifdef MP-WEIXIN */
 .shell{padding-top:0}
