@@ -156,6 +156,18 @@ if (!baseUrl) {
     recipient: 'me',
     advance: 0,
   }, session)
+  await apiRequest('/api/items', 'POST', {
+    kind: 'reminder',
+    title: '已经收好纪念票',
+    content: '完成状态用于检查圆形对号是否视觉居中。',
+    links: [],
+    scope: 'mine',
+    nextAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+    repeat: 'none',
+    recipient: 'me',
+    advance: 0,
+    done: true,
+  }, session)
 }
 
 function route(path, nonce) {
@@ -170,10 +182,11 @@ const screens = [
   { name: 'index-notes', path: '/pages/index/index', ready: '周末一起去看展' },
   { name: 'index-reminders', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事' },
   { name: 'index-search', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记' },
-  { name: 'index-search-result', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '周末看什么？', answered: '找到 1 条相关内容' },
+  { name: 'index-search-result', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '周末看什么？', answered: '相关内容' },
   { name: 'index-search-model', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '猪什么时候会飞', answered: '现实中的猪不会自主飞行' },
   { name: 'index-search-empty', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '不存在的外部事实 9988', answered: '没有找到相关数据' },
   { name: 'index-us', path: '/pages/us/us', ready: '有各自的小记' },
+  { name: 'index-us-edit', path: '/pages/us/us', ready: '有各自的小记', click: '编辑', clicked: '保存' },
   ...(itemId ? [{ name: 'detail-note', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '周末一起去看展' }] : []),
   { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },
   { name: 'editor-reminder', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间' },
@@ -228,6 +241,11 @@ try {
     await page.call('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
 
     for (const screen of screens) {
+      if (session) {
+        await page.call('Runtime.evaluate', {
+          expression: `localStorage.setItem('session', ${JSON.stringify(session)})`,
+        })
+      }
       await page.call('Page.navigate', { url: route(screen.path, ++navigationNonce) })
       await wait(500)
       await waitForText(page, screen.ready)

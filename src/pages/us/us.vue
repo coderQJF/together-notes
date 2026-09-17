@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { request, type User } from '../../services/api'
@@ -9,6 +9,8 @@ const nickname = ref('')
 const ready = ref(false)
 const pending = ref(false)
 const error = ref('')
+const editingNickname = ref(false)
+const canSaveNickname = computed(() => Boolean(nickname.value.trim() && nickname.value.trim() !== user.value?.nickname && !pending.value))
 
 async function load() {
   error.value = ''
@@ -34,12 +36,25 @@ async function saveNickname() {
   try {
     user.value = await request<User>('/me', 'PUT', { nickname: value })
     nickname.value = user.value.nickname
+    editingNickname.value = false
     uni.showToast({ title: '昵称已保存', icon: 'success' })
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '昵称保存失败'
   } finally {
     pending.value = false
   }
+}
+
+function beginNicknameEdit() {
+  nickname.value = user.value?.nickname || ''
+  error.value = ''
+  editingNickname.value = true
+}
+
+function cancelNicknameEdit() {
+  nickname.value = user.value?.nickname || ''
+  error.value = ''
+  editingNickname.value = false
 }
 
 async function logout() {
@@ -73,13 +88,25 @@ onShow(load)
 
       <view class="couple" aria-label="我们的头像">
         <view class="avatar self">{{ user.nickname.slice(0, 1) }}</view>
-        <text class="heart" aria-hidden="true">♡</text>
+        <image class="heart" src="/static/nav-icons/heart-active.png" mode="aspectFit" aria-hidden="true" />
         <view class="avatar">{{ user.partner?.nickname?.slice(0, 1) || '？' }}</view>
       </view>
-      <text class="couple-name">{{ user.nickname }}<template v-if="user.partner"> &amp; {{ user.partner.nickname }}</template></text>
+      <view class="identity-row">
+        <text class="couple-name">{{ user.nickname }}<template v-if="user.partner"> &amp; {{ user.partner.nickname }}</template></text>
+        <button v-if="!editingNickname" class="edit-nickname" aria-label="编辑我的昵称" @click="beginNicknameEdit"><view class="pencil-icon" /><text>编辑</text></button>
+      </view>
+
+      <view v-if="editingNickname" class="nickname-editor">
+        <text class="label">我的昵称</text>
+        <input v-model="nickname" maxlength="20" placeholder="填写昵称" confirm-type="done" :focus="true" @confirm="saveNickname" />
+        <view class="nickname-actions">
+          <button class="cancel" :disabled="pending" @click="cancelNicknameEdit">取消</button>
+          <button class="save" :disabled="!canSaveNickname" @click="saveNickname">{{ pending ? '保存中…' : '保存' }}</button>
+        </view>
+      </view>
 
       <view v-if="user.partner" class="pair-card bound">
-        <view class="bound-title"><text>已经绑定</text><text class="mini-heart">♡</text></view>
+        <view class="bound-title"><text>已经绑定</text><image class="mini-heart" src="/static/nav-icons/heart-active.png" mode="aspectFit" /></view>
         <text>私人备忘不会自动共享。</text>
       </view>
       <view v-else class="pair-card">
@@ -91,9 +118,6 @@ onShow(load)
         </view>
       </view>
 
-      <text class="label">我的昵称</text>
-      <input v-model="nickname" maxlength="20" placeholder="填写昵称" />
-      <button class="save" :disabled="pending || !nickname.trim()" @click="saveNickname">{{ pending ? '保存中…' : '保存昵称' }}</button>
       <text v-if="error" class="error">{{ error }}</text>
       <button class="logout" :disabled="pending" @click="logout">退出登录</button>
     </template>
@@ -101,5 +125,5 @@ onShow(load)
 </template>
 
 <style scoped>
-.shell{max-width:640px;min-height:100vh;margin:auto;padding:0 24px calc(42px + env(safe-area-inset-bottom));box-sizing:border-box;background:#faf8f2;color:#3e382d}.state{display:flex;min-height:60vh;flex-direction:column;align-items:center;justify-content:center;gap:15px;color:#786d5b;text-align:center}.error-state{color:#9b4b40}.headline{margin:1px 0 10px;font-size:34px;font-weight:650;line-height:1.28;letter-spacing:-1px}.headline text{display:block}.subtitle{display:block;color:#786d5b;font-size:15px;line-height:1.7}.couple{display:flex;align-items:center;gap:23px;margin:32px 0 24px}.avatar{display:flex;width:64px;height:64px;align-items:center;justify-content:center;border:1px solid #efd98d;border-radius:50%;background:#f7e7ad;font-size:25px;font-weight:600}.avatar.self{background:#494032;color:#fff9e9}.heart{width:24px;color:#494032;font-family:Arial,sans-serif;font-size:35px;font-weight:400;line-height:1;text-align:center}.mini-heart{color:#8b6720;font-family:Arial,sans-serif;font-size:21px;font-weight:400;line-height:1}.couple-name{display:block;margin-bottom:17px;font-size:20px;font-weight:600}.pair-card{padding:22px;margin-bottom:25px;border:1px solid #efd98d;border-radius:22px;background:#f7e7ad}.pair-card>text{display:block;color:#786d5b;font-size:13px;line-height:1.7}.pair-title,.bound-title{margin-bottom:8px!important;color:#3e382d!important;font-size:19px!important;font-weight:600}.bound-title{display:flex;align-items:center;gap:8px}.pair-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:17px}.pair-actions button,.save,.logout,.state button{display:flex;align-items:center;justify-content:center;height:48px;min-height:48px;margin:0;border-radius:14px;font-size:14px}.primary{border:0;background:#494032;color:#fff9e9}.secondary{border:1px solid #ded5c4;background:#fff;color:#494032}.label{display:block;margin:5px 0 9px;color:#786d5b;font-size:13px}input{width:100%;height:52px;padding:0 15px;box-sizing:border-box;border:1px solid #e5dece;border-radius:15px;background:#fff;color:#3e382d;font-size:15px}.save{width:100%;margin-top:12px;border:1px solid #e5dece;background:#fff;color:#3e382d}.save[disabled],.logout[disabled]{opacity:.55}.error{display:block;margin-top:12px;color:#9b4b40;font-size:12px}.logout{width:100%;margin-top:26px;border:1px solid #e5dece;background:transparent;color:#786d5b}.shell button::after{border:0}@media(max-width:360px){.shell{padding-left:20px;padding-right:20px}.headline{font-size:31px}.pair-card{padding:19px}.pair-actions{grid-template-columns:1fr}}.shell{padding-left:calc(24px + env(safe-area-inset-left));padding-right:calc(24px + env(safe-area-inset-right))}@media(max-width:360px){.shell{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}}
+.shell{max-width:640px;min-height:100vh;margin:auto;padding:0 24px calc(42px + env(safe-area-inset-bottom));box-sizing:border-box;background:#faf8f2;color:#3e382d}.state{display:flex;min-height:60vh;flex-direction:column;align-items:center;justify-content:center;gap:15px;color:#786d5b;text-align:center}.error-state{color:#9b4b40}.headline{margin:1px 0 10px;font-size:34px;font-weight:650;line-height:1.28;letter-spacing:-1px}.headline text{display:block}.subtitle{display:block;color:#786d5b;font-size:15px;line-height:1.7}.couple{display:flex;align-items:center;gap:23px;margin:32px 0 20px}.avatar{display:flex;width:64px;height:64px;align-items:center;justify-content:center;border:1px solid #efd98d;border-radius:50%;background:#f7e7ad;font-size:25px;font-weight:600}.avatar.self{background:#494032;color:#fff9e9}.heart{display:block;width:31px;height:31px;flex:0 0 31px}.mini-heart{display:block;width:19px;height:19px;flex:0 0 19px}.identity-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:17px}.couple-name{display:block;min-width:0;font-size:20px;font-weight:600;line-height:1.5;word-break:break-word}.edit-nickname{display:flex;align-items:center;justify-content:center;gap:6px;width:auto;height:44px;min-height:44px;flex:0 0 auto;margin:-7px -8px -7px 0;padding:0 8px;border:0;background:transparent;color:#786d5b;font-size:12px}.pencil-icon{position:relative;width:13px;height:13px;transform:rotate(-45deg)}.pencil-icon::before{content:'';position:absolute;left:5px;top:0;width:4px;height:10px;border:1.5px solid currentColor;border-radius:2px}.pencil-icon::after{content:'';position:absolute;left:5px;top:11px;width:7px;border-top:1.5px solid currentColor;transform:rotate(45deg);transform-origin:left}.nickname-editor{padding:17px;margin:0 0 17px;border:1px solid #e5dece;border-radius:18px;background:#fff}.nickname-actions{display:grid;grid-template-columns:1fr 1.5fr;gap:10px;margin-top:11px}.pair-card{padding:22px;margin-bottom:25px;border:1px solid #efd98d;border-radius:22px;background:#f7e7ad}.pair-card>text{display:block;color:#786d5b;font-size:13px;line-height:1.7}.pair-title,.bound-title{margin-bottom:8px!important;color:#3e382d!important;font-size:19px!important;font-weight:600}.bound-title{display:flex;align-items:center;gap:8px}.pair-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:17px}.pair-actions button,.save,.cancel,.logout,.state button{display:flex;align-items:center;justify-content:center;height:48px;min-height:48px;margin:0;border-radius:14px;font-size:14px}.primary{border:0;background:#494032;color:#fff9e9}.secondary,.cancel{border:1px solid #ded5c4;background:#fff;color:#494032}.label{display:block;margin:0 0 9px;color:#786d5b;font-size:13px}input{width:100%;height:52px;padding:0 15px;box-sizing:border-box;border:1px solid #e5dece;border-radius:15px;background:#faf8f2;color:#3e382d;font-size:15px}.save{width:100%;border:0;background:#494032;color:#fff9e9}.save[disabled],.cancel[disabled],.logout[disabled]{opacity:.55}.error{display:block;margin-top:12px;color:#9b4b40;font-size:12px}.logout{width:100%;margin-top:26px;border:1px solid #e5dece;background:transparent;color:#786d5b}.shell button::after{border:0}@media(max-width:360px){.shell{padding-left:20px;padding-right:20px}.headline{font-size:31px}.identity-row{align-items:flex-start}.pair-card{padding:19px}.pair-actions{grid-template-columns:1fr}}.shell{padding-left:calc(24px + env(safe-area-inset-left));padding-right:calc(24px + env(safe-area-inset-right))}@media(max-width:360px){.shell{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}}
 </style>
