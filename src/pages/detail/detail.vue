@@ -1,38 +1,70 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
+import { onLoad, onShareAppMessage, onShow, onUnload } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { downloadFile, request, type Item, type User } from '../../services/api'
 import { formatClock, formatCompactDateTime, formatDayHeading } from '../../utils/date'
 
-const item = ref<Item | null>(null)
+type DetailItem = Omit<Item, 'scope'> & { scope: Item['scope'] | 'link' }
+
+const item = ref<DetailItem | null>(null)
 const user = ref<User | null>(null)
 const loading = ref(true)
 const error = ref('')
 const pending = ref('')
+const shareToken = ref('')
+const sharePreparing = ref(false)
+const shareError = ref('')
 let itemId = ''
+let sharedRoute = false
 let firstShow = true
 let active = true
 
-const scopeLabel = computed(() => item.value?.scope === 'shared' ? '我们俩' : '仅自己')
+const sharedPreview = computed(() => item.value?.scope === 'link')
+const scopeLabel = computed(() => sharedPreview.value ? '好友分享' : item.value?.scope === 'shared' ? '我们俩' : '仅自己')
 const repeatLabel = computed(() => ({ none: '单次', daily: '每天', weekly: '每周' } as Record<string, string>)[item.value?.repeat || 'none'])
 
 async function load() {
-  if (!itemId || pending.value === 'delete') return
+  if ((!itemId && !shareToken.value) || pending.value === 'delete') return
   loading.value = !item.value
   error.value = ''
   try {
+    if (sharedRoute) {
+      item.value = await request<DetailItem>(`/shared/items/${encodeURIComponent(shareToken.value)}`)
+      user.value = null
+      return
+    }
     const [itemResult, userResult] = await Promise.allSettled([
-      request<Item>(`/items/${encodeURIComponent(itemId)}`),
+      request<DetailItem>(`/items/${encodeURIComponent(itemId)}`),
       request<User>('/me'),
     ])
     if (itemResult.status === 'rejected') throw itemResult.reason
     item.value = itemResult.value
     user.value = userResult.status === 'fulfilled' ? userResult.value : null
+    prepareShare()
   } catch (e) {
     error.value = e instanceof Error ? e.message : '内容加载失败'
   } finally {
     loading.value = false
+  }
+}
+
+async function prepareShare() {
+  if (!itemId || sharedRoute || shareToken.value || sharePreparing.value) return
+  sharePreparing.value = true
+  shareError.value = ''
+  try {
+    const result = await request<{ token: string }>(`/items/${encodeURIComponent(itemId)}/share`, 'POST')
+    if (active) {
+      shareToken.value = result.token
+      // #ifdef MP-WEIXIN
+      uni.showShareMenu({ menus: ['shareAppMessage'] })
+      // #endif
+    }
+  } catch (e) {
+    if (active) shareError.value = e instanceof Error ? e.message : '分享准备失败'
+  } finally {
+    if (active) sharePreparing.value = false
   }
 }
 
@@ -87,14 +119,24 @@ async function openAttachment(attachment: NonNullable<Item['attachments']>[numbe
 }
 
 onLoad(options => {
+  shareToken.value = typeof options?.share === 'string' ? options.share.trim().toLowerCase() : ''
+  sharedRoute = Boolean(shareToken.value)
   itemId = typeof options?.id === 'string' ? decodeURIComponent(options.id) : ''
-  if (!itemId) {
+  if (!itemId && !shareToken.value) {
     loading.value = false
     error.value = '缺少内容编号'
     return
   }
+  // #ifdef MP-WEIXIN
+  if (sharedRoute) uni.showShareMenu({ menus: ['shareAppMessage'] })
+  else uni.hideShareMenu({ hideShareItems: ['shareAppMessage'] })
+  // #endif
   load()
 })
+onShareAppMessage(() => ({
+  title: item.value?.title || '小记分享',
+  path: shareToken.value ? `/pages/detail/detail?share=${encodeURIComponent(shareToken.value)}` : '/pages/index/index',
+}))
 
 onShow(() => {
   if (firstShow) {
@@ -133,6 +175,11 @@ onUnload(() => { active = false })
 
       <text class="headline">{{ item.title }}</text>
       <text class="body-text">{{ item.content || '暂无正文' }}</text>
+
+      <view v-if="sharedPreview" class="share-notice">
+        <text class="share-notice-title">来自好友分享</text>
+        <text class="muted small">这里展示的是这条随记或提醒的具体内容。</text>
+      </view>
 
       <view v-if="item.kind === 'reminder'" class="reminder-card">
         <text class="card-kicker">提醒时间</text>
@@ -174,7 +221,12 @@ onUnload(() => { active = false })
         </button>
       </view>
 
-      <view class="actions">
+      <button v-if="!sharedPreview" class="share-action" open-type="share" hover-class="none" :disabled="!shareToken || sharePreparing">
+        {{ sharePreparing ? '正在准备分享…' : '分享给好友' }}
+      </button>
+      <text v-if="shareError && !sharedPreview" class="share-error" @click="prepareShare">{{ shareError }}，点此重试</text>
+
+      <view v-if="!sharedPreview" class="actions">
         <button class="primary" hover-class="none" @click="edit">编辑</button>
         <button v-if="item.owner === user?.id" class="danger" hover-class="none" :disabled="pending === 'delete'" @click="remove">
           {{ pending === 'delete' ? '删除中…' : '删除' }}
@@ -191,8 +243,9 @@ onUnload(() => { active = false })
 .meta-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:4px}.meta-tags{display:flex;align-items:center;gap:6px;flex-shrink:0}.kind-tag,.scope-tag,.pin-tag{display:inline-flex;align-items:center;height:25px;padding:0 8px;border-radius:8px;background:#fff;border:1px solid #ece5d6;color:#786d5b;font-size:11px;white-space:nowrap}.pin-tag{background:#f7e7ad;border-color:#efd98d;color:#6c5624}.updated{min-width:0;color:#786d5b;font-size:11px;line-height:1.5;text-align:right;font-variant-numeric:tabular-nums}
 .headline{display:block;margin:24px 0 14px;font-size:32px;font-weight:600;line-height:1.35;letter-spacing:-.6px;word-break:break-word}.body-text{display:block;min-height:48px;margin:0 0 28px;color:#4b4438;font-size:16px;line-height:1.9;white-space:pre-wrap;word-break:break-word}
 .reminder-card{padding:21px;margin:8px 0 28px;border:1px solid #ece5d6;border-radius:21px;background:#fff}.card-kicker,.section-label{display:block;margin-bottom:12px;color:#786d5b;font-size:12px}.reminder-time{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}.reminder-date{color:#62594a;font-size:14px;line-height:1.5}.reminder-clock{font-size:26px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums;white-space:nowrap}.reminder-meta{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:14px;color:#786d5b;font-size:13px}.dot{color:#a99b82}
+.share-notice{padding:15px 16px;margin:-8px 0 28px;border:1px solid #efd98d;border-radius:15px;background:#fff9e9}.share-notice-title{display:block;margin-bottom:4px;color:#6c5624;font-size:13px;font-weight:600}.share-action{display:flex;align-items:center;justify-content:center;width:100%;height:50px;margin:34px 0 0;border:0;border-radius:15px;background:#f7e7ad;color:#494032;font-size:15px}.share-action::after{border:0}.share-action[disabled]{border:1px solid #ddd3c3;background:#e8e1d3;color:#8a7e6a;opacity:1}.share-error{display:block;margin-top:9px;color:#9b4b40;font-size:11px;text-align:center}
 .section{margin:26px 0}.resource{display:flex;align-items:center;gap:12px;width:100%;min-height:68px;margin:10px 0;padding:12px 14px;border:1px solid #ece5d6;border-radius:16px;background:#fff;color:#3e382d;text-align:left;line-height:1.4}.resource::after{border:0}.resource-mark{display:flex;align-items:center;justify-content:center;width:38px;height:38px;flex:0 0 38px;border-radius:12px;background:#f7e7ad}.resource-icon{display:block;width:20px;height:20px}.resource-copy{min-width:0;flex:1}.resource-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.link-title{color:#83692e}.small{display:block;margin-top:4px;font-size:11px}.muted{color:#786d5b}.chevron{width:8px;height:8px;flex:0 0 8px;margin-right:3px;border-top:1.5px solid #a79b87;border-right:1.5px solid #a79b87;transform:rotate(45deg)}
-.actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:34px}.actions button{display:flex;align-items:center;justify-content:center;width:100%;height:50px;min-height:50px;margin:0;padding:0 16px;border-radius:15px;font-size:15px;line-height:normal}.actions button:only-child{grid-column:1/-1}.actions button::after{border:0}.primary{background:#494032;color:#fff9e9}.danger{border:1px solid #eadfd1;background:#fff;color:#ae4b3b}.secondary{min-width:140px;height:46px;margin-top:8px;border:1px solid #ece5d6;border-radius:14px;background:#fff;color:#494032}.secondary::after{border:0}
+.actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.actions button{display:flex;align-items:center;justify-content:center;width:100%;height:50px;min-height:50px;margin:0;padding:0 16px;border-radius:15px;font-size:15px;line-height:normal}.actions button:only-child{grid-column:1/-1}.actions button::after{border:0}.primary{background:#494032;color:#fff9e9}.danger{border:1px solid #eadfd1;background:#fff;color:#ae4b3b}.secondary{min-width:140px;height:46px;margin-top:8px;border:1px solid #ece5d6;border-radius:14px;background:#fff;color:#494032}.secondary::after{border:0}
 /* #ifdef MP-WEIXIN */
 .shell{padding-top:0}
 /* #endif */
