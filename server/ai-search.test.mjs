@@ -196,11 +196,12 @@ test('web fallback never copies local note content into the web-search request',
   assert.equal(result.mode, 'web');
 });
 
-test('a web answer without clickable citations becomes a friendly empty result', async () => {
+test('a model answer without clickable citations is returned with a clear unverified mode', async () => {
   const search = service(async () => responsesOutput('没有引用的答案'));
   const result = await search.search({ query: '今天有什么公开新闻？', scope: 'all', userId: 'user-a', documents: [] });
-  assert.equal(result.mode, 'empty');
-  assert.equal(result.fallbackCode, 'AI_CITATIONS_MISSING');
+  assert.equal(result.mode, 'model');
+  assert.equal(result.answer, '没有引用的答案');
+  assert.deepEqual(result.citations, []);
 });
 
 test('an unreachable online provider becomes a friendly empty result', async () => {
@@ -253,9 +254,10 @@ test('compatible Chat Completions web fallback requests search and returns click
   assert.deepEqual(result.citations, [{ index: 1, type: 'web', title: '联合国国际日历', url: 'https://www.un.org/example-calendar' }]);
 });
 
-test('compatible Chat Completions returns empty when provider search_results are missing', async () => {
+test('compatible Chat Completions keeps a model answer when provider search_results are missing', async () => {
   const search = chatService(async () => chatOutput('这是模型已有知识，不是联网结果。'));
   const result = await search.search({ query: '明天是什么日子？', scope: 'all', userId: 'user-a', documents: [] });
-  assert.equal(result.mode, 'empty');
-  assert.equal(result.fallbackCode, 'AI_CITATIONS_MISSING');
+  assert.equal(result.mode, 'model');
+  assert.equal(result.answer, '这是模型已有知识，不是联网结果。');
+  assert.deepEqual(result.citations, []);
 });

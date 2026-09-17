@@ -67,7 +67,7 @@ APP_TIME_ZONE=Asia/Shanghai
 
 内容服务会在启动后和上述间隔自动同步。密钥不能下发到 H5/小程序；GDELT 模式不需要注册或密钥，显式使用 NewsAPI 时缺少密钥会返回 `NEWS_API_UNCONFIGURED`。上游故障返回可追踪的结构化错误，不会伪造赛程或新闻。`MEDIA_DIR` 应与 SQLite 一样挂载到持久化磁盘；未显式配置时默认使用数据库文件的同级 `media` 目录。
 
-智能搜索默认按截图使用兼容 OpenAI [Chat Completions](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions) 的微信模型网关，请求地址为 `${AI_BASE_URL}/chat/completions`；也可把 `AI_API_TYPE` 改为 `responses` 后使用 OpenAI [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)。本地检索始终由服务端直接完成，不依赖模型配置，也不会把私人小记发送给模型；只有本地没有匹配时才尝试联网，且联网请求只包含用户当前问题。Chat Completions 模式通过 `web_search_options` 请求搜索并读取 `search_results`；服务商未配置、不可达或没有返回可核验引用时，接口统一返回“没有找到相关数据”，同时在服务端保留结构化原因日志，不使用模拟答案。
+智能搜索默认按截图使用兼容 OpenAI [Chat Completions](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions) 的微信模型网关，请求地址为 `${AI_BASE_URL}/chat/completions`；也可把 `AI_API_TYPE` 改为 `responses` 后使用 OpenAI [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)。本地检索始终由服务端直接完成，不依赖模型配置，也不会把私人小记发送给模型；只有本地没有匹配时才请求模型，且请求只包含用户当前问题。Chat Completions 模式通过 `web_search_options` 尝试搜索并读取 `search_results`：有可核验来源时展示为联网回答，没有来源但模型返回正文时展示为“模型回答 · 未联网核验”；服务未配置、不可达或没有正文时才返回“没有找到相关数据”。
 
 真实内容源与调度约定：
 

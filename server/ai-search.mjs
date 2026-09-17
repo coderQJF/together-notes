@@ -189,10 +189,7 @@ function chatWebOutput(payload) {
   citations.sort((a, b) => a.index - b.index);
   const citedIndexes = new Set([...answer.matchAll(/\[(\d+)\]/g)].map(match => Number(match[1])));
   if (!answer) throw new AiSearchError(502, 'AI_INVALID_RESPONSE', '联网搜索没有返回可展示的回答');
-  if (!citations.length || !citations.some(citation => citedIndexes.has(citation.index))) {
-    throw new AiSearchError(502, 'AI_CITATIONS_MISSING', '联网搜索没有返回可核验的引用');
-  }
-  return { answer, citations };
+  return { answer, citations: citations.filter(citation => citedIndexes.has(citation.index)) };
 }
 
 function localSearchOutput(candidates, nowValue) {
@@ -290,8 +287,7 @@ function webOutput(payload) {
   }
   answer = answer.trim();
   if (!answer) throw new AiSearchError(502, 'AI_INVALID_RESPONSE', '联网搜索没有返回可展示的回答');
-  if (!citations.length || !insertions.length) throw new AiSearchError(502, 'AI_CITATIONS_MISSING', '联网搜索没有返回可核验的引用');
-  return { answer, citations };
+  return { answer, citations: insertions.length ? citations : [] };
 }
 
 export function createAiSearchService({
@@ -391,7 +387,7 @@ export function createAiSearchService({
     };
     const payload = await callModel(body);
     const parsed = apiType === 'responses' ? webOutput(payload) : chatWebOutput(payload);
-    return { ...parsed, mode: 'web', model: asText(payload?.model || model, 120), generatedAt: new Date(Number(now())).toISOString() };
+    return { ...parsed, mode: parsed.citations.length ? 'web' : 'model', model: asText(payload?.model || model, 120), generatedAt: new Date(Number(now())).toISOString() };
   }
 
   async function search({ query, scope = 'all', userId, documents = [] } = {}) {

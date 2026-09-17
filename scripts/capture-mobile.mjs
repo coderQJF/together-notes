@@ -114,6 +114,12 @@ class Cdp {
 if (!baseUrl) {
   if (process.env.QA_SKIP_BUILD !== '1') await buildQaH5()
   const qaFetch = async (input, init = {}) => {
+    if (String(input).endsWith('/chat/completions')) {
+      const body = JSON.parse(String(init.body || '{}'))
+      const query = String(body.messages?.at(-1)?.content || '')
+      if (query.includes('不存在的外部事实')) throw new TypeError('QA upstream unavailable')
+      return Response.json({ model: 'qa-search-model', choices: [{ message: { role: 'assistant', content: '现实中的猪不会自主飞行；乘坐飞机运输或在虚构故事中，才会出现“猪会飞”的情形。' }, finish_reason: 'stop' }] })
+    }
     if (String(input).endsWith('/responses')) {
       const body = JSON.parse(String(init.body || '{}'))
       const local = JSON.parse(body.input?.[1]?.content?.[0]?.text || '{}')
@@ -121,7 +127,7 @@ if (!baseUrl) {
     }
     throw new Error(`Unexpected QA network request: ${input}`)
   }
-  qaApp = createApp({ dbPath: ':memory:', testAuth: true, publicDir: resolve('dist/build/h5'), fetchImpl: qaFetch, aiConfig: { apiKey: '', baseUrl: 'https://models.example/v1', model: 'qa-search-model', rateLimitPerMinute: 100 } })
+  qaApp = createApp({ dbPath: ':memory:', testAuth: true, publicDir: resolve('dist/build/h5'), fetchImpl: qaFetch, aiConfig: { apiKey: 'qa-key', apiType: 'chat_completions', baseUrl: 'https://models.example/v1', model: 'qa-search-model', rateLimitPerMinute: 100 } })
   await new Promise((resolveListen, reject) => {
     qaApp.server.once('error', reject)
     qaApp.server.listen(0, '127.0.0.1', resolveListen)
@@ -165,6 +171,7 @@ const screens = [
   { name: 'index-reminders', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事' },
   { name: 'index-search', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记' },
   { name: 'index-search-result', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '周末看什么？', answered: '找到 1 条相关内容' },
+  { name: 'index-search-model', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '猪什么时候会飞', answered: '现实中的猪不会自主飞行' },
   { name: 'index-search-empty', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '不存在的外部事实 9988', answered: '没有找到相关数据' },
   { name: 'index-us', path: '/pages/index/index', ready: '周末一起去看展', click: '我', clicked: '我们的小空间' },
   ...(itemId ? [{ name: 'detail-note', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '周末一起去看展' }] : []),
