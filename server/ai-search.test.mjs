@@ -156,6 +156,37 @@ test('an unconfigured service returns an empty result when local search misses',
   assert.equal(result.fallbackCode, 'AI_UNCONFIGURED');
 });
 
+test('local-only strategy never calls the model when local search misses', async () => {
+  const search = service(async () => assert.fail('local-only search must not call upstream'));
+  const result = await search.search({
+    query: '常州哪里有野生板栗？',
+    scope: 'all',
+    strategy: 'local',
+    userId: 'user-local-only',
+    documents: [{ id: 'todo', type: 'note', title: '给花浇水', content: '周五晚上回家以后', updatedAt: '2026-09-15T10:00:00.000Z' }],
+  });
+  assert.equal(result.mode, 'empty');
+  assert.equal(result.fallbackCode, 'LOCAL_NO_MATCH');
+});
+
+test('online strategy bypasses local matches and sends only the current question', async () => {
+  let requestBody;
+  const search = service(async (_input, init) => {
+    requestBody = JSON.parse(init.body);
+    return responsesOutput('可先查询当地林业部门发布的采集规定。');
+  });
+  const result = await search.search({
+    query: '常州哪里有野生板栗？',
+    scope: 'all',
+    strategy: 'online',
+    userId: 'user-online',
+    documents: [{ id: 'todo', type: 'note', title: '常州哪里有野生板栗', content: '不应发送的私人待办正文', updatedAt: '2026-09-15T10:00:00.000Z' }],
+  });
+  assert.equal(result.mode, 'model');
+  assert.equal(JSON.stringify(requestBody).includes('不应发送的私人待办正文'), false);
+  assert.equal(JSON.stringify(requestBody).includes('常州哪里有野生板栗'), true);
+});
+
 test('local results only contain caller-provided documents', async () => {
   const search = service(async () => assert.fail('local search must not call upstream'));
   const result = await search.search({

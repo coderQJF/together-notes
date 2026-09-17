@@ -5,6 +5,7 @@ const DEFAULT_MODEL = 'Deepseek-v4-flash';
 const DEFAULT_BASE_URL = 'https://chatapi.weixin.qq.com/openai/v1';
 const VALID_API_TYPES = new Set(['responses', 'chat_completions']);
 const VALID_SCOPES = new Set(['all', 'notes', 'sports', 'news']);
+const VALID_STRATEGIES = new Set(['smart', 'local', 'online']);
 const STOP_TERMS = new Set(['什么', '怎么', '哪些', '一下', '我们', '我的', '你们', '可以', '有没有', '关于', '告诉', '查查', '日子', '时候', '事情', '最近']);
 
 export class AiSearchError extends Error {
@@ -390,22 +391,26 @@ export function createAiSearchService({
     return { ...parsed, mode: parsed.citations.length ? 'web' : 'model', model: asText(payload?.model || model, 120), generatedAt: new Date(Number(now())).toISOString() };
   }
 
-  async function search({ query, scope = 'all', userId, documents = [] } = {}) {
+  async function search({ query, scope = 'all', strategy = 'smart', userId, documents = [] } = {}) {
     if (typeof query !== 'string') throw new AiSearchError(400, 'AI_QUERY_REQUIRED', '请输入想搜索的问题');
     query = asText(query, 301);
     userId = asText(userId, 240);
     if (!query) throw new AiSearchError(400, 'AI_QUERY_REQUIRED', '请输入想搜索的问题');
     if (query.length > 300) throw new AiSearchError(400, 'AI_QUERY_TOO_LONG', '问题最多输入 300 个字');
     if (!VALID_SCOPES.has(scope)) throw new AiSearchError(400, 'AI_SCOPE_INVALID', '无效搜索范围');
+    if (!VALID_STRATEGIES.has(strategy)) throw new AiSearchError(400, 'AI_STRATEGY_INVALID', '无效搜索方式');
     if (!userId) throw new AiSearchError(401, 'AI_USER_REQUIRED', '请先登录');
     checkLimit(userId);
     if (inFlight.has(userId)) throw new AiSearchError(429, 'AI_SEARCH_IN_PROGRESS', '上一次搜索仍在进行，请稍候');
     inFlight.add(userId);
     try {
-      const allowedTypes = scope === 'notes' ? new Set(['note', 'reminder']) : scope === 'sports' ? new Set(['sports']) : scope === 'news' ? new Set(['news']) : null;
-      const filtered = documents.filter(document => !allowedTypes || allowedTypes.has(document?.type));
-      const candidates = rankLocalDocuments(query, filtered, { now: Number(now()), timeZone, scope });
-      if (candidates.length) return localSearchOutput(candidates, now());
+      if (strategy !== 'online') {
+        const allowedTypes = scope === 'notes' ? new Set(['note', 'reminder']) : scope === 'sports' ? new Set(['sports']) : scope === 'news' ? new Set(['news']) : null;
+        const filtered = documents.filter(document => !allowedTypes || allowedTypes.has(document?.type));
+        const candidates = rankLocalDocuments(query, filtered, { now: Number(now()), timeZone, scope });
+        if (candidates.length) return localSearchOutput(candidates, now());
+        if (strategy === 'local') return emptySearchOutput(now(), 'LOCAL_NO_MATCH');
+      }
       if (!apiKey) return emptySearchOutput(now(), 'AI_UNCONFIGURED');
       if (!webSearchEnabled) return emptySearchOutput(now(), 'AI_WEB_SEARCH_DISABLED');
       try {

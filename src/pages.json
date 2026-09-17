@@ -35,6 +35,10 @@
     {
       "path": "pages/inbox/inbox",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "消息" }
+    },
+    {
+      "path": "pages/us/us",
+      "style": { "navigationStyle": "custom", "navigationBarTitleText": "小空间", "disableScroll": false }
     }
   ],
   "globalStyle": {
