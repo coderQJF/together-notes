@@ -21,14 +21,6 @@
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "比赛详情" }
     },
     {
-      "path": "pages/news/news",
-      "style": { "navigationStyle": "custom", "navigationBarTitleText": "新闻" }
-    },
-    {
-      "path": "pages/news-detail/news-detail",
-      "style": { "navigationStyle": "custom", "navigationBarTitleText": "新闻详情" }
-    },
-    {
       "path": "pages/pair/pair",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "我们俩" }
     },

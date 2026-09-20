@@ -1,70 +1,36 @@
 <script setup lang="ts">
-import {ref,reactive,computed,onUnmounted,nextTick} from 'vue';
+import {ref,reactive,computed,onUnmounted} from 'vue';
 import {onLoad,onShow,onHide} from '@dcloudio/uni-app';
 import JellyTabs from '../../components/JellyTabs.vue';
 import StatusIcon from '../../components/StatusIcon.vue';
 import {request,login,type User,type Item,type Message} from '../../services/api';
 import {formatDateTime,formatDayHeading} from '../../utils/date';
-type AiScope='all'|'notes'|'sports'|'news';
-type AiStrategy='smart'|'local'|'online';
-type AiStatus={configured:boolean;model:string|null;localSearch?:boolean;webSearchEnabled?:boolean;webSearch?:boolean};
-type AiCitation={id?:string;index?:number;sourceId?:string;type:string;title:string;subtitle?:string;route?:string;url?:string};
-type AiSearchResult={answer:string;mode:'local'|'web'|'model'|'empty';citations:AiCitation[];model:string;generatedAt:string;fallbackCode?:string};
-type UiError={message:string;code?:string};
-const user=ref<User|null>(null),items=ref<Item[]>([]),messages=ref<Message[]>([]),page=ref('notes'),ready=ref(false),error=ref(''),query=ref(''),scope=ref('all'),category=ref('待办'),agree=ref(false),keyboardOpen=ref(false),aiQuery=ref(''),aiScope=ref<AiScope>('all'),aiStrategy=ref<AiStrategy>('smart');
-const aiStatus=ref<AiStatus|null>(null),aiStatusLoading=ref(false),aiStatusError=ref<UiError|null>(null),aiSearching=ref(false),aiSearchError=ref<UiError|null>(null),aiResult=ref<AiSearchResult|null>(null);
+const user=ref<User|null>(null),items=ref<Item[]>([]),messages=ref<Message[]>([]),page=ref('notes'),ready=ref(false),error=ref(''),query=ref(''),scope=ref('all'),category=ref('待办'),agree=ref(false),keyboardOpen=ref(false);
 const pending=reactive<Record<string,boolean>>({});
 const today=ref(formatDayHeading());
 const tabs=[
  {key:'notes',name:'随记',icon:'/static/nav-icons/note-inactive.png',activeIcon:'/static/nav-icons/note-active.png'},
- {key:'reminders',name:'提醒',icon:'/static/nav-icons/bell-inactive.png',activeIcon:'/static/nav-icons/bell-active.png'},
- {key:'search',name:'搜搜',icon:'/static/nav-icons/search-inactive.png',activeIcon:'/static/nav-icons/search-active.png'}
+ {key:'reminders',name:'提醒',icon:'/static/nav-icons/bell-inactive.png',activeIcon:'/static/nav-icons/bell-active.png'}
 ];
-const aiScopes:Array<{key:AiScope;name:string}>=[{key:'all',name:'全部'},{key:'notes',name:'小记'},{key:'sports',name:'比赛'},{key:'news',name:'新闻'}];
-const aiStrategies:Array<{key:AiStrategy;name:string;hint:string}>=[{key:'smart',name:'智能',hint:'先找小记，找不到再问模型'},{key:'local',name:'只搜本地',hint:'只查看你有权限访问的内容'},{key:'online',name:'问模型',hint:'跳过本地，直接回答当前问题'}];
 const noteScopeTabs=[{key:'all',label:'全部'},{key:'mine',label:'私人'},{key:'shared',label:'我们俩'}];
-const reminderTabs=[{key:'待办',label:'待办'},{key:'比赛',label:'比赛'},{key:'新闻',label:'新闻'},{key:'消息',label:'消息'}];
-const strategyTabs=aiStrategies.map(item=>({key:item.key,label:item.name}));
-const quickPrompts=['明天是什么日子？','这周我们有哪些安排？','下一场关注的比赛是什么时候？'];
+const reminderTabs=[{key:'待办',label:'待办'},{key:'比赛',label:'比赛'},{key:'消息',label:'消息'}];
 const list=computed(()=>items.value.filter(i=>i.kind===(page.value==='reminders'?'reminder':'note')&&(scope.value==='all'||i.scope===scope.value)&&(!query.value||(i.title+' '+i.content).includes(query.value))).sort((a,b)=>Number(!!b.pinned)-Number(!!a.pinned)||(b.updatedAt||'').localeCompare(a.updatedAt||'')));
 const unread=computed(()=>messages.value.filter(m=>!m.seen).length);
-const aiCanSearch=computed(()=>Boolean(aiQuery.value.trim()&&!aiSearching.value));
-const aiStrategyHint=computed(()=>aiStrategies.find(item=>item.key===aiStrategy.value)?.hint||'');
-const aiWebSearchEnabled=computed(()=>Boolean(aiStatus.value?.configured&&(aiStatus.value?.webSearchEnabled??aiStatus.value?.webSearch)));
-const aiOnlineIssue=computed(()=>aiResult.value?.mode==='empty'&&Boolean(aiResult.value.fallbackCode)&&!['AI_UNCONFIGURED','AI_WEB_SEARCH_DISABLED'].includes(aiResult.value.fallbackCode||''));
 let timer:ReturnType<typeof setInterval>|undefined;
 function alertError(e:unknown){error.value=e instanceof Error?e.message:'操作失败';uni.showToast({title:error.value,icon:'none'})}
-function toUiError(e:unknown,fallback='请求失败'):UiError{const value=e as {message?:string;code?:string};return{message:value?.message||fallback,code:value?.code}}
 async function act(key:string,fn:()=>Promise<void>){if(pending[key])return;pending[key]=true;error.value='';try{await fn()}catch(e){alertError(e)}finally{pending[key]=false}}
 async function refresh(){if(!uni.getStorageSync('session')){user.value=null;return}try{const [u,i,m]=await Promise.all([request<User>('/me'),request<Item[]>('/items'),request<Message[]>('/notifications')]);user.value=u;items.value=i;messages.value=m}catch(e){if(!uni.getStorageSync('session'))user.value=null;throw e}}
 async function signIn(){await act('login',async()=>{if(!agree.value)throw new Error('请先确认数据使用说明');user.value=await login();await refresh()})}
-function switchPage(key:string){page.value=key;scope.value='all';query.value='';error.value='';keyboardOpen.value=false;uni.hideKeyboard();if(key==='search')void loadAiStatus()}
-function choosePrompt(value:string){aiQuery.value=value;aiResult.value=null;aiSearchError.value=null}
-function resetAiResult(){if(aiSearching.value)return;aiResult.value=null;aiSearchError.value=null}
-function selectAiScope(value:AiScope){aiScope.value=value;aiResult.value=null;aiSearchError.value=null}
-function selectAiStrategy(value:AiStrategy){if(aiSearching.value)return;aiStrategy.value=value;aiResult.value=null;aiSearchError.value=null}
-function continueWithModel(){aiStrategy.value='online';aiResult.value=null;aiSearchError.value=null;void searchWithAi()}
-async function loadAiStatus(){if(!user.value||aiStatusLoading.value)return;aiStatusLoading.value=true;aiStatusError.value=null;try{aiStatus.value=await request<AiStatus>('/ai/status')}catch(e){aiStatus.value=null;aiStatusError.value=toUiError(e,'无法检查模型服务')}finally{aiStatusLoading.value=false}}
-async function searchWithAi(){const value=aiQuery.value.trim();if(!value||aiSearching.value)return;keyboardOpen.value=false;uni.hideKeyboard();aiSearching.value=true;aiSearchError.value=null;aiResult.value=null;try{aiResult.value=await request<AiSearchResult>('/ai/search','POST',{query:value,scope:aiScope.value,strategy:aiStrategy.value},{timeout:65000});aiSearching.value=false;await nextTick();if(page.value==='search')uni.pageScrollTo({selector:aiResult.value?.mode==='empty'?'.search-empty':'.answer-result',duration:240})}catch(e){aiSearchError.value=toUiError(e,'暂时无法搜索，请稍后重试')}finally{aiSearching.value=false}}
-function citationType(type:string){return({note:'小记',reminder:'提醒',sports:'比赛',match:'比赛',news:'新闻',web:'网页'} as Record<string,string>)[type]||'来源'}
-function citationSubtitle(citation:AiCitation){if(!citation.subtitle)return citationType(citation.type);return Number.isFinite(Date.parse(citation.subtitle))?format(citation.subtitle):citation.subtitle}
-function openCitation(citation:AiCitation){if(citation.route&&/^\/pages\/[\w/-]+(?:\?[^\s]*)?$/.test(citation.route)){uni.navigateTo({url:citation.route});return}if(!citation.url||!/^https?:\/\//i.test(citation.url)){uni.showToast({title:'该来源暂时无法打开',icon:'none'});return}
- // #ifdef H5
- window.open(citation.url,'_blank','noopener,noreferrer');
- // #endif
- // #ifndef H5
- uni.setClipboardData({data:citation.url,success:()=>uni.showToast({title:'原文链接已复制',icon:'none'})});
- // #endif
-}
+function switchPage(key:string){page.value=key;scope.value='all';query.value='';error.value='';keyboardOpen.value=false;uni.hideKeyboard()}
 function edit(){uni.navigateTo({url:`/pages/editor/editor?kind=${page.value==='reminders'?'reminder':'note'}`})}
 function detail(item:Item){if(!item.id)return;uni.navigateTo({url:`/pages/detail/detail?id=${encodeURIComponent(item.id)}`})}
-function selectReminderCategory(value:string){if(value==='待办'){category.value=value;return}if(value==='消息'){inbox();return}uni.navigateTo({url:value==='比赛'?'/pages/sports/sports':'/pages/news/news'})}
+function selectReminderCategory(value:string){if(value==='待办'){category.value=value;return}if(value==='消息'){inbox();return}uni.navigateTo({url:'/pages/sports/sports'})}
 async function toggle(i:Item){await act('toggle:'+i.id,async()=>{await request('/items/'+i.id,'PUT',{...i,done:!i.done});await refresh()})}
 function openUs(){uni.navigateTo({url:'/pages/us/us'})}
 function format(v?:string){return formatDateTime(v)}
 function inbox(){uni.navigateTo({url:'/pages/inbox/inbox'})}
 function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refresh().catch(()=>{})},30000)}
-onLoad(async()=>{try{await refresh()}catch(e){alertError(e)}finally{ready.value=true}});onShow(()=>{today.value=formatDayHeading();start();if(ready.value)refresh().then(()=>{if(page.value==='search')void loadAiStatus()}).catch(alertError)});onHide(()=>clearInterval(timer));onUnmounted(()=>clearInterval(timer));
+onLoad(async()=>{try{await refresh()}catch(e){alertError(e)}finally{ready.value=true}});onShow(()=>{today.value=formatDayHeading();start();if(ready.value)refresh().catch(alertError)});onHide(()=>clearInterval(timer));onUnmounted(()=>clearInterval(timer));
 </script>
 <template>
 <view class="shell">
@@ -83,35 +49,7 @@ onLoad(async()=>{try{await refresh()}catch(e){alertError(e)}finally{ready.value=
   <view v-if="!list.length" class="empty"><text class="section-title">{{query?'没有找到相关内容':'从第一件小事开始'}}</text><text class="muted block">{{query?'换个关键词试试。':'点击右下角，记下你想记住的。'}}</text></view>
   <view v-for="i in list" :key="i.id" class="card" :class="{butter:i.pinned,completed:i.done}" @click="detail(i)"><view class="card-meta"><view class="meta-tags"><text class="meta-tag">{{i.scope==='shared'?'我们俩':'仅自己'}}</text><text v-if="i.pinned" class="meta-tag pin-tag">置顶</text></view><text class="card-time">{{i.kind==='reminder'?format(i.nextAt):format(i.updatedAt)}}</text></view><view class="row"><text class="card-title">{{i.title}}</text><button v-if="i.kind==='reminder'" class="done" :disabled="pending['toggle:'+i.id]" :aria-label="i.done?'标记为待办':'标记为完成'" @click.stop="toggle(i)"><view v-if="pending['toggle:'+i.id]" class="button-spinner status-spinner"/><StatusIcon v-else :checked="Boolean(i.done)" /></button></view><text v-if="i.content" class="excerpt">{{i.content}}</text><text class="muted small block">{{i.kind==='note'?(i.links.length?'附 '+i.links.length+' 个链接':'文字备忘'):(i.done?'已完成':({none:'单次',daily:'每天',weekly:'每周'} as any)[i.repeat||'none']+' · 站内提醒')}}</text></view>
  </view>
- <view v-else-if="page==='search'" class="ask-page">
-  <view class="ask-kicker"><view class="preview-dot ready"/><text>{{aiWebSearchEnabled?'本地搜索 · 联网已配置':'本地搜索'}}</text></view>
-  <text class="headline ask-headline">搜搜我们的小记。</text><text class="muted block ask-subtitle">先找你有权限查看的内容，线索不足时再联网搜索，并标注真实来源。</text>
-  <JellyTabs class="strategy-control" compact :model-value="aiStrategy" :options="strategyTabs" :disabled="aiSearching" aria-label="选择搜索方式" @change="selectAiStrategy($event as AiStrategy)" /><text class="strategy-hint">{{aiStrategyHint}}</text>
-  <view class="ask-composer" :class="{focused:keyboardOpen}"><textarea v-model="aiQuery" :disabled="aiSearching" auto-height maxlength="300" placeholder="比如：明天是什么日子？" @input="resetAiResult" @focus="keyboardOpen=true" @blur="keyboardOpen=false"/><view class="composer-footer"><text>{{aiQuery.length}} / 300</text><button :disabled="!aiCanSearch" :aria-label="aiSearching?'正在搜索':'发送问题'" @click="searchWithAi"><view v-if="aiSearching" class="button-spinner search-spinner"/><view v-else class="send-arrow"/></button></view></view>
-  <scroll-view v-if="aiStrategy!=='online'" class="scope-scroll" scroll-x :show-scrollbar="false"><view class="scope-row"><button v-for="item in aiScopes" :key="item.key" :disabled="aiSearching" :class="{active:aiScope===item.key}" :aria-pressed="aiScope===item.key" @click="selectAiScope(item.key)">{{item.name}}</button></view></scroll-view>
-  <view class="privacy-note"><view class="lock-icon"><view class="lock-keyhole"/></view><text>{{aiStrategy==='online'?'直接询问模型，只发送当前问题，不附带你的小记。':aiStrategy==='local'?'只检索本地内容，不会调用模型。':'本地内容由服务器直接检索；没有结果时，只把当前问题发送给模型。'}}</text></view>
-  <view v-if="aiSearching" class="search-state" aria-live="polite"><view class="search-pulse"><view/><view/><view/></view><text class="section-title">正在查找真实信息</text><text class="muted small block">先检查小记与提醒，需要时再联网搜索，可能要等几十秒。</text></view>
-  <view v-else-if="aiSearchError" class="search-state search-error" aria-live="polite"><text class="section-title">这次没有搜到</text><text class="muted block">{{aiSearchError.message}}</text><text v-if="aiSearchError.code" class="ai-error-code">错误码：{{aiSearchError.code}}</text><button class="retry-search" :disabled="!aiCanSearch" @click="searchWithAi">重新搜索</button></view>
-  <view v-else-if="aiResult?.mode==='empty'" class="search-state search-empty" aria-live="polite"><text class="section-title">没有找到相关数据</text><text class="muted block">本地内容没有匹配，联网补充暂时也没有可用结果。换个关键词试试。</text></view>
-  <view v-else-if="aiResult" class="answer-result" :class="{'model-answer':aiResult.mode==='model','result-list-only':aiResult.citations.length}" aria-live="polite">
-    <template v-if="aiResult.citations.length">
-      <view class="result-heading"><view><text class="section-title">相关内容</text><text class="result-source">{{aiResult.mode==='web'?'来自公开网页':'来自本地内容'}}</text></view><text class="muted small">{{aiResult.citations.length}} 条</text></view>
-      <view class="citation-list">
-        <button v-for="(citation,index) in aiResult.citations" :key="citation.id||citation.sourceId||citation.url||`${citation.type}-${index}`" class="citation-card" :aria-label="`${citation.title}，打开${citationType(citation.type)}来源`" @click="openCitation(citation)"><text class="citation-kind">{{citationType(citation.type)}}</text><text class="citation-title">{{citation.title}}</text><text class="citation-subtitle">{{citationSubtitle(citation)}}</text><view class="citation-arrow"/></button>
-      </view>
-      <button v-if="aiResult.mode==='local'&&aiStrategy==='smart'" class="continue-model" @click="continueWithModel">改成问模型</button>
-    </template>
-    <template v-else>
-      <view class="answer-meta"><text class="answer-mode">{{aiResult.mode==='model'?'模型回答':'搜索结果'}}</text><text>{{format(aiResult.generatedAt)}}</text></view>
-      <text class="answer-copy">{{aiResult.answer}}</text>
-      <view v-if="aiResult.mode==='model'" class="answer-disclaimer">未获取到网页来源，内容由模型直接回答，可能不完整或过时。</view>
-      <view class="answer-footer"><text>{{aiResult.model}}</text><text>{{aiResult.mode==='model'?'未联网核验':'搜索结果'}}</text></view>
-    </template>
-  </view>
-  <template v-else><view class="section-row"><text class="section-title">可以这样问</text><text class="muted small">点一下填入</text></view><button v-for="(prompt,index) in quickPrompts" :key="prompt" class="prompt-card" @click="choosePrompt(prompt)"><text class="prompt-index">0{{index+1}}</text><text>{{prompt}}</text><view class="prompt-arrow"/></button></template>
-  <view class="model-card" :class="{unavailable:aiStatusError||aiOnlineIssue}"><view class="model-top"><view><text class="model-label">搜索能力</text><text class="section-title">{{aiStatusLoading?'正在检查联网配置':aiWebSearchEnabled?`本地搜索 + ${aiStatus?.model||'联网模型'}`:'本地搜索可用'}}</text></view><text class="model-status">{{aiStatusLoading?'检查中':aiOnlineIssue?'联网异常':aiWebSearchEnabled?'联网已配置':'仅本地'}}</text></view><view class="model-points"><text>本地搜索始终可用，不依赖模型连接</text><text>{{aiOnlineIssue?'最近一次联网没有成功，本地搜索不受影响':aiWebSearchEnabled?'本地没有结果时仅发送当前问题联网':'联网不可用时显示没有相关数据'}}</text><text>私人小记不会作为联网搜索内容发送</text></view><text v-if="aiStatusError" class="status-error">联网配置状态暂时无法检查，本地搜索不受影响。</text><button v-if="aiStatusError" class="model-action" @click="loadAiStatus">重新检查联网<view class="chevron-icon"/></button></view>
- </view>
- <view v-if="['notes','reminders','search'].includes(page)&&!keyboardOpen" class="floating"><view class="dock"><button v-for="t in tabs" :key="t.key" :aria-label="t.name+(t.key==='reminders'&&unread?'，'+unread+' 条未读':'')" :aria-current="page===t.key?'page':undefined" :class="{selected:page===t.key}" @click="switchPage(t.key)"><view class="tab-icon-wrap"><image class="nav-icon" :src="page===t.key?t.activeIcon:t.icon" mode="aspectFit"/><text v-if="t.key==='reminders'&&unread" class="nav-badge">{{unread>99?'99+':unread}}</text></view><text class="nav-label">{{t.name}}</text></button></view><button class="add" aria-label="新建" @click="edit()"><view class="plus-icon"/></button></view>
+ <view v-if="['notes','reminders'].includes(page)&&!keyboardOpen" class="floating"><view class="dock"><button v-for="t in tabs" :key="t.key" :aria-label="t.name+(t.key==='reminders'&&unread?'，'+unread+' 条未读':'')" :aria-current="page===t.key?'page':undefined" :class="{selected:page===t.key}" @click="switchPage(t.key)"><view class="tab-icon-wrap"><image class="nav-icon" :src="page===t.key?t.activeIcon:t.icon" mode="aspectFit"/><text v-if="t.key==='reminders'&&unread" class="nav-badge">{{unread>99?'99+':unread}}</text></view><text class="nav-label">{{t.name}}</text></button></view><button class="add" aria-label="新建" @click="edit()"><view class="plus-icon"/></button></view>
  </template><text v-if="error" class="error">{{error}}</text>
 </view>
 </template>
