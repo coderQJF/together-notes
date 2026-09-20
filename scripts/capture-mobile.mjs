@@ -225,6 +225,10 @@ try {
     await page.call('Runtime.evaluate', {
       expression: `localStorage.setItem('session', ${JSON.stringify(session)}); localStorage.removeItem('saved-news-stories'); ${sportsCompetition ? `localStorage.setItem('sports-competition', ${JSON.stringify(sportsCompetition)})` : "localStorage.removeItem('sports-competition')"}`,
     })
+    // The first page load happens before the QA session exists. Reload once so
+    // the entry page runs its authentication-aware onLoad hook with the token.
+    await page.call('Page.reload', { ignoreCache: true })
+    await wait(500)
   }
 
   const report = []
