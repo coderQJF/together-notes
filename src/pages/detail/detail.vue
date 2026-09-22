@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { onLoad, onShareAppMessage, onShow, onUnload } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { downloadFile, request, type Item, type User } from '../../services/api'
+import { cancelLocalReminder } from '../../services/local-reminders'
 import { formatClock, formatCompactDateTime, formatDayHeading } from '../../utils/date'
 import { openExternalUrl, publicShareUrl, shareText } from '../../utils/platform'
 
@@ -91,6 +92,7 @@ function remove() {
       request(`/items/${encodeURIComponent(item.value.id)}`, 'DELETE')
         .then(() => {
           if (!active) return
+          cancelLocalReminder(item.value?.id)
           uni.showToast({ title: '已删除', icon: 'success' })
           returnToPrevious()
         })

@@ -6,7 +6,7 @@ import StatusIcon from '../../components/StatusIcon.vue';
 import {request,login,loginWithApp,registerWithApp,type User,type Item,type Message} from '../../services/api';
 import {formatDateTime,formatDayHeading} from '../../utils/date';
 import {openExternalUrl} from '../../utils/platform';
-import {syncPushDevice} from '../../services/push';
+import {syncLocalReminders} from '../../services/local-reminders';
 type AiScope='all'|'notes'|'sports'|'news';
 type AiStrategy='smart'|'local'|'online';
 type AiStatus={configured:boolean;model:string|null;localSearch?:boolean;webSearchEnabled?:boolean;webSearch?:boolean};
@@ -41,10 +41,10 @@ let timer:ReturnType<typeof setInterval>|undefined;
 function alertError(e:unknown){error.value=e instanceof Error?e.message:'操作失败';uni.showToast({title:error.value,icon:'none'})}
 function toUiError(e:unknown,fallback='请求失败'):UiError{const value=e as {message?:string;code?:string};return{message:value?.message||fallback,code:value?.code}}
 async function act(key:string,fn:()=>Promise<void>){if(pending[key])return;pending[key]=true;error.value='';try{await fn()}catch(e){alertError(e)}finally{pending[key]=false}}
-async function refresh(){if(!uni.getStorageSync('session')){user.value=null;return}try{const [u,i,m]=await Promise.all([request<User>('/me'),request<Item[]>('/items'),request<Message[]>('/notifications')]);user.value=u;items.value=i;messages.value=m}catch(e){if(!uni.getStorageSync('session'))user.value=null;throw e}}
-async function signIn(){await act('login',async()=>{if(!agree.value)throw new Error('请先确认数据使用说明');user.value=await login();await refresh();void syncPushDevice().catch(()=>{})})}
+async function refresh(){if(!uni.getStorageSync('session')){user.value=null;return}try{const [u,i,m]=await Promise.all([request<User>('/me'),request<Item[]>('/items'),request<Message[]>('/notifications')]);user.value=u;items.value=i;messages.value=m;syncLocalReminders(i,u)}catch(e){if(!uni.getStorageSync('session'))user.value=null;throw e}}
+async function signIn(){await act('login',async()=>{if(!agree.value)throw new Error('请先确认数据使用说明');user.value=await login();await refresh()})}
 async function loadAppAuthStatus(){try{appAuthStatus.value=await request<AppAuthStatus>('/auth/app/status')}catch{appAuthStatus.value={registrationEnabled:false}}}
-async function submitAppAuth(){await act('login',async()=>{if(!agree.value)throw new Error('请先阅读并同意用户协议与隐私政策');const username=authUsername.value.trim(),password=authPassword.value;if(!username||!password)throw new Error('请填写账号和密码');if(authMode.value==='register'){if(!appAuthStatus.value?.registrationEnabled)throw new Error('App 内测注册尚未开放');if(!authNickname.value.trim())throw new Error('请填写昵称');if(!authBetaCode.value.trim())throw new Error('请填写内测口令')}user.value=authMode.value==='register'?await registerWithApp(username,password,authNickname.value.trim(),authBetaCode.value.trim()):await loginWithApp(username,password);authPassword.value='';authBetaCode.value='';await refresh();void syncPushDevice().catch(()=>{})})}
+async function submitAppAuth(){await act('login',async()=>{if(!agree.value)throw new Error('请先阅读并同意用户协议与隐私政策');const username=authUsername.value.trim(),password=authPassword.value;if(!username||!password)throw new Error('请填写账号和密码');if(authMode.value==='register'){if(!appAuthStatus.value?.registrationEnabled)throw new Error('App 内测注册尚未开放');if(!authNickname.value.trim())throw new Error('请填写昵称');if(!authBetaCode.value.trim())throw new Error('请填写内测口令')}user.value=authMode.value==='register'?await registerWithApp(username,password,authNickname.value.trim(),authBetaCode.value.trim()):await loginWithApp(username,password);authPassword.value='';authBetaCode.value='';await refresh()})}
 function openLegal(document:'terms'|'privacy'){uni.navigateTo({url:`/pages/legal/legal?document=${document}`})}
 function switchPage(key:string){page.value=key;scope.value='all';query.value='';error.value='';keyboardOpen.value=false;uni.hideKeyboard();if(key==='search')void loadAiStatus()}
 function choosePrompt(value:string){aiQuery.value=value;aiResult.value=null;aiSearchError.value=null}
@@ -70,7 +70,7 @@ function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refre
  // #ifdef APP-PLUS
  if(!uni.getStorageSync('session'))await loadAppAuthStatus();
  // #endif
- await refresh();if(user.value)void syncPushDevice().catch(()=>{})}catch(e){alertError(e)}finally{ready.value=true}});onShow(()=>{today.value=formatDayHeading();start();if(ready.value)refresh().then(()=>{if(page.value==='search')void loadAiStatus()}).catch(alertError)});onHide(()=>clearInterval(timer));onUnmounted(()=>clearInterval(timer));
+ await refresh()}catch(e){alertError(e)}finally{ready.value=true}});onShow(()=>{today.value=formatDayHeading();start();if(ready.value)refresh().then(()=>{if(page.value==='search')void loadAiStatus()}).catch(alertError)});onHide(()=>clearInterval(timer));onUnmounted(()=>clearInterval(timer));
 </script>
 <template>
 <view class="shell">
@@ -103,7 +103,7 @@ function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refre
   <JellyTabs v-if="page==='notes'" v-model="scope" class="page-tabs" :options="noteScopeTabs" aria-label="筛选小记" />
   <JellyTabs v-else class="page-tabs" :model-value="category" :options="reminderTabs" aria-label="提醒分类" @change="selectReminderCategory" />
   <view v-if="!list.length" class="empty"><text class="section-title">{{query?'没有找到相关内容':'从第一件小事开始'}}</text><text class="muted block">{{query?'换个关键词试试。':'点击右下角，记下你想记住的。'}}</text></view>
-  <view v-for="i in list" :key="i.id" class="card" :class="{butter:i.pinned,completed:i.done}" @click="detail(i)"><view class="card-meta"><view class="meta-tags"><text class="meta-tag">{{i.scope==='shared'?'我们俩':'仅自己'}}</text><text v-if="i.pinned" class="meta-tag pin-tag">置顶</text></view><text class="card-time">{{i.kind==='reminder'?format(i.nextAt):format(i.updatedAt)}}</text></view><view class="row"><text class="card-title">{{i.title}}</text><button v-if="i.kind==='reminder'" class="done" :disabled="pending['toggle:'+i.id]" :aria-label="i.done?'标记为待办':'标记为完成'" @click.stop="toggle(i)"><view v-if="pending['toggle:'+i.id]" class="button-spinner status-spinner"/><StatusIcon v-else :checked="Boolean(i.done)" /></button></view><text v-if="i.content" class="excerpt">{{i.content}}</text><text class="muted small block">{{i.kind==='note'?(i.links.length?'附 '+i.links.length+' 个链接':'文字备忘'):(i.done?'已完成':({none:'单次',daily:'每天',weekly:'每周'} as any)[i.repeat||'none']+' · 站内提醒')}}</text></view>
+  <view v-for="i in list" :key="i.id" class="card" :class="{butter:i.pinned,completed:i.done}" @click="detail(i)"><view class="card-meta"><view class="meta-tags"><text class="meta-tag">{{i.scope==='shared'?'我们俩':'仅自己'}}</text><text v-if="i.pinned" class="meta-tag pin-tag">置顶</text></view><text class="card-time">{{i.kind==='reminder'?format(i.nextAt):format(i.updatedAt)}}</text></view><view class="row"><text class="card-title">{{i.title}}</text><button v-if="i.kind==='reminder'" class="done" :disabled="pending['toggle:'+i.id]" :aria-label="i.done?'标记为待办':'标记为完成'" @click.stop="toggle(i)"><view v-if="pending['toggle:'+i.id]" class="button-spinner status-spinner"/><StatusIcon v-else :checked="Boolean(i.done)" /></button></view><text v-if="i.content" class="excerpt">{{i.content}}</text><text class="muted small block">{{i.kind==='note'?(i.links.length?'附 '+i.links.length+' 个链接':'文字备忘'):(i.done?'已完成':({none:'单次',daily:'每天',weekly:'每周'} as any)[i.repeat||'none'])}}<!-- #ifdef APP-PLUS --> · 本机系统提醒<!-- #endif --><!-- #ifndef APP-PLUS --> · 站内提醒<!-- #endif --></text></view>
  </view>
  <view v-else-if="page==='search'" class="ask-page">
   <view class="ask-kicker"><view class="preview-dot ready"/><text>{{aiWebSearchEnabled?'本地搜索 · 联网已配置':'本地搜索'}}</text></view>

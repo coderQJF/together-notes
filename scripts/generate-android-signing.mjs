@@ -47,7 +47,6 @@ if (existing) {
 
 const storePassword = randomBytes(24).toString('base64url')
 const betaRegistrationCode = `TN-${randomBytes(12).toString('base64url')}`
-const pushWebhookToken = randomBytes(32).toString('base64url')
 const generate = spawnSync(keytool, [
   '-genkeypair',
   '-alias', alias,
@@ -75,7 +74,6 @@ await writeFile(secretsPath, `${JSON.stringify({
   keyPassword: storePassword,
   ...fingerprints,
   betaRegistrationCode,
-  pushWebhookToken,
 }, null, 2)}\n`, { mode: 0o600 })
 
 console.log(`已生成 Android 签名：${keystorePath}`)

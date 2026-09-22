@@ -2,8 +2,8 @@
   "name": "两个人的小记",
   "appid": "__UNI__10E8CA8",
   "description": "备忘录与双人提醒",
-  "versionName": "0.2.1",
-  "versionCode": "21",
+  "versionName": "0.2.2",
+  "versionCode": "22",
   "vueVersion": "3",
   "app-plus": {
     "usingComponents": true,
@@ -13,9 +13,6 @@
       },
       "Share": {
         "description": "调用 Android 系统分享面板发送邀请码和公开分享链接"
-      },
-      "Push": {
-        "description": "通过 UniPush 2.0 发送在线及离线系统提醒"
       }
     },
     "screenOrientation": [
@@ -51,32 +48,6 @@
           "xhdpi": "src/static/app-icons/app-icon-96.png",
           "xxhdpi": "src/static/app-icons/app-icon-144.png",
           "xxxhdpi": "src/static/app-icons/app-icon-192.png"
-        }
-      },
-      "sdkConfigs": {
-        "push": {
-          "unipush": {
-            "version": "2",
-            "offline": true,
-            "icons": {
-              "push": {
-                "ldpi": "src/static/app-icons/app-icon-48.png",
-                "mdpi": "src/static/app-icons/app-icon-48.png",
-                "hdpi": "src/static/app-icons/app-icon-72.png",
-                "xhdpi": "src/static/app-icons/app-icon-96.png",
-                "xxhdpi": "src/static/app-icons/app-icon-144.png",
-                "xxxhdpi": "src/static/app-icons/app-icon-192.png"
-              },
-              "small": {
-                "ldpi": "src/static/app-icons/push-small-18.png",
-                "mdpi": "src/static/app-icons/push-small-24.png",
-                "hdpi": "src/static/app-icons/push-small-36.png",
-                "xhdpi": "src/static/app-icons/push-small-48.png",
-                "xxhdpi": "src/static/app-icons/push-small-72.png",
-                "xxxhdpi": "src/static/app-icons/push-small-96.png"
-              }
-            }
-          }
         }
       }
     }

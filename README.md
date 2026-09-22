@@ -11,7 +11,7 @@ UniApp + Vue 3 + TypeScript 的双人备忘与提醒应用。保留 01 奶油黄
 - 附件上传和权限保护下载：单文件 12MB、每人 100MB、每条最多 10 个附件。
 - 双账号邀请码绑定；邀请码 24 小时有效且只能使用一次，防止自绑定和重复绑定。
 - 共享内容双方可编辑；仅创建者能删除或改为私人；历史私人内容不会自动共享。
-- 单次、每日、每周提醒，支持提前提醒和站内消息；微信小程序中可由当前接收者主动授权一次性订阅消息。App 已提供设备登记和服务端 Push 投递接口，完成 DCloud UniPush 开通及 HTTPS 投递桥配置后可发送系统通知。
+- 单次、每日、每周提醒，支持提前提醒和站内消息；微信小程序中可由当前接收者主动授权一次性订阅消息。Android App 使用本机 `AlarmManager` 登记已经同步的提醒，划掉 App 或进程被系统回收后仍可弹出系统通知，不依赖 UniPush 或 uniCloud。
 - 比赛使用 football-data.org（英超、西甲、欧冠）和 PandaScore（仅 LPL、全球总决赛）的真实赛程、赛果与积分榜，足球球队与比赛阶段在服务端统一转为中文；新闻生产默认使用 GDELT Project 的真实中文资讯并整理为精选、股市与热点频道，GDELT 网络不可达时使用公开中文 RSS，也可显式切换到 NewsAPI，任何路径都不会回退到本地模拟数据。
 - 服务端定时同步并将最后一次成功的真实内容缓存到 SQLite；刷新失败时可返回带警告的过期真实缓存，没有缓存则明确返回 provider 配置或上游错误码。
 - 球队图标与获准使用的新闻配图由服务端校验、内网地址阻断、限大小后按 SHA-256 内容寻址保存到持久化 `MEDIA_DIR`，小程序不直连任意第三方图片域名；GDELT 返回的出版方图片默认不下载或重托管。
@@ -51,8 +51,6 @@ WX_APP_ID=wx0000000000000000
 WX_APP_SECRET=仅放服务端的真实Secret
 WX_REMINDER_TEMPLATE_ID=SRj7mQ0c6juhTrXsl8VRWLpLJuwehMjZpWRNUlar1ts
 APP_REGISTRATION_CODE=仅放服务端并发给内测用户的注册口令
-APP_PUSH_WEBHOOK_URL=UniPush HTTPS 投递桥地址
-APP_PUSH_WEBHOOK_TOKEN=投递桥 Bearer Token
 FOOTBALL_DATA_API_KEY=仅放服务端的 football-data.org 密钥
 PANDASCORE_API_TOKEN=仅放服务端的 PandaScore token
 NEWS_PROVIDER=gdelt
@@ -78,7 +76,7 @@ APP_TIME_ZONE=Asia/Shanghai
 
 App 新账号注册默认关闭。把随机且不易猜测的内测口令写入服务端 `APP_REGISTRATION_CODE` 后，测试者可凭该口令注册；清空它会再次关闭注册，但不会影响已有账号登录。
 
-App 系统通知不会在未配置时假装可用。项目已启用 UniPush 2.0 的原生离线 SDK，并提供 `uniCloud-aliyun/cloudfunctions/app-push-bridge` HTTPS 桥。桥接函数始终用 `force_notification: true` 投递，因此 App 在线、后台或进程被关闭时都会请求通知栏消息；Android 完全关闭后的实际送达还依赖测试手机品牌对应的厂商推送通道。未完成云端配置时，站内提醒仍正常工作，编辑页会明确显示离线系统通知尚未启用。
+Android App 的系统通知完全在本机生成。登录或重新打开 App 时，客户端会把当前账号可见且提醒对象包含自己的待办同步到 Android 系统闹钟；保存、完成、删除、退出登录和注销账号会立即更新或清理本机计划。每日/每周提醒由原生接收器续排，手机重启或 App 更新后会恢复。对方在本机离线期间新建的提醒，要等下次打开 App 同步后才能登记；系统设置中的“强行停止”会让 Android 取消后台闹钟，重新打开 App 后恢复。
 
 智能搜索默认按截图使用兼容 OpenAI [Chat Completions](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions) 的微信模型网关，请求地址为 `${AI_BASE_URL}/chat/completions`；也可把 `AI_API_TYPE` 改为 `responses` 后使用 OpenAI [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)。本地检索始终由服务端直接完成，不依赖模型配置，也不会把私人小记发送给模型；只有本地没有匹配时才请求模型，且请求只包含用户当前问题。Chat Completions 模式通过 `web_search_options` 尝试搜索并读取 `search_results`：有可核验来源时展示为联网回答，没有来源但模型返回正文时展示为“模型回答 · 未联网核验”；服务未配置、不可达或没有正文时才返回“没有找到相关数据”。
 
@@ -140,17 +138,16 @@ npm run build:app
 
 ### Android 内测安装包
 
-代码仓库已经固定 DCloud AppID `__UNI__10E8CA8`、包名 `cn.coderf.togethernotes` 和版本 `0.2.1 (21)`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享及 UniPush 2.0 接入。当前内测版只需要维护者补充两类无法由仓库生成的信息：
+代码仓库已经固定 DCloud AppID `__UNI__10E8CA8`、包名 `cn.coderf.togethernotes` 和版本 `0.2.2 (22)`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享及 Android 本机定时通知。当前内测版不需要开通 UniPush 或 uniCloud；验收时只需准备一台 Android 真机：
 
-- 提供用于验收的 Android 真机品牌、型号和 Android 版本，并在手机系统设置中允许“小记”通知。要保证 App 进程被系统彻底关闭后仍及时送达，还需在 DCloud 后台配置该品牌的厂商推送；对应华为、小米、OPPO、vivo、荣耀等厂商开发者账号和密钥只能由账号持有人申请。
-- 如 DCloud 账号尚未完成实名认证、UniPush 2.0 服务协议确认或 uniCloud 服务空间开通，需要账号持有人在网页中完成这些一次性操作。
+- 在手机系统设置中允许“小记”通知；如果系统提供“闹钟与提醒”特殊权限，也一并允许。测试时创建两分钟后的提醒，划掉 App 并锁屏等待通知。不要用系统设置中的“强行停止”作为普通关闭方式。
 
 其余内测材料已经由项目生成：
 
 - Android 发布证书：`.private/android/together-notes-release.keystore`。
-- 证书密码、内测注册口令、Push Bearer Token 和证书指纹：`.private/android/app-release-secrets.local.json`。
-- 1024×1024 图标及 Android/通知栏密度图：`src/static/app-icons`。
-- UniPush HTTPS 桥及依赖表：`uniCloud-aliyun`。
+- 证书密码、内测注册口令和证书指纹：`.private/android/app-release-secrets.local.json`。
+- 1024×1024 图标及 Android 密度图：`src/static/app-icons`。
+- Android 本机闹钟插件：`src/uni_modules/together-local-reminder`。
 
 `.private` 已被 Git 忽略。首次安装包发出前请把整个 `.private/android` 目录加密备份到另一个安全位置；以后每次升级必须继续使用同一证书，丢失后无法覆盖安装旧版本。需要重新初始化一套全新身份时才可删除旧文件并运行：
 
@@ -169,7 +166,7 @@ $env:VITE_PUBLIC_BASE_URL='https://notes.example.com'
 npm run build:app
 ```
 
-`npm run build:app` 只生成 `dist/build/app` 资源，不是 APK。签名信息只从 `.private` 读取或在 HBuilderX“发行 → 原生 App 云打包”界面填写，不写入仓库。项目已经勾选 Push 模块，因此首次云打包前必须先在 DCloud 后台开通 UniPush 2.0，否则 DCloud 会拒绝打包。
+`npm run build:app` 只生成 `dist/build/app` 资源，不是 APK。签名信息只从 `.private` 读取或在 HBuilderX“发行 → 原生 App 云打包”界面填写，不写入仓库。项目未勾选 Push 模块，也不需要绑定 uniCloud 服务空间。
 
 HBuilderX 登录且云服务已开通后，可直接执行：
 
@@ -180,16 +177,14 @@ npm run package:android-beta
 
 第二条命令会生成忽略提交的 HBuilderX 打包配置，使用自有证书申请 Android 安心云打包，全程不在终端输出密码。
 
-### 完全关闭后的系统提醒
+### 划掉 App 后的系统提醒
 
-1. 在 DCloud 开发者中心为 `__UNI__10E8CA8` 添加 Android 平台：包名填 `cn.coderf.togethernotes`，SHA-1 指纹从 `.private/android/app-release-secrets.local.json` 复制。
-2. 创建并绑定一个阿里云版 uniCloud 服务空间，在 UniPush 2.0 中选择同一空间；为目标测试手机配置对应的厂商推送通道。
-3. 在 HBuilderX 中绑定 `uniCloud-aliyun` 到该服务空间，上传 `database` 下的 schema/index，再上传部署 `app-push-bridge`。该函数已配置 URL 化路径 `/app-push-bridge`。
-4. 在 uniCloud 控制台给函数设置环境变量 `APP_PUSH_WEBHOOK_TOKEN`，值与 `.private/android/app-release-secrets.local.json` 中的 `pushWebhookToken` 一致。
-5. 把函数 HTTPS URL 和同一 Token 写入业务服务器 `APP_PUSH_WEBHOOK_URL`、`APP_PUSH_WEBHOOK_TOKEN`；把 `betaRegistrationCode` 写入 `APP_REGISTRATION_CODE`，然后重启业务服务。
-6. 使用自有证书云打包 APK并安装；登录后创建两分钟后的提醒，彻底划掉/关闭 App，锁屏等待通知。测试时不要使用 HBuilder 标准基座，因为离线 Push 只在云打包安装包中生效。
+1. 使用自有证书云打包 APK 并安装；本机闹钟插件属于原生代码，不能使用不包含该插件的旧标准基座验收。
+2. 登录后创建两分钟后的提醒。首次保存时允许通知权限；Android 12 的部分设备还会打开“闹钟与提醒”设置页，需允许后返回 App。
+3. 从最近任务中划掉 App 并锁屏，等待通知；每日和每周提醒会在触发后继续登记下一次。
+4. 手机重启后无需先打开 App，插件会从应用私有目录中的计划恢复闹钟。卸载、清除数据、退出登录或在系统设置中强行停止 App 会清除或暂停这些计划。
 
-桥接函数只接受 Bearer Token 认证的 POST 请求，限制收件设备数与负载大小，不把 UniPush 凭据放进客户端。Android 13 及以上首次启动会由原生 Push 模块申请通知权限；用户拒绝后无法显示通知栏提醒。
+本地方案只能提醒已经同步到这台手机的数据。另一半在此手机离线期间新建或修改的提醒，不会通过网络主动唤醒 App；再次打开 App 完成同步后才会登记到系统。
 
 ## AI 协作模式
 
@@ -261,8 +256,6 @@ WX_APP_ID=wx0000000000000000
 WX_APP_SECRET=仅放服务器
 WX_REMINDER_TEMPLATE_ID=SRj7mQ0c6juhTrXsl8VRWLpLJuwehMjZpWRNUlar1ts
 APP_REGISTRATION_CODE=仅放服务器并发给内测用户
-APP_PUSH_WEBHOOK_URL=仅放服务器
-APP_PUSH_WEBHOOK_TOKEN=仅放服务器
 FOOTBALL_DATA_API_KEY=仅放服务器
 PANDASCORE_API_TOKEN=仅放服务器
 NEWS_PROVIDER=gdelt

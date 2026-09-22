@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { attachFile, request, type Item, type User } from '../../services/api'
+import { requestLocalReminderPermissions, scheduleLocalReminderForUser } from '../../services/local-reminders'
 import { dateInputValue, timeInputValue } from '../../utils/date'
 
 const empty = (kind: 'note' | 'reminder'): Item => ({
@@ -28,7 +29,6 @@ const pending = ref('')
 const error = ref('')
 const editingExisting = ref(false)
 const wechatStatus = ref<{ configured: boolean; templateId: string | null }>({ configured: false, templateId: null })
-const appPushStatus = ref<{ configured: boolean }>({ configured: false })
 const wechatAccepted = ref(false)
 let active = true
 let closing = false
@@ -72,9 +72,6 @@ async function load(options?: Record<string, string | undefined>) {
     syncDateFields()
     // #ifdef MP-WEIXIN
     try { wechatStatus.value = await request('/wechat/subscription/status') } catch { wechatStatus.value = { configured: false, templateId: null } }
-    // #endif
-    // #ifdef APP-PLUS
-    try { appPushStatus.value = await request('/push/status') } catch { appPushStatus.value = { configured: false } }
     // #endif
   } catch (e) {
     error.value = e instanceof Error ? e.message : '内容加载失败'
@@ -157,8 +154,10 @@ async function save() {
   try {
     const saved = await request<Item & { wechatSubscribed?: boolean }>(draft.value.id ? `/items/${encodeURIComponent(draft.value.id)}` : '/items', draft.value.id ? 'PUT' : 'POST', { ...draft.value, wechatSubscribe: wechatAccepted.value && canSubscribeSelf.value })
     if (!active) return
+    const localReminderScheduled = saved.kind === 'reminder' && user.value ? scheduleLocalReminderForUser(saved, user.value) : false
+    if (localReminderScheduled) requestLocalReminderPermissions()
     closing = true
-    uni.showToast({ title: saved.wechatSubscribed ? '已保存并开启微信提醒' : '已保存', icon: 'success' })
+    uni.showToast({ title: saved.wechatSubscribed ? '已保存并开启微信提醒' : localReminderScheduled ? '已保存并设置本机提醒' : '已保存', icon: 'success' })
     returnToPrevious()
   } catch (e) {
     if (active) uni.showToast({ title: e instanceof Error ? e.message : '保存失败', icon: 'none' })
@@ -264,7 +263,7 @@ onUnload(() => { active = false })
         <text class="muted small hint">站内提醒始终保留；微信服务通知需要你单次授权。</text>
         <!-- #endif -->
         <!-- #ifdef H5 --><text class="muted small hint">当前提供站内消息，关闭页面后不会弹出系统通知。</text><!-- #endif -->
-        <!-- #ifdef APP-PLUS --><text class="muted small hint">{{ appPushStatus.configured ? '站内提醒与系统通知已接入；系统通知还需允许通知权限。' : '站内提醒可用；离线系统通知将在内测 Push 配置完成后启用。' }}</text><!-- #endif -->
+        <!-- #ifdef APP-PLUS --><text class="muted small hint">提醒会同步到本机系统；允许通知权限后，划掉 App 仍会按时弹出。对方在你离线期间新建的提醒，会在下次打开 App 后同步。</text><!-- #endif -->
         <!-- #ifdef MP-WEIXIN -->
         <view v-if="wechatStatus.configured" class="setting wechat-setting">
           <view class="setting-copy">

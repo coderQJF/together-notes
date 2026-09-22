@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { request, type User } from '../../services/api'
-import { clearStoredPushClientId, storedPushClientId } from '../../services/push'
+import { clearLocalReminders } from '../../services/local-reminders'
 
 const user = ref<User | null>(null)
 const nickname = ref('')
@@ -64,12 +64,12 @@ async function logout() {
   if (pending.value) return
   pending.value = true
   try {
-    await request('/logout', 'POST', { pushClientId: storedPushClientId() })
+    await request('/logout', 'POST')
   } catch {
     // 本地会话仍需清除，避免失效 token 把用户困在当前页。
   } finally {
     uni.removeStorageSync('session')
-    clearStoredPushClientId()
+    clearLocalReminders()
     pending.value = false
     uni.reLaunch({ url: '/pages/index/index' })
   }
@@ -108,7 +108,7 @@ async function deleteAccount() {
   try {
     await request('/me', 'DELETE', { password: deletePassword.value })
     uni.removeStorageSync('session')
-    clearStoredPushClientId()
+    clearLocalReminders()
     uni.showToast({ title: '账号已注销', icon: 'success' })
     setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 500)
   } catch (reason) {

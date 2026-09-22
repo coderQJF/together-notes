@@ -3,7 +3,8 @@ import { computed, nextTick, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import JellyTabs from '../../components/JellyTabs.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
-import { ApiError, apiAssetUrl, request, type Item } from '../../services/api'
+import { ApiError, apiAssetUrl, request, type Item, type User } from '../../services/api'
+import { requestLocalReminderPermissions, scheduleLocalReminderForUser, syncLocalReminders } from '../../services/local-reminders'
 import type { Competition, CompetitionId, ContentRefreshResult, SportsMatch, SportsMode, SportsPayload, Team } from '../../types/content'
 import { formatClock, formatDayHeading, formatRelativeTime } from '../../utils/date'
 
@@ -46,8 +47,9 @@ const isReminded = (match: SportsMatch) => {
 
 async function syncReminders() {
   try {
-    const items = await request<Item[]>('/items')
+    const [items, user] = await Promise.all([request<Item[]>('/items'), request<User>('/me')])
     remindersBySource.value = Object.fromEntries(items.filter(item => item.kind === 'reminder' && item.sourceKey?.startsWith('sports-match:')).map(item => [item.sourceKey!, item]))
+    syncLocalReminders(items, user)
   } catch {}
 }
 
@@ -176,6 +178,8 @@ async function remind(match: SportsMatch) {
       repeat: 'none', recipient: 'me', advance: 30, done: false,
     })
     rememberReminder(savedReminder)
+    const user = await request<User>('/me')
+    if (scheduleLocalReminderForUser(savedReminder, user)) requestLocalReminderPermissions()
     uni.showToast({ title: updating ? '开赛提醒已更新' : '已设置开赛前 30 分钟提醒', icon: 'none' })
   } catch (cause) {
     uni.showToast({ title: cause instanceof Error ? cause.message : '设置失败', icon: 'none' })

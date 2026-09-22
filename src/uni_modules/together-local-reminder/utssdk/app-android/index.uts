@@ -1,0 +1,54 @@
+import {
+  ScheduleLocalReminder,
+  ReminderIdAction,
+  ReminderBooleanAction
+} from '../interface.uts'
+
+export const scheduleLocalReminder : ScheduleLocalReminder = function (
+  id : string,
+  title : string,
+  content : string,
+  triggerAt : number,
+  repeat : string,
+  route : string
+) : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return LocalReminderNative.schedule(context, id, title, content, triggerAt, repeat, route)
+}
+
+export const cancelLocalReminder : ReminderIdAction = function (id : string) : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return LocalReminderNative.cancel(context, id)
+}
+
+export const cancelAllLocalReminders : ReminderBooleanAction = function () : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return LocalReminderNative.cancelAll(context)
+}
+
+export const hasLocalNotificationPermission : ReminderBooleanAction = function () : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return LocalReminderNative.hasNotificationPermission(context)
+}
+
+export const requestLocalNotificationPermission : ReminderBooleanAction = function () : boolean {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) return false
+  return LocalReminderNative.requestNotificationPermission(activity)
+}
+
+export const canScheduleExactLocalReminders : ReminderBooleanAction = function () : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return LocalReminderNative.canScheduleExact(context)
+}
+
+export const openExactLocalReminderSettings : ReminderBooleanAction = function () : boolean {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) return false
+  return LocalReminderNative.openExactAlarmSettings(activity)
+}

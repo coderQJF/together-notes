@@ -1,0 +1,11 @@
+export type ScheduleLocalReminder = (
+  id: string,
+  title: string,
+  content: string,
+  triggerAt: number,
+  repeat: string,
+  route: string
+) => boolean
+
+export type ReminderIdAction = (id: string) => boolean
+export type ReminderBooleanAction = () => boolean

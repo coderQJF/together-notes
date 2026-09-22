@@ -2,7 +2,8 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
-import { ApiError, apiAssetUrl, request, type Item } from '../../services/api'
+import { ApiError, apiAssetUrl, request, type Item, type User } from '../../services/api'
+import { requestLocalReminderPermissions, scheduleLocalReminderForUser, syncLocalReminders } from '../../services/local-reminders'
 import type { Competition, ContentMeta, SportsMatch, SportsPayload, Standing, Team } from '../../types/content'
 import { formatCompactDateTime, formatRelativeTime } from '../../utils/date'
 
@@ -56,8 +57,9 @@ const markLogoBroken = (team: Team) => { brokenImages.value = { ...brokenImages.
 
 async function syncReminderState(id: string) {
   try {
-    const items = await request<Item[]>('/items')
+    const [items, user] = await Promise.all([request<Item[]>('/items'), request<User>('/me')])
     existingReminder.value = items.find(item => item.kind === 'reminder' && item.sourceKey === `sports-match:${id}`) || null
+    syncLocalReminders(items, user)
   } catch {}
 }
 
@@ -122,6 +124,8 @@ async function remind() {
       links: match.value.sourceUrl ? [match.value.sourceUrl] : [], sourceKey: `sports-match:${match.value.id}`, nextAt: match.value.startsAt,
       repeat: 'none', recipient: 'me', advance: 30, done: false,
     })
+    const user = await request<User>('/me')
+    if (scheduleLocalReminderForUser(existingReminder.value, user)) requestLocalReminderPermissions()
     uni.showToast({ title: updating ? '开赛提醒已更新' : '已设置开赛前 30 分钟提醒', icon: 'none' })
   } catch (cause) {
     uni.showToast({ title: cause instanceof Error ? cause.message : '设置失败', icon: 'none' })

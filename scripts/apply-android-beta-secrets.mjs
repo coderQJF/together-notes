@@ -21,7 +21,6 @@ function upsertEnvironment(source, entries) {
 
 const entries = {
   APP_REGISTRATION_CODE: secrets.betaRegistrationCode,
-  APP_PUSH_WEBHOOK_TOKEN: secrets.pushWebhookToken,
 }
 
 for (const file of ['server/.env', 'deploy/.env']) {
@@ -30,4 +29,4 @@ for (const file of ['server/.env', 'deploy/.env']) {
   await writeFile(resolve(file), upsertEnvironment(current, entries), { mode: 0o600 })
 }
 
-console.log('已把内测注册口令和 Push Token 写入忽略提交的本地服务端环境文件；未输出任何密钥。')
+console.log('已把内测注册口令写入忽略提交的本地服务端环境文件；未输出任何密钥。')

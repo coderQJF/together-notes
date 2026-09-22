@@ -1,0 +1,37 @@
+{
+  "id": "together-local-reminder",
+  "displayName": "小记本地提醒",
+  "version": "1.0.0",
+  "description": "使用 Android AlarmManager 在 App 进程退出后发送本地提醒",
+  "engines": {
+    "HBuilderX": "^4.81"
+  },
+  "dcloudext": {
+    "type": "uts",
+    "declaration": {
+      "ads": "无",
+      "data": "提醒标题、内容和时间仅保存在本机 Android SharedPreferences 中",
+      "permissions": "通知、闹钟与提醒、开机完成"
+    }
+  },
+  "uni_modules": {
+    "dependencies": [],
+    "encrypt": [],
+    "platforms": {
+      "client": {
+        "Vue": {
+          "vue2": "n",
+          "vue3": "y"
+        },
+        "App": {
+          "app-android": {
+            "minVersion": "21"
+          },
+          "app-ios": {
+            "minVersion": "x"
+          }
+        }
+      }
+    }
+  }
+}
