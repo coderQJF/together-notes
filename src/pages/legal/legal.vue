@@ -32,12 +32,13 @@ onLoad(options => {
       <template v-else>
         <view class="section"><text class="section-title">1. 我们处理的信息</text><text>注册时处理账号、加盐密码摘要和昵称；使用过程中处理你主动创建的随记、提醒、共享关系、附件和操作所需的会话信息。密码原文不会保存到服务器。</text></view>
         <view class="section"><text class="section-title">2. 使用目的</text><text>这些信息用于登录鉴权、保存和同步内容、向绑定对象展示共享内容、生成站内提醒、提供搜索结果以及保障服务安全。私人小记不会作为联网模型的搜索内容发送。</text></view>
-        <view class="section"><text class="section-title">3. 权限与设备能力</text><text>在 App 中选择图片附件时，系统可能请求照片访问权限；本版本不会请求相机权限。启用系统通知后会请求通知权限。只有你主动使用对应功能时才会申请，拒绝不会影响其他基础功能。</text></view>
+        <view class="section"><text class="section-title">3. 权限与设备能力</text><text>在 App 中选择图片附件时，系统可能请求照片访问权限；本版本不会请求相机权限。启用系统提醒时会请求通知权限。只有你主动使用对应功能时才会申请，拒绝不会影响其他基础功能，但 App 完全关闭后将无法弹出提醒。</text></view>
         <view class="section"><text class="section-title">4. App 运行框架</text><text>本产品基于 DCloud uni-app（5+ App）开发。App 运行期间，DCloud App 引擎可能处理设备标识、应用启动数据和异常错误日志，以保障基础运行并分析性能。详情可查看 DCloud App 引擎隐私政策。</text></view>
-        <view class="section"><text class="section-title">5. 第三方服务</text><text>联网搜索、赛事、资讯、图片缓存和未来的系统推送可能调用页面中标明的第三方服务。请求仅包含实现功能所需的信息；账号密码和私人小记不会提供给内容数据源。</text></view>
-        <view class="section"><text class="section-title">6. 保存与保护</text><text>业务数据保存在本服务配置的服务器和备份中，通过 HTTPS 传输并按账号权限隔离。我们会采取合理安全措施，但互联网服务无法保证绝对安全。</text></view>
-        <view class="section"><text class="section-title">7. 共享与删除</text><text>只有你主动选择“我们俩”时，绑定对象才能访问相应内容。你可以删除单条内容，也可以在“小空间”中注销账号；账号注销会解除双人绑定并删除本人账号和本人创建的数据。</text></view>
-        <view class="section"><text class="section-title">8. 联系与变更</text><text>内测问题请联系向你提供安装包的维护者。政策发生实质变化时，将在后续版本中更新日期和说明。</text></view>
+        <view class="section"><text class="section-title">5. 系统推送</text><text>系统提醒使用 DCloud UniPush 2.0、个推及测试手机对应的厂商推送通道。为生成并送达通知，会处理推送客户端标识或厂商设备令牌、应用包名与签名、设备品牌型号、系统和网络状态，并把提醒标题、提醒内容及打开目标发送给推送服务。拒绝通知权限或关闭系统通知后，通知栏提醒将无法显示。</text></view>
+        <view class="section"><text class="section-title">6. 其他第三方服务</text><text>联网搜索、赛事、资讯和图片缓存可能调用页面中标明的第三方服务。请求仅包含实现功能所需的信息；账号密码和私人小记不会提供给内容数据源。</text></view>
+        <view class="section"><text class="section-title">7. 保存与保护</text><text>业务数据保存在本服务配置的服务器和备份中，通过 HTTPS 传输并按账号权限隔离。我们会采取合理安全措施，但互联网服务无法保证绝对安全。</text></view>
+        <view class="section"><text class="section-title">8. 共享与删除</text><text>只有你主动选择“我们俩”时，绑定对象才能访问相应内容。你可以删除单条内容，也可以在“小空间”中注销账号；账号注销会解除双人绑定并删除本人账号和本人创建的数据。</text></view>
+        <view class="section"><text class="section-title">9. 联系与变更</text><text>内测问题请联系向你提供安装包的维护者。政策发生实质变化时，将在后续版本中更新日期和说明。</text></view>
       </template>
     </view>
   </view>

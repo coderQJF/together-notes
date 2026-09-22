@@ -28,3 +28,4 @@ deploy/.env
 *.key
 project.private.config.json
 *.zip
+/.private/

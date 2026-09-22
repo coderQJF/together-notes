@@ -1,0 +1,15 @@
+{
+  "name": "app-push-bridge",
+  "version": "1.0.0",
+  "description": "Authenticated HTTP bridge from Together Notes API to UniPush 2.0",
+  "main": "index.js",
+  "extensions": {
+    "uni-cloud-push": {}
+  },
+  "cloudfunction-config": {
+    "memorySize": 256,
+    "timeout": 10,
+    "runtime": "Nodejs18",
+    "path": "/app-push-bridge"
+  }
+}

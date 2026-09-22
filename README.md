@@ -77,7 +77,7 @@ APP_TIME_ZONE=Asia/Shanghai
 
 App 新账号注册默认关闭。把随机且不易猜测的内测口令写入服务端 `APP_REGISTRATION_CODE` 后，测试者可凭该口令注册；清空它会再次关闭注册，但不会影响已有账号登录。
 
-App 系统通知不会在未配置时假装可用。先在 DCloud 开发者中心为同一 DCloud AppID 开通 UniPush，再在 HBuilderX 的 App 模块配置中启用 Push；随后把调用 UniPush 的 HTTPS 桥接地址与独立 Bearer Token 配置为 `APP_PUSH_WEBHOOK_URL`、`APP_PUSH_WEBHOOK_TOKEN`。未完成这一步时，站内提醒仍正常工作，编辑页会明确显示离线系统通知尚未启用。
+App 系统通知不会在未配置时假装可用。项目已启用 UniPush 2.0 的原生离线 SDK，并提供 `uniCloud-aliyun/cloudfunctions/app-push-bridge` HTTPS 桥。桥接函数始终用 `force_notification: true` 投递，因此 App 在线、后台或进程被关闭时都会请求通知栏消息；Android 完全关闭后的实际送达还依赖测试手机品牌对应的厂商推送通道。未完成云端配置时，站内提醒仍正常工作，编辑页会明确显示离线系统通知尚未启用。
 
 智能搜索默认按截图使用兼容 OpenAI [Chat Completions](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions) 的微信模型网关，请求地址为 `${AI_BASE_URL}/chat/completions`；也可把 `AI_API_TYPE` 改为 `responses` 后使用 OpenAI [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)。本地检索始终由服务端直接完成，不依赖模型配置，也不会把私人小记发送给模型；只有本地没有匹配时才请求模型，且请求只包含用户当前问题。Chat Completions 模式通过 `web_search_options` 尝试搜索并读取 `search_results`：有可核验来源时展示为联网回答，没有来源但模型返回正文时展示为“模型回答 · 未联网核验”；服务未配置、不可达或没有正文时才返回“没有找到相关数据”。
 
@@ -139,14 +139,24 @@ npm run build:app
 
 ### Android 内测安装包
 
-代码仓库已经固定建议包名 `cn.coderf.togethernotes`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享和 Push 接入点。首次正式签名出包前准备：
+代码仓库已经固定 DCloud AppID `__UNI__10E8CA8`、包名 `cn.coderf.togethernotes` 和版本 `0.2.0 (20)`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享及 UniPush 2.0 接入。当前内测版只需要维护者补充两类无法由仓库生成的信息：
 
-- DCloud 开发者中心创建的 `DCLOUD_APP_ID`（`__UNI__...`）。
-- 最终 Android 包名；如需修改，首次可升级安装包发布前设置 `ANDROID_PACKAGE_NAME`，之后不要变更。
-- 自有 Android `.jks`/`.keystore` 签名证书及 alias、store password、key password；证书和密码禁止提交到 Git。
-- 1024×1024 PNG 图标原稿；内测前可在 HBuilderX 的“App 图标配置”中自动生成各尺寸。
-- 至少一台真机的品牌和 Android 版本用于验收。
-- 一段仅发给测试者的内测注册口令；只写入服务器 `APP_REGISTRATION_CODE`，不打进安装包。
+- 提供用于验收的 Android 真机品牌、型号和 Android 版本，并在手机系统设置中允许“小记”通知。要保证 App 进程被系统彻底关闭后仍及时送达，还需在 DCloud 后台配置该品牌的厂商推送；对应华为、小米、OPPO、vivo、荣耀等厂商开发者账号和密钥只能由账号持有人申请。
+- 如 DCloud 账号尚未完成实名认证、UniPush 2.0 服务协议确认或 uniCloud 服务空间开通，需要账号持有人在网页中完成这些一次性操作。
+
+其余内测材料已经由项目生成：
+
+- Android 发布证书：`.private/android/together-notes-release.keystore`。
+- 证书密码、内测注册口令、Push Bearer Token 和证书指纹：`.private/android/app-release-secrets.local.json`。
+- 1024×1024 图标及 Android/通知栏密度图：`src/static/app-icons`。
+- UniPush HTTPS 桥及依赖表：`uniCloud-aliyun`。
+
+`.private` 已被 Git 忽略。首次安装包发出前请把整个 `.private/android` 目录加密备份到另一个安全位置；以后每次升级必须继续使用同一证书，丢失后无法覆盖安装旧版本。需要重新初始化一套全新身份时才可删除旧文件并运行：
+
+```powershell
+$env:KEYTOOL_PATH='你的 JDK\bin\keytool.exe'
+node scripts/generate-android-signing.mjs
+```
 
 生成资源前可以显式写入外部标识：
 
@@ -158,7 +168,27 @@ $env:VITE_PUBLIC_BASE_URL='https://notes.example.com'
 npm run build:app
 ```
 
-未设置 `DCLOUD_APP_ID` 时仍能生成供 CI 检查的 App 资源，但不能视为可发行安装包。签名信息在 HBuilderX“发行 → 原生 App 云打包”界面填写，不写入仓库。Push 模块必须在 DCloud 后台开通后再勾选，否则云打包会失败。
+`npm run build:app` 只生成 `dist/build/app` 资源，不是 APK。签名信息只从 `.private` 读取或在 HBuilderX“发行 → 原生 App 云打包”界面填写，不写入仓库。项目已经勾选 Push 模块，因此首次云打包前必须先在 DCloud 后台开通 UniPush 2.0，否则 DCloud 会拒绝打包。
+
+HBuilderX 登录且云服务已开通后，可直接执行：
+
+```powershell
+npm run prepare:android-beta
+npm run package:android-beta
+```
+
+第二条命令会生成忽略提交的 HBuilderX 打包配置，使用自有证书申请 Android 安心云打包，全程不在终端输出密码。
+
+### 完全关闭后的系统提醒
+
+1. 在 DCloud 开发者中心为 `__UNI__10E8CA8` 添加 Android 平台：包名填 `cn.coderf.togethernotes`，SHA-1 指纹从 `.private/android/app-release-secrets.local.json` 复制。
+2. 创建并绑定一个阿里云版 uniCloud 服务空间，在 UniPush 2.0 中选择同一空间；为目标测试手机配置对应的厂商推送通道。
+3. 在 HBuilderX 中绑定 `uniCloud-aliyun` 到该服务空间，上传 `database` 下的 schema/index，再上传部署 `app-push-bridge`。该函数已配置 URL 化路径 `/app-push-bridge`。
+4. 在 uniCloud 控制台给函数设置环境变量 `APP_PUSH_WEBHOOK_TOKEN`，值与 `.private/android/app-release-secrets.local.json` 中的 `pushWebhookToken` 一致。
+5. 把函数 HTTPS URL 和同一 Token 写入业务服务器 `APP_PUSH_WEBHOOK_URL`、`APP_PUSH_WEBHOOK_TOKEN`；把 `betaRegistrationCode` 写入 `APP_REGISTRATION_CODE`，然后重启业务服务。
+6. 使用自有证书云打包 APK并安装；登录后创建两分钟后的提醒，彻底划掉/关闭 App，锁屏等待通知。测试时不要使用 HBuilder 标准基座，因为离线 Push 只在云打包安装包中生效。
+
+桥接函数只接受 Bearer Token 认证的 POST 请求，限制收件设备数与负载大小，不把 UniPush 凭据放进客户端。Android 13 及以上首次启动会由原生 Push 模块申请通知权限；用户拒绝后无法显示通知栏提醒。
 
 ## AI 协作模式
 
