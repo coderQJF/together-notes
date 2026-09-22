@@ -82,22 +82,24 @@ object LocalReminderNative {
         triggerAt: Number,
         repeat: String,
         route: String,
-    ): Boolean = try {
-        val safeRepeat = if (repeat == "daily" || repeat == "weekly") repeat else "none"
-        val record = ReminderRecord(
-            id = id.trim().take(200),
-            title = title.trim().take(100),
-            content = content.trim().take(500),
-            triggerAt = triggerAt.toLong(),
-            repeat = safeRepeat,
-            route = route.trim().take(500),
-        ).nextAfter(System.currentTimeMillis()) ?: return false
-        if (record.id.isBlank()) return false
-        saveRecord(context, record)
-        scheduleRecord(context, record)
-        true
-    } catch (_: Exception) {
-        false
+    ): Boolean {
+        return try {
+            val safeRepeat = if (repeat == "daily" || repeat == "weekly") repeat else "none"
+            val record = ReminderRecord(
+                id = id.trim().take(200),
+                title = title.trim().take(100),
+                content = content.trim().take(500),
+                triggerAt = triggerAt.toLong(),
+                repeat = safeRepeat,
+                route = route.trim().take(500),
+            ).nextAfter(System.currentTimeMillis()) ?: return false
+            if (record.id.isBlank()) return false
+            saveRecord(context, record)
+            scheduleRecord(context, record)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     @JvmStatic
@@ -141,16 +143,18 @@ object LocalReminderNative {
     }
 
     @JvmStatic
-    fun openExactAlarmSettings(activity: Activity): Boolean = try {
-        if (canScheduleExact(activity)) return true
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                data = Uri.parse("package:${activity.packageName}")
-            })
+    fun openExactAlarmSettings(activity: Activity): Boolean {
+        return try {
+            if (canScheduleExact(activity)) return true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    data = Uri.parse("package:${activity.packageName}")
+                })
+            }
+            false
+        } catch (_: Exception) {
+            false
         }
-        false
-    } catch (_: Exception) {
-        false
     }
 
     internal fun rescheduleAll(context: Context) {
