@@ -69,7 +69,7 @@ function goBack() {
 </template>
 
 <style scoped>
-.subpage-header{position:sticky;z-index:20;top:0;display:flex;align-items:center;justify-content:space-between;min-height:44px;margin-bottom:24px;background:#faf8f2}
+.subpage-header{position:sticky;z-index:20;top:0;display:flex;align-items:center;justify-content:space-between;min-height:44px;margin-bottom:24px;background:var(--subpage-background,#faf8f2)}
 .back{display:inline-flex;align-items:center;gap:7px;width:auto;height:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:#786d5b;font-size:15px;line-height:1.4}
 .back::after{border:0}
 .back-icon{width:10px;height:10px;margin-left:3px;border-left:1.7px solid currentColor;border-bottom:1.7px solid currentColor;transform:rotate(45deg)}

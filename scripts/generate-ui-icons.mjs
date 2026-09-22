@@ -18,6 +18,7 @@ const icons = [
   ['bell.svg', 'bell-active.png', '#494032'],
   ['search.svg', 'search-inactive.png', '#fff9e9'],
   ['search.svg', 'search-active.png', '#494032'],
+  ['book.svg', 'book-active.png', '#494032'],
   ['heart.svg', 'heart-inactive.png', '#fff9e9'],
   ['heart.svg', 'heart-active.png', '#494032'],
   ['attachment.svg', 'attachment-active.png', '#494032'],

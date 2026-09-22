@@ -62,6 +62,7 @@ function detail(item:Item){if(!item.id)return;uni.navigateTo({url:`/pages/detail
 function selectReminderCategory(value:string){if(value==='待办'){category.value=value;return}if(value==='消息'){inbox();return}uni.navigateTo({url:value==='比赛'?'/pages/sports/sports':'/pages/news/news'})}
 async function toggle(i:Item){await act('toggle:'+i.id,async()=>{await request('/items/'+i.id,'PUT',{...i,done:!i.done});await refresh()})}
 function openUs(){uni.navigateTo({url:'/pages/us/us'})}
+function openLibrary(){uni.navigateTo({url:'/pages/library/library'})}
 function format(v?:string){return formatDateTime(v)}
 function inbox(){uni.navigateTo({url:'/pages/inbox/inbox'})}
 function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refresh().catch(()=>{})},30000)}
@@ -73,7 +74,7 @@ function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refre
 </script>
 <template>
 <view class="shell">
- <view class="header"><view class="brand-lockup"><button v-if="user" class="profile-trigger" hover-class="profile-pressed" :aria-label="user.partner?`进入我们的小空间，已与${user.partner.nickname}绑定`:'进入我们的小空间'" @click="openUs"><text class="profile-face">{{user.nickname.slice(0,1)}}</text></button><view class="wordmark"><text class="brand">小记</text><text class="brand-sub">TOGETHER</text></view></view></view>
+ <view class="header"><view class="brand-lockup"><button v-if="user" class="profile-trigger" hover-class="profile-pressed" :aria-label="user.partner?`进入我们的小空间，已与${user.partner.nickname}绑定`:'进入我们的小空间'" @click="openUs"><text class="profile-face">{{user.nickname.slice(0,1)}}</text></button><view class="wordmark"><text class="brand">小记</text><text class="brand-sub">TOGETHER</text></view></view><!-- #ifndef MP-WEIXIN --><button v-if="user" class="library-trigger" hover-class="library-pressed" aria-label="打开本地书架" @click="openLibrary"><image src="/static/nav-icons/book-active.png" mode="aspectFit"/><text>阅读</text></button><!-- #endif --></view>
  <view v-if="!ready" class="empty">正在打开小记…</view>
   <view v-else-if="!user" class="login">
    <view class="logo-mark">小记</view><view class="headline"><text class="headline-line">生活里的小事，</text><text class="headline-line">一起记得。</text></view><text class="muted block">随手留下，也在合适的时候提醒你。</text>
@@ -160,6 +161,7 @@ function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refre
 @media(max-width:375px){.shell{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}.floating{width:calc(100% - 40px - env(safe-area-inset-left) - env(safe-area-inset-right))}.scope-scroll{width:calc(100% + 40px);margin-left:-20px;margin-right:-20px}.scope-row{padding:0 20px}}
 @media(max-width:340px){.brand-lockup{gap:4px}.brand-sub{margin-left:5px;font-size:9px;letter-spacing:1.3px}.dock button{gap:3px;padding:0 2px}.nav-label{font-size:12px}.citation-card{padding-left:11px;padding-right:11px}}
 @media(max-height:640px){.floating{position:relative;left:auto;bottom:auto;width:100%;margin-top:20px;transform:none}.floating::before{display:none}}
+.header{justify-content:space-between}.library-trigger{display:flex;align-items:center;justify-content:center;gap:6px;width:auto;height:44px;min-height:44px;flex:0 0 auto;margin:0;padding:0 10px;border:1px solid #e7dfcf;border-radius:14px;background:#fff;color:#625744;font-size:12px;line-height:1}.library-trigger::after{border:0}.library-trigger image{display:block;width:18px;height:18px}.library-pressed{transform:scale(.97);opacity:.86}
 /* #ifdef APP-PLUS */
 .shell{padding-top:calc(12px + var(--status-bar-height))}
 /* #endif */
