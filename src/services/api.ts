@@ -49,14 +49,17 @@ export const request = <T>(path: string, method: 'GET' | 'POST' | 'PUT' | 'DELET
     ))
   },
 }))
+function rememberSession(result:{token:string;user:User}){uni.setStorageSync('session',result.token);return result.user}
 export async function login(){let result:{token:string;user:User};
-// #ifdef MP-WEIXIN
-const code=await new Promise<string>((resolve,reject)=>uni.login({provider:'weixin',success:r=>resolve(r.code),fail:()=>reject(new Error('微信登录失败'))}));result=await request('/auth/wechat','POST',{code});
-// #endif
-// #ifndef MP-WEIXIN
-throw new Error('请在微信小程序中登录');
-// #endif
-uni.setStorageSync('session',result!.token);return result!.user}
+ // #ifdef MP-WEIXIN
+ const code=await new Promise<string>((resolve,reject)=>uni.login({provider:'weixin',success:r=>resolve(r.code),fail:()=>reject(new Error('微信登录失败'))}));result=await request('/auth/wechat','POST',{code});
+ // #endif
+ // #ifndef MP-WEIXIN
+ throw new Error('请在微信小程序中登录');
+ // #endif
+ return rememberSession(result!)}
+export async function loginWithApp(username:string,password:string){return rememberSession(await request<{token:string;user:User}>('/auth/app/login','POST',{username,password}))}
+export async function registerWithApp(username:string,password:string,nickname:string,betaCode:string){return rememberSession(await request<{token:string;user:User}>('/auth/app/register','POST',{username,password,nickname,betaCode,acceptedTerms:true}))}
 export async function attachFile():Promise<Attachment>{
  let file:any;
  // #ifdef H5
@@ -66,7 +69,7 @@ export async function attachFile():Promise<Attachment>{
  file=await new Promise<any>((resolve,reject)=>uni.chooseMessageFile({count:1,type:'all',success:r=>resolve((r.tempFiles as any[])[0]),fail:()=>reject(new Error('未选择文件'))}));
  // #endif
  // #ifdef APP-PLUS
- const selected=await new Promise<any>((resolve,reject)=>uni.chooseImage({count:1,success:resolve,fail:()=>reject(new Error('未选择图片'))}));file={path:selected.tempFilePaths[0],name:'图片.jpg'};
+ const selected=await new Promise<any>((resolve,reject)=>uni.chooseImage({count:1,sourceType:['album'],success:resolve,fail:()=>reject(new Error('未选择图片'))}));file={path:selected.tempFilePaths[0],name:'图片.jpg'};
  // #endif
  let bytes:ArrayBuffer;
  // #ifdef H5

@@ -28,6 +28,7 @@ const pending = ref('')
 const error = ref('')
 const editingExisting = ref(false)
 const wechatStatus = ref<{ configured: boolean; templateId: string | null }>({ configured: false, templateId: null })
+const appPushStatus = ref<{ configured: boolean }>({ configured: false })
 const wechatAccepted = ref(false)
 let active = true
 let closing = false
@@ -71,6 +72,9 @@ async function load(options?: Record<string, string | undefined>) {
     syncDateFields()
     // #ifdef MP-WEIXIN
     try { wechatStatus.value = await request('/wechat/subscription/status') } catch { wechatStatus.value = { configured: false, templateId: null } }
+    // #endif
+    // #ifdef APP-PLUS
+    try { appPushStatus.value = await request('/push/status') } catch { appPushStatus.value = { configured: false } }
     // #endif
   } catch (e) {
     error.value = e instanceof Error ? e.message : '内容加载失败'
@@ -205,9 +209,9 @@ onUnload(() => { active = false })
       <button class="attachment-button" :disabled="Boolean(pending)" @click="addAttachment">
         <view v-if="pending === 'attachment'" class="spinner" />
         <view v-else class="mini-plus" />
-        <text>{{ pending === 'attachment' ? '选择中…' : '添加附件' }}</text>
+        <text>{{ pending === 'attachment' ? '选择中…' : '添加附件' }}<!-- #ifdef APP-PLUS -->（图片）<!-- #endif --></text>
       </button>
-      <text class="muted small hint">单个最大 12MB，最多 10 个。</text>
+      <text class="muted small hint">单个最大 12MB，最多 10 个。<!-- #ifdef APP-PLUS -->内测版 App 暂支持图片附件。<!-- #endif --></text>
 
       <text class="label">可见范围</text>
       <view v-if="isGuestEditor" class="picker readonly">
@@ -259,9 +263,8 @@ onUnload(() => { active = false })
         <!-- #ifdef MP-WEIXIN -->
         <text class="muted small hint">站内提醒始终保留；微信服务通知需要你单次授权。</text>
         <!-- #endif -->
-        <!-- #ifndef MP-WEIXIN -->
-        <text class="muted small hint">当前提供站内消息，关闭应用后不会弹出系统通知。</text>
-        <!-- #endif -->
+        <!-- #ifdef H5 --><text class="muted small hint">当前提供站内消息，关闭页面后不会弹出系统通知。</text><!-- #endif -->
+        <!-- #ifdef APP-PLUS --><text class="muted small hint">{{ appPushStatus.configured ? '站内提醒与系统通知已接入；系统通知还需允许通知权限。' : '站内提醒可用；离线系统通知将在内测 Push 配置完成后启用。' }}</text><!-- #endif -->
         <!-- #ifdef MP-WEIXIN -->
         <view v-if="wechatStatus.configured" class="setting wechat-setting">
           <view class="setting-copy">

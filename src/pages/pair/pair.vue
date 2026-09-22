@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { onLoad, onShareAppMessage, onUnload } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { login, request, type User } from '../../services/api'
+import { shareText } from '../../utils/platform'
 
 const mode = ref<'invite' | 'join'>('join')
 const code = ref('')
@@ -107,6 +108,15 @@ function copyCode() {
   if (code.value) uni.setClipboardData({ data: code.value })
 }
 
+function shareInvite() {
+  if (!code.value) return
+  shareText({ title: '加入小记', content: `${me.value?.nickname || '你的好友'} 邀请你加入小记，邀请码：${code.value}` })
+}
+
+function backToLogin() {
+  uni.reLaunch({ url: '/pages/index/index' })
+}
+
 onLoad(options => {
   mode.value = options?.mode === 'invite' ? 'invite' : 'join'
   // #ifdef MP-WEIXIN
@@ -143,9 +153,10 @@ onUnload(() => { active = false })
         <text class="invite-code">{{ code }}</text>
         <text class="card-hint">24 小时内有效 · 仅可使用一次</text>
       </view>
-      <button class="primary" open-type="share" :disabled="!code">分享给好友</button>
+      <!-- #ifdef MP-WEIXIN --><button class="primary" open-type="share" :disabled="!code">分享给好友</button><!-- #endif -->
+      <!-- #ifndef MP-WEIXIN --><button class="primary" :disabled="!code" @click="shareInvite">分享邀请码</button><!-- #endif -->
       <button class="secondary copy-button" :disabled="!code" @click="copyCode">复制邀请码</button>
-      <text class="footnote">好友打开分享后，可直接微信注册并确认绑定。</text>
+      <text class="footnote"><!-- #ifdef MP-WEIXIN -->好友打开分享后，可直接微信注册并确认绑定。<!-- #endif --><!-- #ifndef MP-WEIXIN -->好友安装并登录小记后，输入邀请码即可绑定。<!-- #endif --></text>
     </template>
 
     <template v-else>
@@ -162,7 +173,8 @@ onUnload(() => { active = false })
         <text class="confirm-title">{{ inviter }} 邀请你绑定</text>
         <text class="card-hint">确认后可使用双人共享备忘和提醒。</text>
         <button v-if="hasSession" class="confirm" :disabled="loading" @click="acceptInvite">{{ loading ? '绑定中…' : '确认绑定' }}</button>
-        <button v-else class="confirm" :disabled="loading" @click="loginAndAccept">{{ loading ? '登录绑定中…' : '微信登录并绑定' }}</button>
+        <!-- #ifdef MP-WEIXIN --><button v-else class="confirm" :disabled="loading" @click="loginAndAccept">{{ loading ? '登录绑定中…' : '微信登录并绑定' }}</button><!-- #endif -->
+        <!-- #ifndef MP-WEIXIN --><button v-else class="confirm" @click="backToLogin">先登录，再输入邀请码</button><!-- #endif -->
       </view>
     </template>
   </view>

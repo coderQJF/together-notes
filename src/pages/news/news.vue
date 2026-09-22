@@ -6,6 +6,7 @@ import SubpageHeader from '../../components/SubpageHeader.vue'
 import { ApiError, apiAssetUrl, request } from '../../services/api'
 import type { ContentRefreshResult, NewsChannel, NewsPayload, NewsStory } from '../../types/content'
 import { formatRelativeTime } from '../../utils/date'
+import { openExternalUrl } from '../../utils/platform'
 
 const channel = ref<NewsChannel>('featured')
 const payload = ref<NewsPayload | null>(null)
@@ -34,12 +35,7 @@ const markImageBroken = (story: NewsStory) => { brokenImages.value = { ...broken
 
 function openProvider(url?: string | null) {
   if (!url || !/^https:\/\//i.test(url)) return
-  // #ifdef H5
-  window.open(url, '_blank', 'noopener,noreferrer')
-  // #endif
-  // #ifndef H5
-  uni.setClipboardData({ data: url, success: () => uni.showToast({ title: '数据源链接已复制', icon: 'none' }) })
-  // #endif
+  openExternalUrl(url)
 }
 
 function openStory(story: NewsStory) {

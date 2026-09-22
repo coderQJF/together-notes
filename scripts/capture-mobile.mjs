@@ -197,6 +197,8 @@ const screens = [
   { name: 'pair-invite', path: '/pages/pair/pair?mode=invite', ready: '把小记' },
   { name: 'pair-join', path: '/pages/pair/pair?mode=join', ready: '加入彼此' },
   { name: 'inbox', path: '/pages/inbox/inbox', ready: '到时间了' },
+  { name: 'legal-terms', path: '/pages/legal/legal?document=terms', ready: '服务说明' },
+  { name: 'legal-privacy', path: '/pages/legal/legal?document=privacy', ready: '我们处理的信息' },
 ].filter(screen => !screenNames.size || screenNames.has(screen.name))
 if (!screens.length) throw new Error('CAPTURE_SCREENS did not match any known screen')
 

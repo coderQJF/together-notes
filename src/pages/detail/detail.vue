@@ -4,6 +4,7 @@ import { onLoad, onShareAppMessage, onShow, onUnload } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { downloadFile, request, type Item, type User } from '../../services/api'
 import { formatClock, formatCompactDateTime, formatDayHeading } from '../../utils/date'
+import { openExternalUrl, publicShareUrl, shareText } from '../../utils/platform'
 
 type DetailItem = Omit<Item, 'scope'> & { scope: Item['scope'] | 'link' }
 
@@ -102,8 +103,11 @@ function remove() {
   })
 }
 
-function copy(value: string) {
-  uni.setClipboardData({ data: value })
+function shareItem() {
+  if (!item.value || !shareToken.value) return
+  const route = `/pages/detail/detail?share=${encodeURIComponent(shareToken.value)}`
+  const href = publicShareUrl(route)
+  shareText({ title: item.value.title || '小记分享', content: href ? `${item.value.title}\n${href}` : item.value.title, href })
 }
 
 async function openAttachment(attachment: NonNullable<Item['attachments']>[number]) {
@@ -211,19 +215,26 @@ onUnload(() => { active = false })
 
       <view v-if="item.links.length" class="section">
         <text class="section-label">链接</text>
-        <button v-for="link in item.links" :key="link" class="resource" @click="copy(link)">
+        <button v-for="link in item.links" :key="link" class="resource" @click="openExternalUrl(link)">
           <view class="resource-mark"><image class="resource-icon" src="/static/nav-icons/link-active.png" mode="aspectFit" /></view>
           <view class="resource-copy">
             <text class="resource-title link-title">{{ link }}</text>
-            <text class="muted small">点击复制链接</text>
+            <text class="muted small"><!-- #ifdef MP-WEIXIN -->点击复制链接<!-- #endif --><!-- #ifndef MP-WEIXIN -->点击打开链接<!-- #endif --></text>
           </view>
           <view class="chevron" />
         </button>
       </view>
 
+      <!-- #ifdef MP-WEIXIN -->
       <button v-if="!sharedPreview" class="share-action" open-type="share" hover-class="none" :disabled="!shareToken || sharePreparing">
         {{ sharePreparing ? '正在准备分享…' : '分享给好友' }}
       </button>
+      <!-- #endif -->
+      <!-- #ifndef MP-WEIXIN -->
+      <button v-if="!sharedPreview" class="share-action" hover-class="none" :disabled="!shareToken || sharePreparing" @click="shareItem">
+        {{ sharePreparing ? '正在准备分享…' : '分享给好友' }}
+      </button>
+      <!-- #endif -->
       <text v-if="shareError && !sharedPreview" class="share-error" @click="prepareShare">{{ shareError }}，点此重试</text>
 
       <view v-if="!sharedPreview" class="actions">

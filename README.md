@@ -5,12 +5,13 @@ UniApp + Vue 3 + TypeScript 的双人备忘与提醒应用。保留 01 奶油黄
 ## 已实现
 
 - 微信小程序通过 `wx.login` 获取 code，由服务端调用微信接口换取 OpenID 并签发自己的会话；正式代码不提供体验账号。
+- Android App 内测版使用独立账号和密码注册登录；密码通过随机盐和 `scrypt` 摘要保存，不与微信小程序身份自动合并。App 内支持退出和永久注销账号。
 - 备忘新增、查看、编辑、删除、搜索、置顶、私人/共享筛选，支持多行正文和链接。
 - 详情、编辑、比赛、新闻、邀请、消息和“小空间”均使用独立页面栈；“小空间”不显示底部导航，微信小程序可通过边缘右滑或顶部按钮返回。日期使用跨端一致的中文格式。
 - 附件上传和权限保护下载：单文件 12MB、每人 100MB、每条最多 10 个附件。
 - 双账号邀请码绑定；邀请码 24 小时有效且只能使用一次，防止自绑定和重复绑定。
 - 共享内容双方可编辑；仅创建者能删除或改为私人；历史私人内容不会自动共享。
-- 单次、每日、每周提醒，支持提前提醒和站内消息；微信小程序中可由当前接收者主动授权一次性订阅消息，到点后同时发送微信“服务通知”，发送失败不影响站内提醒。
+- 单次、每日、每周提醒，支持提前提醒和站内消息；微信小程序中可由当前接收者主动授权一次性订阅消息。App 已提供设备登记和服务端 Push 投递接口，完成 DCloud UniPush 开通及 HTTPS 投递桥配置后可发送系统通知。
 - 比赛使用 football-data.org（英超、西甲、欧冠）和 PandaScore（仅 LPL、全球总决赛）的真实赛程、赛果与积分榜，足球球队与比赛阶段在服务端统一转为中文；新闻生产默认使用 GDELT Project 的真实中文资讯并整理为精选、股市与热点频道，GDELT 网络不可达时使用公开中文 RSS，也可显式切换到 NewsAPI，任何路径都不会回退到本地模拟数据。
 - 服务端定时同步并将最后一次成功的真实内容缓存到 SQLite；刷新失败时可返回带警告的过期真实缓存，没有缓存则明确返回 provider 配置或上游错误码。
 - 球队图标与获准使用的新闻配图由服务端校验、内网地址阻断、限大小后按 SHA-256 内容寻址保存到持久化 `MEDIA_DIR`，小程序不直连任意第三方图片域名；GDELT 返回的出版方图片默认不下载或重托管。
@@ -31,6 +32,7 @@ Copy-Item server/.env.example server/.env
 ```dotenv
 # H5 本地开发留空，使用 Vite /api 代理；小程序/App 填正式 HTTPS 地址
 VITE_API_BASE=https://notes.example.com/api
+VITE_PUBLIC_BASE_URL=https://notes.example.com
 ```
 
 后端 `server/.env`：
@@ -47,6 +49,9 @@ PUBLIC_BASE_URL=https://notes.example.com
 WX_APP_ID=wx0000000000000000
 WX_APP_SECRET=仅放服务端的真实Secret
 WX_REMINDER_TEMPLATE_ID=SRj7mQ0c6juhTrXsl8VRWLpLJuwehMjZpWRNUlar1ts
+APP_REGISTRATION_CODE=仅放服务端并发给内测用户的注册口令
+APP_PUSH_WEBHOOK_URL=UniPush HTTPS 投递桥地址
+APP_PUSH_WEBHOOK_TOKEN=投递桥 Bearer Token
 FOOTBALL_DATA_API_KEY=仅放服务端的 football-data.org 密钥
 PANDASCORE_API_TOKEN=仅放服务端的 PandaScore token
 NEWS_PROVIDER=gdelt
@@ -69,6 +74,10 @@ APP_TIME_ZONE=Asia/Shanghai
 内容服务会在启动后和上述间隔自动同步。密钥不能下发到 H5/小程序；GDELT 模式不需要注册或密钥，显式使用 NewsAPI 时缺少密钥会返回 `NEWS_API_UNCONFIGURED`。上游故障返回可追踪的结构化错误，不会伪造赛程或新闻。`MEDIA_DIR` 应与 SQLite 一样挂载到持久化磁盘；未显式配置时默认使用数据库文件的同级 `media` 目录。
 
 微信提醒使用“日历提醒”一次性订阅模板：`thing1` 为提醒事项、`time2` 为提醒时间、`thing6` 为备注。用户必须在提醒编辑页主动打开“微信服务通知”并接受微信弹窗；一次授权仅用于下一次发送，重复提醒的后续周期需再次授权。模板 ID 不是密钥，可提交或由 `WX_REMINDER_TEMPLATE_ID` 覆盖；`WX_APP_SECRET` 仍只允许保存在服务器环境文件中。
+
+App 新账号注册默认关闭。把随机且不易猜测的内测口令写入服务端 `APP_REGISTRATION_CODE` 后，测试者可凭该口令注册；清空它会再次关闭注册，但不会影响已有账号登录。
+
+App 系统通知不会在未配置时假装可用。先在 DCloud 开发者中心为同一 DCloud AppID 开通 UniPush，再在 HBuilderX 的 App 模块配置中启用 Push；随后把调用 UniPush 的 HTTPS 桥接地址与独立 Bearer Token 配置为 `APP_PUSH_WEBHOOK_URL`、`APP_PUSH_WEBHOOK_TOKEN`。未完成这一步时，站内提醒仍正常工作，编辑页会明确显示离线系统通知尚未启用。
 
 智能搜索默认按截图使用兼容 OpenAI [Chat Completions](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions) 的微信模型网关，请求地址为 `${AI_BASE_URL}/chat/completions`；也可把 `AI_API_TYPE` 改为 `responses` 后使用 OpenAI [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)。本地检索始终由服务端直接完成，不依赖模型配置，也不会把私人小记发送给模型；只有本地没有匹配时才请求模型，且请求只包含用户当前问题。Chat Completions 模式通过 `web_search_options` 尝试搜索并读取 `search_results`：有可核验来源时展示为联网回答，没有来源但模型返回正文时展示为“模型回答 · 未联网核验”；服务未配置、不可达或没有正文时才返回“没有找到相关数据”。
 
@@ -127,6 +136,29 @@ npm run build:app
 - H5：`dist/build/h5`
 - 微信小程序：`dist/build/mp-weixin`
 - App 资源：`dist/build/app`，仍需 HBuilderX、DCloud AppID、平台签名和真机发行流程生成安装包
+
+### Android 内测安装包
+
+代码仓库已经固定建议包名 `cn.coderf.togethernotes`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享和 Push 接入点。首次正式签名出包前准备：
+
+- DCloud 开发者中心创建的 `DCLOUD_APP_ID`（`__UNI__...`）。
+- 最终 Android 包名；如需修改，首次可升级安装包发布前设置 `ANDROID_PACKAGE_NAME`，之后不要变更。
+- 自有 Android `.jks`/`.keystore` 签名证书及 alias、store password、key password；证书和密码禁止提交到 Git。
+- 1024×1024 PNG 图标原稿；内测前可在 HBuilderX 的“App 图标配置”中自动生成各尺寸。
+- 至少一台真机的品牌和 Android 版本用于验收。
+- 一段仅发给测试者的内测注册口令；只写入服务器 `APP_REGISTRATION_CODE`，不打进安装包。
+
+生成资源前可以显式写入外部标识：
+
+```powershell
+$env:DCLOUD_APP_ID='__UNI__XXXXXXX'
+$env:ANDROID_PACKAGE_NAME='cn.coderf.togethernotes'
+$env:VITE_API_BASE='https://notes.example.com/api'
+$env:VITE_PUBLIC_BASE_URL='https://notes.example.com'
+npm run build:app
+```
+
+未设置 `DCLOUD_APP_ID` 时仍能生成供 CI 检查的 App 资源，但不能视为可发行安装包。签名信息在 HBuilderX“发行 → 原生 App 云打包”界面填写，不写入仓库。Push 模块必须在 DCloud 后台开通后再勾选，否则云打包会失败。
 
 ## AI 协作模式
 
@@ -197,6 +229,9 @@ PUBLIC_BASE_URL=https://notes.example.com
 WX_APP_ID=wx0000000000000000
 WX_APP_SECRET=仅放服务器
 WX_REMINDER_TEMPLATE_ID=SRj7mQ0c6juhTrXsl8VRWLpLJuwehMjZpWRNUlar1ts
+APP_REGISTRATION_CODE=仅放服务器并发给内测用户
+APP_PUSH_WEBHOOK_URL=仅放服务器
+APP_PUSH_WEBHOOK_TOKEN=仅放服务器
 FOOTBALL_DATA_API_KEY=仅放服务器
 PANDASCORE_API_TOKEN=仅放服务器
 NEWS_PROVIDER=gdelt

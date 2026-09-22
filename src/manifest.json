@@ -7,11 +7,36 @@
   "vueVersion": "3",
   "app-plus": {
     "usingComponents": true,
-    "modules": {},
+    "modules": {
+      "Camera": {
+        "description": "从系统相册选择图片附件"
+      },
+      "Share": {
+        "description": "调用 Android 系统分享面板发送邀请码和公开分享链接"
+      }
+    },
+    "screenOrientation": [
+      "portrait-primary"
+    ],
     "distribute": {
       "android": {
+        "packagename": "cn.coderf.togethernotes",
+        "enableOAID": false,
+        "abiFilters": [
+          "arm64-v8a",
+          "armeabi-v7a"
+        ],
+        "permissionExternalStorage": {
+          "request": "none"
+        },
+        "permissionPhoneState": {
+          "request": "none"
+        },
         "permissions": [
           "<uses-permission android:name=\"android.permission.INTERNET\"/>"
+        ],
+        "excludePermissions": [
+          "<uses-permission android:name=\"android.permission.CAMERA\"/>"
         ]
       },
       "ios": {}

@@ -39,6 +39,10 @@
     {
       "path": "pages/us/us",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "小空间", "disableScroll": false }
+    },
+    {
+      "path": "pages/legal/legal",
+      "style": { "navigationStyle": "custom", "navigationBarTitleText": "协议与隐私", "disableScroll": false }
     }
   ],
   "globalStyle": {

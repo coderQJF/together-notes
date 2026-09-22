@@ -21,4 +21,28 @@ test('binding, private/shared access, attachments, due delivery',async()=>{
  }finally{await new Promise(r=>app.server.close(r));app.db.close()}
 });
 test('production does not expose test identities',async()=>{const app=createApp({dbPath:':memory:'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));try{const r=await fetch('http://127.0.0.1:'+app.server.address().port+'/api/auth/test',{method:'POST',body:JSON.stringify({name:'我'})});assert.equal(r.status,404)}finally{await new Promise(r=>app.server.close(r));app.db.close()}});
+test('app accounts register behind a beta code, log in securely, and can delete all owned data',async()=>{
+ const app=createApp({dbPath:':memory:',appRegistrationCode:'private-beta-2026'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
+ const call=async(path,method='GET',data,token)=>{const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+(token||'')},body:data?JSON.stringify(data):undefined});return {status:response.status,...await response.json()}};
+ try{
+  assert.equal((await call('/auth/app/status')).registrationEnabled,true);
+  assert.equal((await call('/auth/app/register','POST',{username:'first_user',password:'safe-password-1',nickname:'我',acceptedTerms:true,betaCode:'wrong'})).status,403);
+  assert.equal((await call('/auth/app/register','POST',{username:'me',password:'short',nickname:'我',acceptedTerms:true,betaCode:'private-beta-2026'})).status,400);
+  const a=await call('/auth/app/register','POST',{username:'first_user',password:'safe-password-1',nickname:'我',acceptedTerms:true,betaCode:'private-beta-2026'});assert.equal(a.status,201);assert.ok(a.token);
+  assert.equal((await call('/auth/app/register','POST',{username:'FIRST_USER',password:'safe-password-2',nickname:'重复',acceptedTerms:true,betaCode:'private-beta-2026'})).status,409);
+  assert.equal((await call('/auth/app/login','POST',{username:'first_user',password:'wrong-password'})).status,401);
+  const loggedIn=await call('/auth/app/login','POST',{username:'FIRST_USER',password:'safe-password-1'});assert.equal(loggedIn.user.id,a.user.id);
+  const credential=app.db.prepare('SELECT * FROM app_credentials WHERE user=?').get(a.user.id);assert.notEqual(credential.password_hash,'safe-password-1');assert.equal(credential.terms_version,'2026-09-22');
+  const b=await call('/auth/app/register','POST',{username:'second_user',password:'safe-password-2',nickname:'小金子',acceptedTerms:true,betaCode:'private-beta-2026'});
+  const invite=await call('/invite','POST',{},a.token);await call('/invite/accept','POST',{code:invite.code},b.token);
+  const ownedByA=await call('/items','POST',{kind:'note',title:'随账号删除',content:'私人内容',links:[],scope:'shared'},a.token);
+  const ownedByB=await call('/items','POST',{kind:'note',title:'保留给另一方',content:'解绑后转为私人',links:[],scope:'shared'},b.token);
+  assert.equal((await call('/me','DELETE',{password:'wrong-password'},a.token)).status,403);
+  assert.equal((await call('/me','DELETE',{password:'safe-password-1'},a.token)).status,200);
+  assert.equal((await call('/me','GET',undefined,a.token)).status,401);assert.equal((await call('/auth/app/login','POST',{username:'first_user',password:'safe-password-1'})).status,401);
+  assert.equal((await call('/items/'+ownedByA.id,'GET',undefined,b.token)).status,404);
+  const remaining=await call('/items/'+ownedByB.id,'GET',undefined,b.token);assert.equal(remaining.scope,'mine');assert.equal((await call('/me','GET',undefined,b.token)).partner,null);
+ }finally{await new Promise(r=>app.server.close(r));app.db.close()}
+});
+test('app registration stays closed until a beta code is configured',async()=>{const app=createApp({dbPath:':memory:'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';try{const status=await fetch(base+'/auth/app/status').then(r=>r.json());assert.equal(status.registrationEnabled,false);const response=await fetch(base+'/auth/app/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'closed_user',password:'safe-password-1',nickname:'未开放',acceptedTerms:true,betaCode:'anything'})});assert.equal(response.status,503)}finally{await new Promise(r=>app.server.close(r));app.db.close()}});
 test('production server can host the H5 build',async()=>{const dir=await mkdtemp(join(tmpdir(),'together-notes-'));await writeFile(join(dir,'index.html'),'<main>小记</main>');await writeFile(join(dir,'app.js'),'console.log("ok")');const app=createApp({dbPath:':memory:',publicDir:dir});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;try{const home=await fetch(base+'/');assert.equal(home.status,200);assert.match(await home.text(),/小记/);const asset=await fetch(base+'/app.js');assert.equal(asset.headers.get('content-type'),'text/javascript; charset=utf-8');const fallback=await fetch(base+'/some/client/route');assert.equal(fallback.status,200);assert.match(await fallback.text(),/小记/)}finally{await new Promise(r=>app.server.close(r));app.db.close();await rm(dir,{recursive:true,force:true})}});

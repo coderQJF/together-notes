@@ -5,6 +5,7 @@ import SubpageHeader from '../../components/SubpageHeader.vue'
 import { ApiError, apiAssetUrl, request } from '../../services/api'
 import type { ContentMeta, NewsStory } from '../../types/content'
 import { formatCompactDateTime, formatRelativeTime } from '../../utils/date'
+import { openExternalUrl } from '../../utils/platform'
 
 const story = ref<NewsStory | null>(null)
 const meta = ref<ContentMeta | null>(null)
@@ -43,22 +44,12 @@ function toggleSaved() {
 
 function openOriginal() {
   if (!story.value?.originalUrl || !/^https?:\/\//i.test(story.value.originalUrl)) return
-  // #ifdef H5
-  window.open(story.value.originalUrl, '_blank', 'noopener,noreferrer')
-  // #endif
-  // #ifndef H5
-  uni.setClipboardData({ data: story.value.originalUrl, success: () => uni.showToast({ title: '原文链接已复制', icon: 'none' }) })
-  // #endif
+  openExternalUrl(story.value.originalUrl)
 }
 
 function openProvider(url?: string | null) {
   if (!url || !/^https:\/\//i.test(url)) return
-  // #ifdef H5
-  window.open(url, '_blank', 'noopener,noreferrer')
-  // #endif
-  // #ifndef H5
-  uni.setClipboardData({ data: url, success: () => uni.showToast({ title: '数据源链接已复制', icon: 'none' }) })
-  // #endif
+  openExternalUrl(url)
 }
 
 onLoad(options => {
@@ -86,7 +77,8 @@ onLoad(options => {
 
       <view class="source-card"><view><text class="source-label">来源可核验</text><text class="source-name">{{ story.source }}{{ story.author ? ` · ${story.author}` : '' }}</text></view><button hover-class="none" :disabled="!story.originalUrl" @click="openOriginal"><text v-if="!story.originalUrl">暂无原文</text><text v-else>
         <!-- #ifdef H5 -->阅读原文<!-- #endif -->
-        <!-- #ifndef H5 -->复制原文链接<!-- #endif -->
+        <!-- #ifdef APP-PLUS -->打开原文<!-- #endif -->
+        <!-- #ifdef MP-WEIXIN -->复制原文链接<!-- #endif -->
       </text></button></view>
 
       <view v-if="story.content && story.content !== story.summary" class="article-body"><text>{{ story.content }}</text></view>
@@ -95,7 +87,8 @@ onLoad(options => {
 
       <view v-if="meta?.providerUrl" class="provider-source"><view><text class="source-label">聚合数据来源</text><text class="source-name">{{ meta.provider }}</text></view><button hover-class="none" @click="openProvider(meta.providerUrl)"><text>
         <!-- #ifdef H5 -->了解数据源<!-- #endif -->
-        <!-- #ifndef H5 -->复制数据源链接<!-- #endif -->
+        <!-- #ifdef APP-PLUS -->打开数据源<!-- #endif -->
+        <!-- #ifdef MP-WEIXIN -->复制数据源链接<!-- #endif -->
       </text></button></view>
 
       <button class="save" hover-class="none" :class="{ saved }" @click="toggleSaved"><image class="heart" :src="saved ? '/static/nav-icons/heart-filled.png' : '/static/nav-icons/heart-inactive.png'" mode="aspectFit" /><text>{{ saved ? '已收藏，留着慢慢看' : '收藏这条' }}</text></button>
