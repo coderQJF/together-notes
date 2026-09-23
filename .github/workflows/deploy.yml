@@ -72,8 +72,18 @@ jobs:
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
+          OPS_ADMIN_TOKEN: ${{ secrets.OPS_ADMIN_TOKEN }}
         run: |
           test -n "$ECS_USER"
+          test -n "$OPS_ADMIN_TOKEN"
+          printf '%s\n' "$OPS_ADMIN_TOKEN" | ssh "$ECS_USER@$ECS_HOST" '
+            set -e
+            IFS= read -r ops_admin_token
+            test -n "$ops_admin_token"
+            env_file=/opt/together-notes/shared/server.env
+            sed -i "/^OPS_ADMIN_TOKEN=/d" "$env_file"
+            printf "OPS_ADMIN_TOKEN=%s\n" "$ops_admin_token" >> "$env_file"
+          '
           ssh "$ECS_USER@$ECS_HOST" '
             set -e
             integration_token_file=/opt/stock-platform/.together-notes-integration-token

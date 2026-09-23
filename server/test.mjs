@@ -75,3 +75,17 @@ test('Stock Platform integration matches phone digests and creates one persisten
   const stored=app.db.prepare("SELECT id,data FROM items WHERE owner=? AND kind='reminder'").all(account.user.id).filter(item=>JSON.parse(item.data).sourceKey===reminder.source_key);assert.equal(stored.length,1);assert.equal(JSON.parse(stored[0].data).done,false);app.tick(Date.parse('2026-09-24T00:00:00Z'));assert.equal(JSON.parse(app.db.prepare('SELECT data FROM items WHERE id=?').get(first.id).data).done,false);assert.equal(app.db.prepare('SELECT count(*) count FROM notifications').get().count,1);
  }finally{await new Promise(r=>app.server.close(r));app.db.close()}
 });
+test('operations API protects account data, manages VIP, and publishes novels',async()=>{
+ const app=createApp({dbPath:':memory:',testAuth:true,opsAdminToken:'operations-secret'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
+ const call=async(path,method='GET',data,token)=>{const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+(token||'')},body:data?JSON.stringify(data):undefined});return {status:response.status,...await response.json()}};
+ try{
+  const account=await call('/auth/test','POST',{name:'我'});assert.equal((await call('/operations/summary','GET',undefined,'wrong-token')).status,401);
+  const summary=await call('/operations/summary','GET',undefined,'operations-secret');assert.equal(summary.accounts,1);assert.equal(summary.vipAccounts,1);
+  const users=await call('/operations/users?q=%E6%88%91','GET',undefined,'operations-secret');assert.equal(users.total,1);assert.equal(users.items[0].nickname,'我');
+  const disabled=await call(`/operations/users/${account.user.id}/vip`,'PUT',{enabled:false},'operations-secret');assert.equal(disabled.vip,false);assert.equal((await call('/novels','GET',undefined,account.token)).status,403);
+  const enabled=await call(`/operations/users/${account.user.id}/vip`,'PUT',{enabled:true,expires_at:new Date(Date.now()+86400000).toISOString()},'operations-secret');assert.equal(enabled.vip,true);assert.ok(enabled.vipExpiresAt);
+  const uploaded=await call('/operations/novels','POST',{title:'测试小说',author:'作者',filename:'test.txt',content:'第一章\n\n这是正文。'},'operations-secret');assert.equal(uploaded.status,201);assert.equal(uploaded.character_count,10);
+  const novels=await call('/novels','GET',undefined,account.token);assert.equal(novels.items.length,1);const novel=await call('/novels/'+uploaded.id,'GET',undefined,account.token);assert.equal(novel.content,'第一章\n\n这是正文。');
+  assert.equal((await call('/operations/novels/'+uploaded.id,'DELETE',undefined,'operations-secret')).ok,true);assert.equal((await call('/novels/'+uploaded.id,'GET',undefined,account.token)).status,404);
+ }finally{await new Promise(r=>app.server.close(r));app.db.close()}
+});

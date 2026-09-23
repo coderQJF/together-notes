@@ -146,8 +146,10 @@ export function prepareReaderBook(input: { title: string; author?: string; text:
 }
 
 export function saveReaderBook(book: ReaderBook) {
-  saveLibrary([book, ...loadReaderLibrary()])
-  return book
+  const existing = loadReaderLibrary().find(item => item.id === book.id)
+  const saved = existing ? { ...book, progress: existing.progress } : book
+  saveLibrary([saved, ...loadReaderLibrary().filter(item => item.id !== book.id)])
+  return saved
 }
 
 export function createReaderBook(input: { title: string; author?: string; text: string }): ReaderBook {

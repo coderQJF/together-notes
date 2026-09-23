@@ -1,5 +1,7 @@
 export interface Attachment {id:string;name:string;size:number}
-export interface User {id:string;nickname:string;vip:boolean;partner:{id:string;nickname:string}|null}
+export interface User {id:string;nickname:string;vip:boolean;vipExpiresAt?:string|null;partner:{id:string;nickname:string}|null}
+export interface CloudNovelSummary {id:string;title:string;author:string;characterCount:number;createdAt:string;updatedAt:string}
+export interface CloudNovel extends CloudNovelSummary {content:string}
 export interface Item {id?:string;owner?:string;kind:'note'|'reminder';title:string;content:string;scope:'mine'|'shared';pinned?:boolean;attachments?:Attachment[];links:string[];sourceKey?:string;nextAt?:string;repeat?:string;recipient?:string;advance?:number;done?:boolean;updatedAt?:string}
 export interface Message {id:string;title:string;due:string;seen:number}
 
@@ -60,6 +62,8 @@ export async function login(){let result:{token:string;user:User};
  return rememberSession(result!)}
 export async function loginWithApp(username:string,password:string){return rememberSession(await request<{token:string;user:User}>('/auth/app/login','POST',{username,password}))}
 export async function registerWithApp(username:string,password:string,nickname:string,betaCode:string){return rememberSession(await request<{token:string;user:User}>('/auth/app/register','POST',{username,password,nickname,betaCode,acceptedTerms:true}))}
+export async function listCloudNovels(){return (await request<{items:CloudNovelSummary[]}>('/novels')).items}
+export async function getCloudNovel(id:string){return request<CloudNovel>('/novels/'+encodeURIComponent(id))}
 export async function attachFile():Promise<Attachment>{
  let file:any;
  // #ifdef H5
