@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { onLoad, onReady, onShow } from '@dcloudio/uni-app'
 import JellyTabs from '../../components/JellyTabs.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { ApiError, apiAssetUrl, request, type Item, type User } from '../../services/api'
@@ -22,7 +22,8 @@ const payload = ref<SportsPayload | null>(null)
 const loading = ref(true)
 const refreshing = ref(false)
 const error = ref<ApiError | null>(null)
-const scrollTarget = ref('')
+const competitionScrollLeft = ref(0)
+let competitionCurrentScrollLeft = 0
 const brokenImages = ref<Record<string, boolean>>({})
 const remindingId = ref('')
 const remindersBySource = ref<Record<string, Item>>({})
@@ -63,8 +64,21 @@ function markLogoBroken(team: Team) {
 }
 
 function alignSelectedChip() {
-  scrollTarget.value = ''
-  nextTick(() => { scrollTarget.value = `competition-${selectedId.value}` })
+  nextTick(() => {
+    const query = uni.createSelectorQuery()
+    query.select('.competition-scroll').boundingClientRect()
+    query.select(`#competition-${selectedId.value}`).boundingClientRect()
+    query.exec(results => {
+      const [viewport, chip] = results as any[]
+      if (!viewport || !chip) return
+      const centered = competitionCurrentScrollLeft + Number(chip.left) - Number(viewport.left) - (Number(viewport.width) - Number(chip.width)) / 2
+      competitionScrollLeft.value = Math.max(0, Math.round(centered))
+    })
+  })
+}
+
+function rememberCompetitionScroll(event: any) {
+  competitionCurrentScrollLeft = Math.max(0, Number(event.detail?.scrollLeft) || 0)
 }
 
 async function loadCompetitions() {
@@ -194,6 +208,7 @@ onLoad(async options => {
   alignSelectedChip()
   await loadSports()
 })
+onReady(alignSelectedChip)
 onShow(() => { void syncReminders() })
 </script>
 
@@ -214,7 +229,7 @@ onShow(() => { void syncReminders() })
       <text>{{ payload.meta.provider }} · {{ formatRelativeTime(payload.meta.updatedAt) }}更新{{ payload.meta.stale ? ' · 已显示最后成功数据' : '' }}</text>
     </view>
 
-    <scroll-view class="competition-scroll" scroll-x :scroll-into-view="scrollTarget" scroll-with-animation :show-scrollbar="false">
+    <scroll-view class="competition-scroll scrollbar-hidden" scroll-x enhanced :scroll-left="competitionScrollLeft" scroll-with-animation :show-scrollbar="false" @scroll="rememberCompetitionScroll">
       <view class="competition-row">
         <button v-for="competition in competitions" :id="`competition-${competition.id}`" :key="competition.id" class="competition-chip" hover-class="none" :class="{ active: selectedId === competition.id }" :aria-pressed="selectedId === competition.id" @click="selectCompetition(competition.id)">
           <text class="competition-mark">{{ competition.mark }}</text><text class="chip-label">{{ competition.name }}</text>
@@ -276,7 +291,7 @@ onShow(() => { void syncReminders() })
 .card-pressed{opacity:.86}
 .shell{max-width:640px;min-height:100vh;margin:auto;padding:0 24px calc(48px + env(safe-area-inset-bottom));background:#faf8f2;color:#3e382d}.update-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}.eyebrow{display:block;color:#786d5b;font-size:12px}.refresh-button{display:flex;align-items:center;justify-content:center;gap:6px;width:auto;height:44px;min-height:44px;margin:0 -7px 0 0;padding:0 7px;border:0;background:transparent;color:#786d5b;font-size:12px;line-height:normal}.refresh-button::after{border:0}.refresh-button image{display:block;width:15px;height:15px}.refresh-button[disabled]{opacity:.5}.spinning{animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .headline{display:block;margin:4px 0 0;font-size:32px;font-weight:600;line-height:1.3;letter-spacing:-.8px}.headline text{display:block}.subtitle{display:block;margin-top:12px;color:#786d5b;font-size:14px;line-height:1.7}.data-state{display:flex;align-items:flex-start;gap:7px;margin-top:13px;color:#6f7d57;font-size:11px;line-height:1.55}.data-state.warning{color:#8a6422}.state-dot{width:6px;height:6px;flex:0 0 6px;margin-top:5px;border-radius:50%;background:currentColor}
-.competition-scroll{width:calc(100% + 48px);margin:22px -24px 14px;white-space:nowrap}.competition-row{display:inline-flex;gap:9px;box-sizing:border-box;min-width:100%;padding:0 34px 0 24px;white-space:nowrap}.competition-chip{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:auto;height:46px;min-height:46px;flex:0 0 auto;margin:0;padding:0 15px;border:1px solid #e5dece;border-radius:23px;background:#fff;color:#6f6555;font-size:13px;line-height:normal;box-sizing:border-box;white-space:nowrap}.competition-chip::after{border:0}.competition-chip.active{border-color:#494032;background:#494032;color:#fff9e9}.competition-chip text{display:block;line-height:20px;white-space:nowrap}.competition-mark{display:flex!important;align-items:center;justify-content:center;min-width:25px;height:26px;padding:0 5px;border-radius:8px;background:#f7e7ad;color:#5d4a24;font-size:10px;font-weight:700;line-height:26px!important;letter-spacing:-.2px;box-sizing:border-box}.chip-label{padding-top:1px}
+.competition-scroll{width:calc(100% + 48px);margin:22px -24px 14px;overflow:hidden;white-space:nowrap;overscroll-behavior-x:contain}.competition-row{display:inline-flex;gap:9px;box-sizing:border-box;min-width:100%;padding:0 24px;white-space:nowrap}.competition-chip{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:auto;height:46px;min-height:46px;flex:0 0 auto;margin:0;padding:0 15px;border:1px solid #e5dece;border-radius:23px;background:#fff;color:#6f6555;font-size:13px;line-height:normal;box-sizing:border-box;white-space:nowrap}.competition-chip::after{border:0}.competition-chip.active{border-color:#494032;background:#494032;color:#fff9e9}.competition-chip text{display:block;line-height:20px;white-space:nowrap}.competition-mark{display:flex!important;align-items:center;justify-content:center;min-width:25px;height:26px;padding:0 5px;border-radius:8px;background:#f7e7ad;color:#5d4a24;font-size:10px;font-weight:700;line-height:26px!important;letter-spacing:-.2px;box-sizing:border-box}.chip-label{padding-top:1px}
 .competition-intro{display:flex;align-items:center;gap:12px;padding:14px 15px;margin:12px 0 16px;border:1px solid #efdfaa;border-radius:17px;background:#f7e7ad}.league-emblem{display:flex;align-items:center;justify-content:center;width:42px;height:42px;flex:0 0 42px;border-radius:13px;background:#fff9e9;color:#5d4a24;font-size:11px;font-weight:700;box-shadow:inset 0 0 0 1px #ead69a}.intro-copy{min-width:0;flex:1}.intro-name{display:block;font-size:17px;font-weight:600}.intro-description{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#75643c;font-size:12px}.kind-tag{display:inline-flex;align-items:center;height:27px;padding:0 9px;border-radius:8px;background:#fff9e9;color:#78642e;font-size:11px;line-height:27px;white-space:nowrap}
 .section-heading{display:flex;align-items:center;justify-content:space-between;margin:24px 2px 10px}.section-title{font-size:19px;font-weight:600}.section-count{color:#786d5b;font-size:12px}
 .state-card{padding:22px;margin-top:17px;border:1px solid #e7e0d2;border-radius:20px;background:#fff}.loading-card{color:#786d5b;font-size:12px}.loading-line{width:74%;height:11px;margin-bottom:10px;border-radius:7px;background:#eee9dd;animation:pulse 1.2s ease-in-out infinite}.loading-line.wide{width:100%}.loading-line.short{width:48%;margin-bottom:18px}@keyframes pulse{50%{opacity:.45}}.error-card{display:flex;flex-direction:column;align-items:flex-start}.state-title{font-size:17px;font-weight:600}.state-message{margin-top:8px;color:#786d5b;font-size:13px;line-height:1.65}.error-code{margin-top:8px;color:#a35243;font-family:monospace;font-size:11px;word-break:break-all}.retry-button{display:flex;align-items:center;justify-content:center;height:44px;min-height:44px;margin:18px 0 0;padding:0 18px;border:0;border-radius:13px;background:#494032;color:#fff9e9;font-size:13px;line-height:normal}.retry-button::after{border:0}.empty-card{padding:28px 20px;border:1px dashed #ddd4c3;border-radius:18px;color:#786d5b;font-size:13px;line-height:1.7;text-align:center}
@@ -284,7 +299,7 @@ onShow(() => { void syncReminders() })
 .standings-card{padding:8px 17px 14px;margin-top:17px;border:1px solid #ece5d6;border-radius:20px;background:#fff}.table-head,.table-row{display:grid;grid-template-columns:42px minmax(90px,1fr) 42px 62px 38px;align-items:center;min-height:48px;column-gap:4px;font-size:12px;text-align:center}.table-head{min-height:42px;color:#786d5b;font-size:11px}.table-row{border-top:1px solid #f1ecdf;color:#61594b}.rank{text-align:left}.club{text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.rank.top{color:#9a7626;font-weight:700}.points{color:#3e382d;font-size:14px;font-weight:700}.table-note{display:block;padding:22px 0 10px;color:#786d5b;font-size:12px;line-height:1.6;text-align:center}.inline-warning{display:flex;flex-direction:column;gap:4px;padding:12px 2px;color:#975a42;font-size:11px;line-height:1.5}.inline-warning.neutral{color:#786d5b}
 .standings-context{display:block;padding:12px 2px 4px;color:#786d5b;font-size:11px;line-height:1.5}
 .source-note{padding:17px;margin-top:25px;border-radius:16px;background:#f1ede3;color:#786d5b;font-size:12px;line-height:1.7}.source-note.warning-note{background:#f4e8df;color:#8c523f}.source-title{display:block;margin-bottom:4px;color:#494032;font-size:13px;font-weight:600}
-@media(max-width:360px){.shell{padding-left:20px;padding-right:20px}.competition-scroll{width:calc(100% + 40px);margin-left:-20px;margin-right:-20px}.competition-row{padding-left:20px;padding-right:30px}.headline{font-size:29px}.scoreline{grid-template-columns:minmax(0,1fr) 62px minmax(0,1fr);gap:5px}.team-mark{width:42px;height:42px;flex-basis:42px}.match-card{padding-left:16px;padding-right:16px}.table-head,.table-row{grid-template-columns:28px minmax(68px,1fr) 34px 48px 30px}}
+@media(max-width:360px){.shell{padding-left:20px;padding-right:20px}.competition-scroll{width:calc(100% + 40px);margin-left:-20px;margin-right:-20px}.competition-row{padding-left:20px;padding-right:20px}.headline{font-size:29px}.scoreline{grid-template-columns:minmax(0,1fr) 62px minmax(0,1fr);gap:5px}.team-mark{width:42px;height:42px;flex-basis:42px}.match-card{padding-left:16px;padding-right:16px}.table-head,.table-row{grid-template-columns:28px minmax(68px,1fr) 34px 48px 30px}}
 .shell{padding-left:calc(24px + env(safe-area-inset-left));padding-right:calc(24px + env(safe-area-inset-right))}
 @media(max-width:360px){.shell{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}}
 </style>

@@ -160,7 +160,7 @@ onLoad(() => loadNews())
 
       <view v-if="payload.topics.length" class="trending">
         <text class="trending-label">正在关注</text>
-        <scroll-view scroll-x :show-scrollbar="false" class="trend-scroll">
+        <scroll-view scroll-x :show-scrollbar="false" class="trend-scroll scrollbar-hidden">
           <view class="trend-row">
             <button v-for="topic in payload.topics" :key="topic" hover-class="none" :class="{ active: selectedTopic === topic }" :aria-pressed="selectedTopic === topic" @click="selectTopic(topic)"><text># {{ topic }}</text></button>
           </view>

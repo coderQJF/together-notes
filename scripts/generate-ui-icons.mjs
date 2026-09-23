@@ -25,6 +25,7 @@ const icons = [
   ['link.svg', 'link-active.png', '#494032'],
   ['location.svg', 'location-active.png', '#8b6b25'],
   ['refresh.svg', 'refresh-active.png', '#786d5b'],
+  ['edit.svg', 'edit-active.png', '#786d5b'],
   ['heart-filled.svg', 'heart-filled.png', '#494032'],
 ]
 
