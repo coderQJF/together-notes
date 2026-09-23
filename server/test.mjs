@@ -1,4 +1,4 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import {mkdtemp,writeFile,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';import {createApp} from './index.mjs';
+import {test} from 'node:test';import assert from 'node:assert/strict';import {createHmac} from 'node:crypto';import {mkdtemp,writeFile,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';import {createApp} from './index.mjs';
 import {DatabaseSync} from 'node:sqlite';
 test('binding, private/shared access, attachments, due delivery',async()=>{
  const app=createApp({dbPath:':memory:',testAuth:true});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
@@ -62,3 +62,16 @@ test('an existing mini-program account can add App credentials without duplicati
  }finally{await new Promise(r=>app.server.close(r));app.db.close()}
 });
 test('production server can host the H5 build',async()=>{const dir=await mkdtemp(join(tmpdir(),'together-notes-'));await writeFile(join(dir,'index.html'),'<main>小记</main>');await writeFile(join(dir,'app.js'),'console.log("ok")');const app=createApp({dbPath:':memory:',publicDir:dir});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;try{const home=await fetch(base+'/');assert.equal(home.status,200);assert.match(await home.text(),/小记/);const asset=await fetch(base+'/app.js');assert.equal(asset.headers.get('content-type'),'text/javascript; charset=utf-8');const fallback=await fetch(base+'/some/client/route');assert.equal(fallback.status,200);assert.match(await fallback.text(),/小记/)}finally{await new Promise(r=>app.server.close(r));app.db.close();await rm(dir,{recursive:true,force:true})}});
+test('Stock Platform integration matches phone digests and creates one persistent reminder per day',async()=>{
+ const app=createApp({dbPath:':memory:',testAuth:true,stockIntegrationToken:'shared-integration-secret'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
+ const call=async(path,method='GET',data,token)=>{const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+(token||'')},body:data?JSON.stringify(data):undefined});return {status:response.status,...await response.json()}};
+ try{
+  const account=await call('/auth/test','POST',{name:'我'});assert.equal((await call('/me/phone','GET',undefined,account.token)).configured,false);assert.equal((await call('/me/phone','PUT',{phone:'13800138000'},account.token)).masked,'*******8000');
+  const phoneHash=createHmac('sha256','shared-integration-secret').update('13800138000').digest('hex');
+  assert.equal((await call('/integrations/stock-platform/link-status','POST',{phone_hash:phoneHash},'wrong')).status,401);
+  assert.equal((await call('/integrations/stock-platform/link-status','POST',{phone_hash:phoneHash},'shared-integration-secret')).linked,true);
+  const reminder={phone_hash:phoneHash,source_key:'stock-platform:daily:2026-09-23',title:'当日股票推荐',content:'1. 示例股票（600001）｜+3.25%\n推荐模型：均衡观察\n观察依据：成交活跃',delivered_at:'2026-09-23T16:00:00+08:00'};
+  const first=await call('/integrations/stock-platform/reminders','POST',reminder,'shared-integration-secret'),second=await call('/integrations/stock-platform/reminders','POST',reminder,'shared-integration-secret');assert.equal(first.status,201);assert.equal(second.status,200);assert.equal(second.id,first.id);
+  const stored=app.db.prepare("SELECT id,data FROM items WHERE owner=? AND kind='reminder'").all(account.user.id).filter(item=>JSON.parse(item.data).sourceKey===reminder.source_key);assert.equal(stored.length,1);assert.equal(JSON.parse(stored[0].data).done,false);app.tick(Date.parse('2026-09-24T00:00:00Z'));assert.equal(JSON.parse(app.db.prepare('SELECT data FROM items WHERE id=?').get(first.id).data).done,false);assert.equal(app.db.prepare('SELECT count(*) count FROM notifications').get().count,1);
+ }finally{await new Promise(r=>app.server.close(r));app.db.close()}
+});

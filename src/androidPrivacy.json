@@ -2,7 +2,7 @@
   "version": "1",
   "prompt": "template",
   "title": "用户协议和隐私政策",
-  "message": "欢迎使用小记。请你在使用前阅读并充分理解<a href=\"https://notes.coder-f-nowork.cn/#/pages/legal/legal?document=terms\">《用户协议》</a>和<a href=\"https://notes.coder-f-nowork.cn/#/pages/legal/legal?document=privacy\">《隐私政策》</a>。我们会处理账号、昵称、你主动创建的内容及必要的设备运行信息，以提供登录、同步、提醒和安全保障。点击同意即表示你已阅读并同意上述内容。",
+  "message": "欢迎使用小记。请你在使用前阅读并充分理解<a href=\"https://notes.coder-f-nowork.cn/#/pages/legal/legal?document=terms\">《用户协议》</a>和<a href=\"https://notes.coder-f-nowork.cn/#/pages/legal/legal?document=privacy\">《隐私政策》</a>。我们会处理账号、昵称、你主动创建的内容、可选联动手机号摘要及必要的设备运行信息，以提供登录、同步、提醒和安全保障。点击同意即表示你已阅读并同意上述内容。",
   "buttonAccept": "同意并继续",
   "buttonRefuse": "暂不同意",
   "hrefLoader": "system",

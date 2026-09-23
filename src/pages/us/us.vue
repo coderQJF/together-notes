@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import LegalLinks from '../../components/LegalLinks.vue'
+import PhoneBindingCard from '../../components/PhoneBindingCard.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { request, type User } from '../../services/api'
 import { clearHomeWidgetNotes, isHomeWidgetPinSupported, requestHomeWidgetPin } from '../../services/home-widget'
@@ -245,6 +246,8 @@ onShow(load)
           <button class="secondary" @click="openPair('join')">输入邀请码</button>
         </view>
       </view>
+
+      <PhoneBindingCard />
 
       <!-- #ifndef APP-PLUS -->
       <view v-if="showAppCredentialSetup" class="account-card app-login-card">

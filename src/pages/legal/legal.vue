@@ -30,8 +30,8 @@ onLoad(options => {
       </template>
 
       <template v-else>
-        <view class="section"><text class="section-title">1. 我们处理的信息</text><text>注册时处理账号、加盐密码摘要和昵称；使用过程中处理你主动创建的随记、提醒、共享关系、附件和操作所需的会话信息。你导入书架的书名、作者、正文、阅读进度和显示设置仅保存在当前设备，不会上传到业务服务器。密码原文不会保存到服务器。</text></view>
-        <view class="section"><text class="section-title">2. 使用目的</text><text>这些信息用于登录鉴权、保存和同步内容、向绑定对象展示共享内容、生成站内提醒、提供搜索结果以及保障服务安全。私人小记不会作为联网模型的搜索内容发送。</text></view>
+        <view class="section"><text class="section-title">1. 我们处理的信息</text><text>注册时处理账号、加盐密码摘要和昵称；使用过程中处理你主动创建的随记、提醒、共享关系、附件和操作所需的会话信息。你主动开启 Stock Platform 联动时，我们只保存手机号的不可逆摘要和末四位，不保存完整手机号，也不会向 Stock Platform 返回你的账号资料。你导入书架的书名、作者、正文、阅读进度和显示设置仅保存在当前设备，不会上传到业务服务器。密码原文不会保存到服务器。</text></view>
+        <view class="section"><text class="section-title">2. 使用目的</text><text>这些信息用于登录鉴权、保存和同步内容、向绑定对象展示共享内容、生成站内提醒、按手机号摘要匹配并接收你主动开启的 Stock Platform 观察清单、提供搜索结果以及保障服务安全。私人小记不会作为联网模型的搜索内容发送。</text></view>
         <view class="section"><text class="section-title">3. 权限与设备能力</text><text>在 App 中选择图片附件时，系统可能请求照片访问权限；导入 TXT 时会打开 Android 系统文件选择器，并只读取你主动选中的文件，不申请访问全部存储空间。本版本不会请求相机权限。启用本机提醒时会请求通知权限，并使用 Android 的闹钟与开机恢复能力。只有你主动使用对应功能时才会申请；拒绝不会影响其他基础功能，但划掉 App 后可能无法按时弹出提醒。</text></view>
         <view class="section"><text class="section-title">4. App 运行框架</text><text>本产品基于 DCloud uni-app（5+ App）开发。App 运行期间，DCloud App 引擎可能处理设备标识、应用启动数据和异常错误日志，以保障基础运行并分析性能。详情可查看 DCloud App 引擎隐私政策。</text></view>
         <view class="section"><text class="section-title">5. 本机系统提醒</text><text>App 会把已经同步且提醒对象包含你的提醒标题、内容、时间、重复规则和打开目标保存在当前 Android 设备，用于在 App 被划掉或进程被系统回收后创建通知。相关数据不会发送给 UniPush、个推或 uniCloud。对方在你离线期间新建或修改的提醒，需要你再次打开 App 完成同步后才能登记到本机。退出登录、注销账号或删除提醒时，会同步清理对应的本机计划；在系统设置中“强行停止”App 后，Android 可能取消后续提醒。</text></view>

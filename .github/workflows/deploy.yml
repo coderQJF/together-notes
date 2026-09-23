@@ -74,6 +74,18 @@ jobs:
           ECS_USER: ${{ secrets.ECS_USER }}
         run: |
           test -n "$ECS_USER"
+          ssh "$ECS_USER@$ECS_HOST" '
+            set -e
+            integration_token_file=/opt/stock-platform/.together-notes-integration-token
+            if [ ! -s "$integration_token_file" ]; then
+              umask 077
+              openssl rand -hex 32 > "$integration_token_file"
+            fi
+            integration_token=$(cat "$integration_token_file")
+            env_file=/opt/together-notes/shared/server.env
+            sed -i "/^STOCK_PLATFORM_INTEGRATION_TOKEN=/d" "$env_file"
+            printf "STOCK_PLATFORM_INTEGRATION_TOKEN=%s\n" "$integration_token" >> "$env_file"
+          '
           remote_archive="/tmp/together-notes-${GITHUB_SHA}.tgz"
           scp together-notes-release.tgz "$ECS_USER@$ECS_HOST:$remote_archive"
           ssh "$ECS_USER@$ECS_HOST" \
