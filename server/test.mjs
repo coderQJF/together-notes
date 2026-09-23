@@ -32,7 +32,7 @@ test('app accounts register behind a beta code, log in securely, and can delete 
   assert.equal((await call('/auth/app/register','POST',{username:'FIRST_USER',password:'safe-password-2',nickname:'重复',acceptedTerms:true,betaCode:'private-beta-2026'})).status,409);
   assert.equal((await call('/auth/app/login','POST',{username:'first_user',password:'wrong-password'})).status,401);
   const loggedIn=await call('/auth/app/login','POST',{username:'FIRST_USER',password:'safe-password-1'});assert.equal(loggedIn.user.id,a.user.id);
-  const credential=app.db.prepare('SELECT * FROM app_credentials WHERE user=?').get(a.user.id);assert.notEqual(credential.password_hash,'safe-password-1');assert.equal(credential.terms_version,'2026-09-22');
+  const credential=app.db.prepare('SELECT * FROM app_credentials WHERE user=?').get(a.user.id);assert.notEqual(credential.password_hash,'safe-password-1');assert.equal(credential.terms_version,'2026-09-23');
   const b=await call('/auth/app/register','POST',{username:'second_user',password:'safe-password-2',nickname:'小金子',acceptedTerms:true,betaCode:'private-beta-2026'});
   const invite=await call('/invite','POST',{},a.token);await call('/invite/accept','POST',{code:invite.code},b.token);
   const ownedByA=await call('/items','POST',{kind:'note',title:'随账号删除',content:'私人内容',links:[],scope:'shared'},a.token);
@@ -45,4 +45,18 @@ test('app accounts register behind a beta code, log in securely, and can delete 
  }finally{await new Promise(r=>app.server.close(r));app.db.close()}
 });
 test('app registration stays closed until a beta code is configured',async()=>{const app=createApp({dbPath:':memory:'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';try{const status=await fetch(base+'/auth/app/status').then(r=>r.json());assert.equal(status.registrationEnabled,false);const response=await fetch(base+'/auth/app/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'closed_user',password:'safe-password-1',nickname:'未开放',acceptedTerms:true,betaCode:'anything'})});assert.equal(response.status,503)}finally{await new Promise(r=>app.server.close(r));app.db.close()}});
+test('an existing mini-program account can add App credentials without duplicating its data',async()=>{
+ const app=createApp({dbPath:':memory:',testAuth:true});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
+ const call=async(path,method='GET',data,token)=>{const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+(token||'')},body:data?JSON.stringify(data):undefined});return {status:response.status,...await response.json()}};
+ try{
+  const mini=await call('/auth/test','POST',{name:'我'}),other=await call('/auth/test','POST',{name:'小金子'});const note=await call('/items','POST',{kind:'note',title:'原来的小记',content:'继续使用同一账号',links:[],scope:'mine'},mini.token);
+  assert.deepEqual(await call('/me/app-credentials','GET',undefined,mini.token),{status:200,configured:false,username:null});
+  assert.equal((await call('/me/app-credentials','PUT',{username:'bad',password:'short',acceptedTerms:true},mini.token)).status,400);
+  const created=await call('/me/app-credentials','PUT',{username:'mini_owner',password:'safe-password-3',acceptedTerms:true},mini.token);assert.equal(created.status,200);assert.equal(created.username,'mini_owner');
+  assert.equal((await call('/me/app-credentials','PUT',{username:'mini_owner',password:'safe-password-5',acceptedTerms:true},other.token)).status,409);
+  const appLogin=await call('/auth/app/login','POST',{username:'MINI_OWNER',password:'safe-password-3'});assert.equal(appLogin.user.id,mini.user.id);assert.equal((await call('/items/'+note.id,'GET',undefined,appLogin.token)).title,'原来的小记');
+  const updated=await call('/me/app-credentials','PUT',{username:'mini_owner_2',password:'safe-password-4',acceptedTerms:true},mini.token);assert.equal(updated.status,200);assert.equal((await call('/auth/app/login','POST',{username:'mini_owner',password:'safe-password-3'})).status,401);assert.equal((await call('/auth/app/login','POST',{username:'MINI_OWNER_2',password:'safe-password-4'})).user.id,mini.user.id);
+  const credential=app.db.prepare('SELECT * FROM app_credentials WHERE user=?').get(mini.user.id);assert.notEqual(credential.password_hash,'safe-password-3');assert.equal(credential.terms_version,'2026-09-23');
+ }finally{await new Promise(r=>app.server.close(r));app.db.close()}
+});
 test('production server can host the H5 build',async()=>{const dir=await mkdtemp(join(tmpdir(),'together-notes-'));await writeFile(join(dir,'index.html'),'<main>小记</main>');await writeFile(join(dir,'app.js'),'console.log("ok")');const app=createApp({dbPath:':memory:',publicDir:dir});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;try{const home=await fetch(base+'/');assert.equal(home.status,200);assert.match(await home.text(),/小记/);const asset=await fetch(base+'/app.js');assert.equal(asset.headers.get('content-type'),'text/javascript; charset=utf-8');const fallback=await fetch(base+'/some/client/route');assert.equal(fallback.status,200);assert.match(await fallback.text(),/小记/)}finally{await new Promise(r=>app.server.close(r));app.db.close();await rm(dir,{recursive:true,force:true})}});

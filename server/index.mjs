@@ -12,7 +12,7 @@ import { createWechatReminderService } from './wechat-reminders.mjs';
 const fail=(status,message)=>{throw Object.assign(new Error(message),{status})};
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const scryptAsync=promisify(scrypt);
-const APP_TERMS_VERSION='2026-09-22';
+const APP_TERMS_VERSION='2026-09-23';
 const normalizeAppUsername=value=>String(value||'').trim().toLowerCase();
 const validAppUsername=value=>/^[a-z0-9][a-z0-9_.-]{3,31}$/.test(value);
 const validAppPassword=value=>typeof value==='string'&&value.length>=8&&value.length<=128;
@@ -94,6 +94,18 @@ export function createApp({dbPath='server/data/app.sqlite',testAuth=false,wxAppI
  const token=(req.headers.authorization||'').replace(/^Bearer /,'');const ses=one('SELECT * FROM sessions WHERE token=? AND expires>?',hash(token),Date.now());if(!ses)fail(401,'请先登录');const user=one('SELECT * FROM users WHERE id=?',ses.user);
  if(path==='/me'&&req.method==='GET')return send(200,publicUser(user));
  if(path==='/me'&&req.method==='PUT'){const nickname=String(b.nickname||'').trim();if(!nickname||nickname.length>20)fail(400,'昵称请填写 1—20 个字');run('UPDATE users SET nickname=? WHERE id=?',nickname,user.id);return send(200,publicUser(one('SELECT * FROM users WHERE id=?',user.id)))}
+ if(path==='/me/app-credentials'&&req.method==='GET'){const credential=one('SELECT username FROM app_credentials WHERE user=?',user.id);return send(200,{configured:Boolean(credential),username:credential?.username||null})}
+ if(path==='/me/app-credentials'&&req.method==='PUT'){
+  const existing=one('SELECT user FROM app_credentials WHERE user=?',user.id);
+  const username=normalizeAppUsername(b.username),password=String(b.password||'');
+  if(!validAppUsername(username))fail(400,'账号请填写 4—32 位小写字母、数字、点、横线或下划线');
+  if(!validAppPassword(password))fail(400,'密码请填写 8—128 个字符');
+  if(b.acceptedTerms!==true)fail(400,'请先阅读并同意用户协议与隐私政策');
+  if(one('SELECT user FROM app_credentials WHERE username=? AND user<>?',username,user.id))fail(409,'这个账号已经被使用');
+  const salt=randomBytes(16).toString('hex'),passwordHash=await derivePassword(password,salt);
+  try{if(existing)run('UPDATE app_credentials SET username=?,password_hash=?,salt=?,terms_version=?,created_at=? WHERE user=?',username,passwordHash,salt,APP_TERMS_VERSION,Date.now(),user.id);else run('INSERT INTO app_credentials VALUES(?,?,?,?,?,?)',user.id,username,passwordHash,salt,APP_TERMS_VERSION,Date.now())}catch(error){if(String(error?.message||'').includes('UNIQUE'))fail(409,'这个账号已经被使用');throw error}
+  return send(200,{configured:true,username});
+ }
  if(path==='/me'&&req.method==='DELETE'){
   const credential=one('SELECT * FROM app_credentials WHERE user=?',user.id);if(!credential)fail(400,'当前登录方式暂不支持在 App 内注销');
   const password=String(b.password||'');if(!validAppPassword(password)||!await passwordMatches(password,credential))fail(403,'密码不正确');

@@ -68,7 +68,7 @@ async function buildQaH5() {
     const build = spawn(command, args, {
       stdio: 'inherit',
       windowsHide: true,
-      env: { ...process.env, VITE_API_BASE: '/api' },
+      env: { ...process.env, VITE_API_BASE: '/api', VITE_QA_APP_LOGIN: '1', VITE_QA_MP_CREDENTIAL: '1' },
     })
     build.once('error', reject)
     build.once('exit', code => code === 0 ? resolveBuild() : reject(new Error(`H5 QA build failed with exit code ${code}`)))
@@ -179,6 +179,7 @@ function route(path, nonce) {
 
 const screenNames = new Set((process.env.CAPTURE_SCREENS || '').split(',').map(value => value.trim()).filter(Boolean))
 const screens = [
+  { name: 'index-login', path: '/pages/index/index', ready: '以前用过微信小程序', anonymous: true },
   { name: 'index-notes', path: '/pages/index/index', ready: '周末一起去看展' },
   { name: 'index-reminders', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事' },
   { name: 'index-search', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记' },
@@ -187,6 +188,7 @@ const screens = [
   { name: 'index-search-empty', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '不存在的外部事实 9988', answered: '没有找到相关数据' },
   { name: 'index-us', path: '/pages/us/us', ready: '有各自的小记' },
   { name: 'index-us-edit', path: '/pages/us/us', ready: '有各自的小记', click: '编辑', clicked: '保存' },
+  { name: 'index-us-app-login', path: '/pages/us/us', ready: '在 Android App 登录', click: '设置', clicked: 'App 登录密码' },
   ...(itemId ? [{ name: 'detail-note', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '周末一起去看展' }] : []),
   { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },
   { name: 'editor-reminder', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间' },
@@ -252,9 +254,13 @@ try {
     await page.call('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
 
     for (const screen of screens) {
-      if (session) {
+      if (session && !screen.anonymous) {
         await page.call('Runtime.evaluate', {
           expression: `localStorage.setItem('session', ${JSON.stringify(session)})`,
+        })
+      } else if (screen.anonymous) {
+        await page.call('Runtime.evaluate', {
+          expression: "localStorage.removeItem('session')",
         })
       }
       await page.call('Page.navigate', { url: route(screen.path, ++navigationNonce) })
