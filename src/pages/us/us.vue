@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { request, type User } from '../../services/api'
@@ -20,6 +20,7 @@ const editingAppCredential = ref(false)
 const appUsername = ref('')
 const appPassword = ref('')
 const appPasswordConfirm = ref('')
+let pageResetTimer: ReturnType<typeof setTimeout> | undefined
 let showAppCredentialSetup = false
 // #ifdef MP-WEIXIN
 showAppCredentialSetup = true
@@ -29,6 +30,14 @@ showAppCredentialSetup = import.meta.env.VITE_QA_MP_CREDENTIAL === '1'
 // #endif
 const canSaveNickname = computed(() => Boolean(nickname.value.trim() && nickname.value.trim() !== user.value?.nickname && !pending.value))
 const canSaveAppCredential = computed(() => Boolean(appUsername.value.trim() && appPassword.value.length >= 8 && appPassword.value === appPasswordConfirm.value && !pending.value))
+
+function resetPageAfterCredentialFormCloses() {
+  nextTick(() => {
+    uni.pageScrollTo({ scrollTop: 0, duration: 0 })
+    clearTimeout(pageResetTimer)
+    pageResetTimer = setTimeout(() => uni.pageScrollTo({ scrollTop: 0, duration: 0 }), 80)
+  })
+}
 
 async function load() {
   error.value = ''
@@ -90,6 +99,7 @@ function cancelAppCredentialEdit() {
   appPasswordConfirm.value = ''
   error.value = ''
   editingAppCredential.value = false
+  resetPageAfterCredentialFormCloses()
 }
 
 async function saveAppCredential() {
@@ -115,6 +125,7 @@ async function saveAppCredential() {
     appPassword.value = ''
     appPasswordConfirm.value = ''
     editingAppCredential.value = false
+    resetPageAfterCredentialFormCloses()
     uni.showToast({ title: 'App 登录方式已保存', icon: 'success' })
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'App 登录方式保存失败'
@@ -183,6 +194,7 @@ async function deleteAccount() {
 }
 
 onShow(load)
+onUnmounted(() => clearTimeout(pageResetTimer))
 </script>
 
 <template>
