@@ -79,7 +79,7 @@ function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refre
 </script>
 <template>
 <view class="shell">
- <view class="header"><view class="brand-lockup"><button v-if="user" class="profile-trigger" hover-class="profile-pressed" :aria-label="user.partner?`进入我们的小空间，已与${user.partner.nickname}绑定`:'进入我们的小空间'" @click="openUs"><text class="profile-face">{{user.nickname.slice(0,1)}}</text></button><view class="wordmark"><text class="brand">小记</text><text class="brand-sub">TOGETHER</text></view></view><!-- #ifndef MP-WEIXIN --><button v-if="user" class="library-trigger" hover-class="library-pressed" aria-label="打开本地书架" @click="openLibrary"><image src="/static/nav-icons/book-active.png" mode="aspectFit"/><text>阅读</text></button><!-- #endif --></view>
+ <view class="header"><view class="brand-lockup"><button v-if="user" class="profile-trigger" hover-class="profile-pressed" :aria-label="user.partner?`进入我们的小空间，已与${user.partner.nickname}绑定`:'进入我们的小空间'" @click="openUs"><text class="profile-face">{{user.nickname.slice(0,1)}}</text></button><view class="wordmark"><text class="brand">小记</text><text class="brand-sub">TOGETHER</text></view></view><!-- #ifndef MP-WEIXIN --><button v-if="user?.vip" class="library-trigger" hover-class="library-pressed" aria-label="打开本地书架" @click="openLibrary"><image src="/static/nav-icons/book-active.png" mode="aspectFit"/><text>阅读</text></button><!-- #endif --></view>
  <view v-if="!ready" class="empty">正在打开小记…</view>
   <view v-else-if="!user" class="login">
    <view class="login-card">

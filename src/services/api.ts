@@ -1,5 +1,5 @@
 export interface Attachment {id:string;name:string;size:number}
-export interface User {id:string;nickname:string;partner:{id:string;nickname:string}|null}
+export interface User {id:string;nickname:string;vip:boolean;partner:{id:string;nickname:string}|null}
 export interface Item {id?:string;owner?:string;kind:'note'|'reminder';title:string;content:string;scope:'mine'|'shared';pinned?:boolean;attachments?:Attachment[];links:string[];sourceKey?:string;nextAt?:string;repeat?:string;recipient?:string;advance?:number;done?:boolean;updatedAt?:string}
 export interface Message {id:string;title:string;due:string;seen:number}
 

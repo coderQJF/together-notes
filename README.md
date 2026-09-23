@@ -76,6 +76,16 @@ APP_TIME_ZONE=Asia/Shanghai
 
 App 新账号注册默认关闭。把随机且不易猜测的内测口令写入服务端 `APP_REGISTRATION_CODE` 后，测试者可凭该口令注册；清空它会再次关闭注册，但不会影响已有账号登录。
 
+小说阅读目前仅向内部指定的 VIP 账号显示，不提供客户端开通接口。VIP 状态保存在 `users.vip`，可在服务器命令行管理：
+
+```bash
+npm run vip -- list
+npm run vip -- enable <用户ID或App登录账号>
+npm run vip -- disable <用户ID或App登录账号>
+```
+
+微信小程序账号没有 App 登录名时，先执行 `list` 查到用户 ID。systemd 部署机需要先加载 `/opt/together-notes/shared/server.env`，再执行 `/opt/node-v24/bin/node /opt/together-notes/current/server/manage-vip.mjs ...`；Docker 部署可在容器内执行同一脚本。小说 TXT 和阅读进度始终只保存在用户当前设备，不进入服务端数据库。
+
 Android App 的系统通知完全在本机生成。登录或重新打开 App 时，客户端会把当前账号可见且提醒对象包含自己的待办同步到 Android 系统闹钟；保存、完成、删除、退出登录和注销账号会立即更新或清理本机计划。每日/每周提醒由原生接收器续排，手机重启或 App 更新后会恢复。对方在本机离线期间新建的提醒，要等下次打开 App 同步后才能登记；系统设置中的“强行停止”会让 Android 取消后台闹钟，重新打开 App 后恢复。
 
 智能搜索默认按截图使用兼容 OpenAI [Chat Completions](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions) 的微信模型网关，请求地址为 `${AI_BASE_URL}/chat/completions`；也可把 `AI_API_TYPE` 改为 `responses` 后使用 OpenAI [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)。本地检索始终由服务端直接完成，不依赖模型配置，也不会把私人小记发送给模型；只有本地没有匹配时才请求模型，且请求只包含用户当前问题。Chat Completions 模式通过 `web_search_options` 尝试搜索并读取 `search_results`：有可核验来源时展示为联网回答，没有来源但模型返回正文时展示为“模型回答 · 未联网核验”；服务未配置、不可达或没有正文时才返回“没有找到相关数据”。

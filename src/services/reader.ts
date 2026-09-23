@@ -28,12 +28,11 @@ export interface ReaderSettings {
 }
 
 const LIBRARY_KEY = 'reader-library-v1'
-const INITIALIZED_KEY = 'reader-library-initialized-v1'
-const SETTINGS_KEY = 'reader-settings-v1'
+const SETTINGS_KEY = 'reader-settings-v2'
 const PROGRESS_KEY = 'reader-progress-v1'
 export const MAX_READER_TEXT_LENGTH = 1_500_000
 
-const DEFAULT_SETTINGS: ReaderSettings = { fontSize: 18, lineHeight: 2, theme: 'paper' }
+const DEFAULT_SETTINGS: ReaderSettings = { fontSize: 21, lineHeight: 2.15, theme: 'butter' }
 const CHAPTER_HEADING = /^(?:第[0-9〇零一二三四五六七八九十百千万两]{1,12}[章节回卷篇部集](?:\s+|[：:、.-])?.{0,36}|序章|楔子|引子|前言|后记|尾声)$/
 
 function normalizedText(value: string) {
@@ -88,7 +87,7 @@ function loadProgressMap() {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, ReaderProgress> : {}
 }
 
-function starterBook(): ReaderBook {
+function qaStarterBook(): ReaderBook {
   const now = new Date().toISOString()
   return {
     id: 'starter-window-light',
@@ -108,17 +107,16 @@ function starterBook(): ReaderBook {
 export function loadReaderLibrary(): ReaderBook[] {
   const stored = uni.getStorageSync(LIBRARY_KEY)
   let books = Array.isArray(stored) ? stored.filter(isReaderBook) : []
-  if (!uni.getStorageSync(INITIALIZED_KEY)) {
-    books = [starterBook(), ...books]
-    uni.setStorageSync(INITIALIZED_KEY, true)
-    uni.setStorageSync(LIBRARY_KEY, books)
-  }
+  const withoutLegacySample = books.filter(book => book.id !== 'starter-window-light')
+  if (withoutLegacySample.length !== books.length) uni.setStorageSync(LIBRARY_KEY, withoutLegacySample)
+  books = withoutLegacySample
+  if (import.meta.env?.VITE_QA_READER_SAMPLE === '1') books = [qaStarterBook(), ...books]
   const progress = loadProgressMap()
   return books.map(book => ({ ...book, progress: progress[book.id] || book.progress }))
 }
 
 function saveLibrary(books: ReaderBook[]) {
-  uni.setStorageSync(LIBRARY_KEY, books)
+  uni.setStorageSync(LIBRARY_KEY, books.filter(book => book.id !== 'starter-window-light'))
 }
 
 export function createReaderBook(input: { title: string; author?: string; text: string }): ReaderBook {

@@ -1,9 +1,10 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {mkdtemp,writeFile,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';import {createApp} from './index.mjs';
+import {DatabaseSync} from 'node:sqlite';
 test('binding, private/shared access, attachments, due delivery',async()=>{
  const app=createApp({dbPath:':memory:',testAuth:true});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
  const call=async(path,method='GET',data,token)=>{const r=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+(token||'')},body:data?JSON.stringify(data):undefined});return {status:r.status,...await r.json()}};
  try{
- const a=await call('/auth/test','POST',{name:'我'}),b=await call('/auth/test','POST',{name:'小金子'}),c=await call('/auth/test','POST',{name:'访客'});assert.ok(a.token);
+ const a=await call('/auth/test','POST',{name:'我'}),b=await call('/auth/test','POST',{name:'小金子'}),c=await call('/auth/test','POST',{name:'访客'});assert.ok(a.token);assert.equal(a.user.vip,true);
  const note=await call('/items','POST',{kind:'note',title:'私密',content:'only me',links:[],scope:'mine'},a.token);assert.ok(note.id);assert.equal((await call('/items/'+note.id,'PUT',{...note,title:'偷改'},b.token)).status,404);
  assert.equal((await call('/items/'+note.id,'GET',undefined,a.token)).title,'私密');assert.equal((await call('/items/'+note.id,'GET',undefined,b.token)).status,404);
  const noteShare=await call('/items/'+note.id+'/share','POST',{},a.token);assert.match(noteShare.token,/^[a-f0-9]{48}$/);const publicNote=await call('/shared/items/'+noteShare.token);assert.equal(publicNote.title,'私密');assert.equal(publicNote.content,'only me');assert.equal(publicNote.scope,'link');assert.deepEqual(publicNote.attachments,[]);assert.equal((await call('/shared/items/not-a-token')).status,404);
@@ -21,6 +22,7 @@ test('binding, private/shared access, attachments, due delivery',async()=>{
  }finally{await new Promise(r=>app.server.close(r));app.db.close()}
 });
 test('production does not expose test identities',async()=>{const app=createApp({dbPath:':memory:'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));try{const r=await fetch('http://127.0.0.1:'+app.server.address().port+'/api/auth/test',{method:'POST',body:JSON.stringify({name:'我'})});assert.equal(r.status,404)}finally{await new Promise(r=>app.server.close(r));app.db.close()}});
+test('legacy user databases gain a disabled VIP flag without changing accounts',async()=>{const directory=await mkdtemp(join(tmpdir(),'together-notes-vip-')),dbPath=join(directory,'legacy.sqlite');const legacy=new DatabaseSync(dbPath);legacy.exec("CREATE TABLE users(id TEXT PRIMARY KEY, identity TEXT UNIQUE,nickname TEXT,couple TEXT); INSERT INTO users VALUES('legacy-user','app:legacy','旧账号',NULL)");legacy.close();const app=createApp({dbPath});try{const row=app.db.prepare('SELECT * FROM users WHERE id=?').get('legacy-user');assert.equal(row.nickname,'旧账号');assert.equal(row.vip,0)}finally{app.db.close();await rm(directory,{recursive:true,force:true})}});
 test('app accounts register behind a beta code, log in securely, and can delete all owned data',async()=>{
  const app=createApp({dbPath:':memory:',appRegistrationCode:'private-beta-2026'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
  const call=async(path,method='GET',data,token)=>{const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+(token||'')},body:data?JSON.stringify(data):undefined});return {status:response.status,...await response.json()}};
@@ -28,10 +30,10 @@ test('app accounts register behind a beta code, log in securely, and can delete 
   assert.equal((await call('/auth/app/status')).registrationEnabled,true);
   assert.equal((await call('/auth/app/register','POST',{username:'first_user',password:'safe-password-1',nickname:'我',acceptedTerms:true,betaCode:'wrong'})).status,403);
   assert.equal((await call('/auth/app/register','POST',{username:'me',password:'short',nickname:'我',acceptedTerms:true,betaCode:'private-beta-2026'})).status,400);
-  const a=await call('/auth/app/register','POST',{username:'first_user',password:'safe-password-1',nickname:'我',acceptedTerms:true,betaCode:'private-beta-2026'});assert.equal(a.status,201);assert.ok(a.token);
+  const a=await call('/auth/app/register','POST',{username:'first_user',password:'safe-password-1',nickname:'我',acceptedTerms:true,betaCode:'private-beta-2026'});assert.equal(a.status,201);assert.ok(a.token);assert.equal(a.user.vip,false);
   assert.equal((await call('/auth/app/register','POST',{username:'FIRST_USER',password:'safe-password-2',nickname:'重复',acceptedTerms:true,betaCode:'private-beta-2026'})).status,409);
   assert.equal((await call('/auth/app/login','POST',{username:'first_user',password:'wrong-password'})).status,401);
-  const loggedIn=await call('/auth/app/login','POST',{username:'FIRST_USER',password:'safe-password-1'});assert.equal(loggedIn.user.id,a.user.id);
+  const loggedIn=await call('/auth/app/login','POST',{username:'FIRST_USER',password:'safe-password-1'});assert.equal(loggedIn.user.id,a.user.id);assert.equal(loggedIn.user.vip,false);app.db.prepare('UPDATE users SET vip=1 WHERE id=?').run(a.user.id);assert.equal((await call('/me','GET',undefined,a.token)).vip,true);assert.equal((await call('/me','PUT',{nickname:'我',vip:false},a.token)).vip,true);
   const credential=app.db.prepare('SELECT * FROM app_credentials WHERE user=?').get(a.user.id);assert.notEqual(credential.password_hash,'safe-password-1');assert.equal(credential.terms_version,'2026-09-23');
   const b=await call('/auth/app/register','POST',{username:'second_user',password:'safe-password-2',nickname:'小金子',acceptedTerms:true,betaCode:'private-beta-2026'});
   const invite=await call('/invite','POST',{},a.token);await call('/invite/accept','POST',{code:invite.code},b.token);

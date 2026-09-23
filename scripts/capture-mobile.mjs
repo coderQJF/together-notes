@@ -68,7 +68,7 @@ async function buildQaH5() {
     const build = spawn(command, args, {
       stdio: 'inherit',
       windowsHide: true,
-      env: { ...process.env, VITE_API_BASE: '/api', VITE_QA_APP_LOGIN: '1', VITE_QA_MP_CREDENTIAL: '1' },
+      env: { ...process.env, VITE_API_BASE: '/api', VITE_QA_APP_LOGIN: '1', VITE_QA_MP_CREDENTIAL: '1', VITE_QA_READER_SAMPLE: '1' },
     })
     build.once('error', reject)
     build.once('exit', code => code === 0 ? resolveBuild() : reject(new Error(`H5 QA build failed with exit code ${code}`)))
@@ -197,7 +197,6 @@ const screens = [
   { name: 'news-provider-error', path: '/pages/news/news', ready: '新闻数据获取失败' },
   { name: 'news-detail-error', path: '/pages/news-detail/news-detail?id=unavailable', ready: '无法显示这条新闻' },
   { name: 'library', path: '/pages/library/library', ready: '窗边的小灯' },
-  { name: 'library-import', path: '/pages/library/library', ready: '窗边的小灯', click: '导入 TXT', clicked: '选择手机里的 TXT 文件' },
   { name: 'reader', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人' },
   { name: 'reader-directory', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人', click: '目录', clicked: '第二章 留下的话' },
   { name: 'reader-settings', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人', click: '阅读设置', clicked: '阅读背景' },

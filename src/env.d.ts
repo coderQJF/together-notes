@@ -5,6 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_PUBLIC_BASE_URL?: string
   readonly VITE_QA_APP_LOGIN?: string
   readonly VITE_QA_MP_CREDENTIAL?: string
+  readonly VITE_QA_READER_SAMPLE?: string
 }
 
 interface ImportMeta {

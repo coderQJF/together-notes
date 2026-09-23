@@ -49,7 +49,10 @@ test('local reader storage creates books, saves progress, and removes content', 
     setStorageSync(key: string, value: unknown) { storage.set(key, value) },
   }
   try {
-    assert.equal(loadReaderLibrary().length, 1)
+    const now = new Date().toISOString()
+    storage.set('reader-library-v1', [{ id: 'starter-window-light', title: '窗边的小灯', author: '小记原创示例', chapters: [{ title: '正文', content: '示例' }], createdAt: now, updatedAt: now, progress: { chapterIndex: 0, scrollTop: 0, updatedAt: now } }])
+    assert.equal(loadReaderLibrary().length, 0)
+    assert.deepEqual(storage.get('reader-library-v1'), [])
     const book = createReaderBook({ title: '测试书', text: '第一章 开始\n内容。\n第二章 继续\n更多内容。' })
     assert.equal(book.chapters.length, 2)
     saveReaderProgress(book.id, 1, 360)

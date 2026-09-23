@@ -10,6 +10,18 @@ const headerStyle = ref<Record<string, string>>({})
 let layoutTimer: ReturnType<typeof setTimeout> | undefined
 
 function syncHeaderLayout() {
+  // #ifdef APP-PLUS
+  try {
+    const windowInfo = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync()
+    const statusBarHeight = Math.max(0, Number(windowInfo.statusBarHeight) || 0)
+    headerStyle.value = {
+      paddingTop: `${statusBarHeight}px`,
+      minHeight: `${statusBarHeight + 44}px`,
+    }
+  } catch {
+    headerStyle.value = { paddingTop: 'var(--status-bar-height)', minHeight: 'calc(44px + var(--status-bar-height))' }
+  }
+  // #endif
   // #ifdef MP-WEIXIN
   try {
     const capsule = uni.getMenuButtonBoundingClientRect()
