@@ -177,7 +177,7 @@ npm run prepare:android-beta
 npm run package:android-beta
 ```
 
-第二条命令会生成忽略提交的 HBuilderX 打包配置，使用自有证书申请 Android 安心云打包，全程不在终端输出密码。
+第二条命令会生成忽略提交的 HBuilderX 打包配置，使用自有证书申请 Android 安心云打包；完成后会从 APK 运行清单移除 HBuilderX 注入的证书路径和密码字段，再用同一证书重新签名并校验，全程不在终端输出密码。
 
 ### 划掉 App 后的系统提醒
 
