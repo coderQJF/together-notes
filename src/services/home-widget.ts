@@ -11,9 +11,14 @@ import {
 } from '@/uni_modules/together-home-widget'
 // #endif
 
+function runNativeSafely<T>(fallback: T, action: () => T) {
+  try { return action() }
+  catch { return fallback }
+}
+
 export function syncHomeWidgetNotes(items: Item[]) {
   // #ifdef APP-PLUS
-  return nativeSyncHomeWidgetNotes(JSON.stringify(buildHomeWidgetNotes(items)))
+  return runNativeSafely(false, () => nativeSyncHomeWidgetNotes(JSON.stringify(buildHomeWidgetNotes(items))))
   // #endif
   // #ifndef APP-PLUS
   return false
@@ -22,7 +27,7 @@ export function syncHomeWidgetNotes(items: Item[]) {
 
 export function clearHomeWidgetNotes() {
   // #ifdef APP-PLUS
-  return nativeClearHomeWidgetNotes()
+  return runNativeSafely(false, nativeClearHomeWidgetNotes)
   // #endif
   // #ifndef APP-PLUS
   return false
@@ -31,7 +36,7 @@ export function clearHomeWidgetNotes() {
 
 export function requestHomeWidgetPin() {
   // #ifdef APP-PLUS
-  return nativeRequestHomeWidgetPin()
+  return runNativeSafely(false, nativeRequestHomeWidgetPin)
   // #endif
   // #ifndef APP-PLUS
   return false
@@ -40,7 +45,7 @@ export function requestHomeWidgetPin() {
 
 export function isHomeWidgetPinSupported() {
   // #ifdef APP-PLUS
-  return nativeIsHomeWidgetPinSupported()
+  return runNativeSafely(false, nativeIsHomeWidgetPinSupported)
   // #endif
   // #ifndef APP-PLUS
   return false
@@ -49,7 +54,7 @@ export function isHomeWidgetPinSupported() {
 
 export function consumeHomeWidgetRoute() {
   // #ifdef APP-PLUS
-  return nativeConsumeHomeWidgetRoute()
+  return runNativeSafely('', nativeConsumeHomeWidgetRoute)
   // #endif
   // #ifndef APP-PLUS
   return ''

@@ -15,8 +15,6 @@ export interface ReaderImportProgress {
 
 export type ReaderImportProgressHandler = (progress: ReaderImportProgress) => void
 
-export const MAX_READER_FILE_BYTES = 6 * 1024 * 1024
-const MAX_READER_TEXT_LENGTH = 1_500_000
 const ANDROID_PICK_TIMEOUT_MS = 2 * 60 * 1000
 const ANDROID_READ_TIMEOUT_MS = 90 * 1000
 const ANDROID_READ_BATCH_BYTES = 256 * 1024
@@ -53,7 +51,6 @@ export function decodeReaderText(source: ArrayBuffer): string {
 
   const normalized = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim()
   if (!normalized) throw new Error('这个 TXT 文件没有可阅读的文字')
-  if (normalized.length > MAX_READER_TEXT_LENGTH) throw new Error('单本内容暂时不能超过 150 万字')
   return normalized
 }
 
@@ -67,7 +64,6 @@ export function readerTitleFromFileName(value: string) {
 function createReaderTextFile(name: string, source: ArrayBuffer, onProgress?: ReaderImportProgressHandler): ReaderTextFile {
   const normalizedName = String(name || '').trim() || '导入的书籍.txt'
   if (!/\.txt$/i.test(normalizedName)) throw new Error('目前只支持导入 TXT 文件')
-  if (source.byteLength > MAX_READER_FILE_BYTES) throw new Error('TXT 文件不能超过 6 MB')
   onProgress?.({ phase: 'decoding', name: normalizedName, bytesRead: source.byteLength, totalBytes: source.byteLength })
   return { name: normalizedName, size: source.byteLength, text: decodeReaderText(source) }
 }
@@ -120,8 +116,6 @@ async function readAndroidTextFile(uri: any, onProgress?: ReaderImportProgressHa
         if (sizeIndex >= 0) declaredSize = Math.max(0, Number(cursor.getLong(sizeIndex)) || 0)
       }
     }
-    if (declaredSize > MAX_READER_FILE_BYTES) throw new Error('TXT 文件不能超过 6 MB')
-
     input = android.invoke(resolver, 'openInputStream', uri)
     if (!input) throw new Error('系统没有返回可读取的文件')
     output = android.newObject('java.io.ByteArrayOutputStream')
@@ -149,7 +143,6 @@ async function readAndroidTextFile(uri: any, onProgress?: ReaderImportProgressHa
         emptyReads = 0
         total += length
         batchBytes += length
-        if (total > MAX_READER_FILE_BYTES) throw new Error('TXT 文件不能超过 6 MB')
         android.invoke(output, 'write', buffer, 0, length)
       }
       onProgress?.({ phase: 'reading', name, bytesRead: total, totalBytes: declaredSize || undefined })

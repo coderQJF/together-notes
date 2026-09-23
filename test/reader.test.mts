@@ -42,6 +42,12 @@ test('reader parser normalizes newlines and rejects blank content', () => {
   assert.equal(parseReaderChapters('\uFEFF序章\r\n从这里开始。')[0].content, '从这里开始。')
 })
 
+test('reader accepts local TXT content larger than the former 1.5 million character limit', () => {
+  const text = '甲'.repeat(1_500_001)
+  assert.equal(decodeReaderText(new TextEncoder().encode(text).buffer).length, text.length)
+  assert.equal(prepareReaderBook({ title: '长篇测试', text }).chapters[0].content.length, text.length)
+})
+
 test('local reader storage creates books, saves progress, and removes content', () => {
   const storage = new Map<string, unknown>()
   const target = globalThis as typeof globalThis & { uni?: unknown }

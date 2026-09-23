@@ -30,7 +30,6 @@ export interface ReaderSettings {
 const LIBRARY_KEY = 'reader-library-v1'
 const SETTINGS_KEY = 'reader-settings-v2'
 const PROGRESS_KEY = 'reader-progress-v1'
-export const MAX_READER_TEXT_LENGTH = 1_500_000
 
 const DEFAULT_SETTINGS: ReaderSettings = { fontSize: 21, lineHeight: 2.15, theme: 'butter' }
 const CHAPTER_HEADING = /^(?:第[0-9〇零一二三四五六七八九十百千万两]{1,12}[章节回卷篇部集](?:\s+|[：:、.-])?.{0,36}|序章|楔子|引子|前言|后记|尾声)$/
@@ -129,7 +128,6 @@ export function prepareReaderBook(input: { title: string; author?: string; text:
   const text = normalizedText(input.text)
   if (!title) throw new Error('请填写书名')
   if (!text) throw new Error('请先选择 TXT 文件')
-  if (text.length > MAX_READER_TEXT_LENGTH) throw new Error('单本内容暂时不能超过 150 万字')
   const chapters = parseReaderChapters(text)
   if (!chapters.length) throw new Error('没有识别到可阅读的正文')
   const now = new Date().toISOString()

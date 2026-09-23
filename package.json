@@ -1,6 +1,6 @@
 {
   "name": "together-notes",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "scripts": {
     "dev:h5": "uni",
     "build:h5": "uni build",

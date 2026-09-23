@@ -13,12 +13,17 @@ import {
 } from '@/uni_modules/together-local-reminder'
 // #endif
 
+function runNativeSafely<T>(fallback: T, action: () => T) {
+  try { return action() }
+  catch { return fallback }
+}
+
 export function scheduleLocalReminderForUser(item: Item, user: User) {
 // #ifdef APP-PLUS
   if (!item.id) return false
   const plan = localReminderPlan(item, user)
-  if (!plan) return nativeCancel(item.id)
-  return nativeSchedule(plan.id, plan.title, plan.content, plan.triggerAt, plan.repeat, plan.route)
+  if (!plan) return runNativeSafely(false, () => nativeCancel(item.id!))
+  return runNativeSafely(false, () => nativeSchedule(plan.id, plan.title, plan.content, plan.triggerAt, plan.repeat, plan.route))
   // #endif
   // #ifndef APP-PLUS
   return false
@@ -27,13 +32,15 @@ export function scheduleLocalReminderForUser(item: Item, user: User) {
 
 export function syncLocalReminders(items: Item[], user: User) {
   // #ifdef APP-PLUS
-  nativeCancelAll()
-  let scheduled = 0
-  for (const item of items) {
-    const plan = localReminderPlan(item, user)
-    if (plan && nativeSchedule(plan.id, plan.title, plan.content, plan.triggerAt, plan.repeat, plan.route)) scheduled += 1
-  }
-  return scheduled
+  return runNativeSafely(0, () => {
+    nativeCancelAll()
+    let scheduled = 0
+    for (const item of items) {
+      const plan = localReminderPlan(item, user)
+      if (plan && nativeSchedule(plan.id, plan.title, plan.content, plan.triggerAt, plan.repeat, plan.route)) scheduled += 1
+    }
+    return scheduled
+  })
   // #endif
   // #ifndef APP-PLUS
   return 0
@@ -42,7 +49,7 @@ export function syncLocalReminders(items: Item[], user: User) {
 
 export function cancelLocalReminder(id?: string) {
   // #ifdef APP-PLUS
-  return id ? nativeCancel(id) : false
+  return id ? runNativeSafely(false, () => nativeCancel(id)) : false
   // #endif
   // #ifndef APP-PLUS
   return false
@@ -51,7 +58,7 @@ export function cancelLocalReminder(id?: string) {
 
 export function clearLocalReminders() {
   // #ifdef APP-PLUS
-  return nativeCancelAll()
+  return runNativeSafely(false, nativeCancelAll)
   // #endif
   // #ifndef APP-PLUS
   return false
@@ -60,9 +67,11 @@ export function clearLocalReminders() {
 
 export function requestLocalReminderPermissions() {
   // #ifdef APP-PLUS
-  const notification = hasLocalNotificationPermission() || requestLocalNotificationPermission()
-  const exact = canScheduleExactLocalReminders() || openExactLocalReminderSettings()
-  return { notification, exact }
+  return runNativeSafely({ notification: false, exact: false }, () => {
+    const notification = hasLocalNotificationPermission() || requestLocalNotificationPermission()
+    const exact = canScheduleExactLocalReminders() || openExactLocalReminderSettings()
+    return { notification, exact }
+  })
   // #endif
   // #ifndef APP-PLUS
   return { notification: false, exact: false }

@@ -61,3 +61,13 @@ test('nickname editing uses the shared raster icon asset', async () => {
   assert.match(source, /nav-icons\/edit-active\.png/)
   assert.doesNotMatch(source, /class="pencil-icon"/)
 })
+
+test('background native sync failures do not break the main data refresh', async () => {
+  const reminders = await readFile('src/services/local-reminders.ts', 'utf8')
+  const widget = await readFile('src/services/home-widget.ts', 'utf8')
+  const index = await readFile('src/pages/index/index.vue', 'utf8')
+  assert.match(reminders, /runNativeSafely/)
+  assert.match(widget, /runNativeSafely/)
+  assert.doesNotMatch(index, /'操作失败'/)
+  assert.match(index, /showActionError/)
+})
