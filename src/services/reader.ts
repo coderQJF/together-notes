@@ -116,10 +116,14 @@ export function loadReaderLibrary(): ReaderBook[] {
 }
 
 function saveLibrary(books: ReaderBook[]) {
-  uni.setStorageSync(LIBRARY_KEY, books.filter(book => book.id !== 'starter-window-light'))
+  try {
+    uni.setStorageSync(LIBRARY_KEY, books.filter(book => book.id !== 'starter-window-light'))
+  } catch {
+    throw new Error('本机存储空间不足，请先移出不需要的书籍后重试')
+  }
 }
 
-export function createReaderBook(input: { title: string; author?: string; text: string }): ReaderBook {
+export function prepareReaderBook(input: { title: string; author?: string; text: string }): ReaderBook {
   const title = input.title.trim().slice(0, 80)
   const author = String(input.author || '').trim().slice(0, 60)
   const text = normalizedText(input.text)
@@ -138,8 +142,16 @@ export function createReaderBook(input: { title: string; author?: string; text: 
     updatedAt: now,
     progress: { chapterIndex: 0, scrollTop: 0, updatedAt: now },
   }
+  return book
+}
+
+export function saveReaderBook(book: ReaderBook) {
   saveLibrary([book, ...loadReaderLibrary()])
   return book
+}
+
+export function createReaderBook(input: { title: string; author?: string; text: string }): ReaderBook {
+  return saveReaderBook(prepareReaderBook(input))
 }
 
 export function getReaderBook(id: string) {

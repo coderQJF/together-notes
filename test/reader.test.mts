@@ -5,7 +5,9 @@ import {
   getReaderBook,
   loadReaderLibrary,
   parseReaderChapters,
+  prepareReaderBook,
   removeReaderBook,
+  saveReaderBook,
   saveReaderProgress,
 } from '../src/services/reader.ts'
 import { decodeReaderText, readerTitleFromFileName } from '../src/services/reader-import.ts'
@@ -60,6 +62,25 @@ test('local reader storage creates books, saves progress, and removes content', 
     assert.deepEqual(getReaderBook(book.id)?.progress.scrollTop, 360)
     removeReaderBook(book.id)
     assert.equal(getReaderBook(book.id), null)
+  } finally {
+    if (original === undefined) delete target.uni
+    else target.uni = original
+  }
+})
+
+test('reader preparation does not write until the explicit local save step', () => {
+  const storage = new Map<string, unknown>()
+  const target = globalThis as typeof globalThis & { uni?: unknown }
+  const original = target.uni
+  target.uni = {
+    getStorageSync(key: string) { return storage.get(key) },
+    setStorageSync(key: string, value: unknown) { storage.set(key, value) },
+  }
+  try {
+    const book = prepareReaderBook({ title: '分步导入', text: '第一章 开始\n正文。' })
+    assert.equal(storage.has('reader-library-v1'), false)
+    saveReaderBook(book)
+    assert.equal((storage.get('reader-library-v1') as unknown[]).length, 1)
   } finally {
     if (original === undefined) delete target.uni
     else target.uni = original
