@@ -16,11 +16,10 @@ function syncHeaderLayout() {
     const statusBarHeight = Math.max(0, Number(windowInfo.statusBarHeight) || 0)
     headerStyle.value = {
       paddingTop: `${statusBarHeight}px`,
-      height: `${statusBarHeight + 44}px`,
       minHeight: `${statusBarHeight + 44}px`,
     }
   } catch {
-    headerStyle.value = { paddingTop: 'var(--status-bar-height)', height: 'calc(44px + var(--status-bar-height))', minHeight: 'calc(44px + var(--status-bar-height))' }
+    headerStyle.value = { paddingTop: 'var(--status-bar-height)', minHeight: 'calc(44px + var(--status-bar-height))' }
   }
   // #endif
   // #ifdef MP-WEIXIN
@@ -35,15 +34,13 @@ function syncHeaderLayout() {
     const safeRight = windowInfo.safeArea ? Math.max(0, windowInfo.windowWidth - windowInfo.safeArea.right) : 0
     const horizontalPadding = windowInfo.windowWidth <= 360 ? 20 : 24
     const contentRight = shellLeft + shellWidth - horizontalPadding - safeRight
-    const headerHeight = Math.max(statusBarHeight + 44, capsule.bottom + verticalGap)
     headerStyle.value = {
       paddingTop: `${statusBarHeight}px`,
       paddingRight: `${Math.max(0, contentRight - capsule.left + 8)}px`,
-      height: `${headerHeight}px`,
-      minHeight: `${headerHeight}px`,
+      minHeight: `${Math.max(statusBarHeight + 44, capsule.bottom + verticalGap)}px`,
     }
   } catch {
-    headerStyle.value = { paddingTop: 'var(--status-bar-height)', paddingRight: '88px', height: 'calc(44px + var(--status-bar-height))', minHeight: 'calc(44px + var(--status-bar-height))' }
+    headerStyle.value = { paddingTop: 'var(--status-bar-height)', paddingRight: '88px', minHeight: 'calc(44px + var(--status-bar-height))' }
   }
   // #endif
 }
@@ -84,7 +81,7 @@ function goBack() {
 </template>
 
 <style scoped>
-.subpage-header{position:sticky;z-index:20;top:0;display:flex;height:calc(44px + var(--status-bar-height,0px));min-height:calc(44px + var(--status-bar-height,0px));flex-shrink:0;align-items:center;justify-content:space-between;box-sizing:border-box;padding-top:var(--status-bar-height,0px);margin-bottom:24px;background:var(--subpage-background,#faf8f2)}
+.subpage-header{position:sticky;z-index:20;top:0;display:flex;align-items:center;justify-content:space-between;min-height:calc(44px + var(--status-bar-height,0px));padding-top:var(--status-bar-height,0px);margin-bottom:24px;background:var(--subpage-background,#faf8f2)}
 .back{display:inline-flex;align-items:center;gap:7px;width:auto;height:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:#786d5b;font-size:15px;line-height:1.4}
 .back::after{border:0}
 .back-icon{width:10px;height:10px;margin-left:3px;border-left:1.7px solid currentColor;border-bottom:1.7px solid currentColor;transform:rotate(45deg)}
