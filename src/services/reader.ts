@@ -126,7 +126,7 @@ export function createReaderBook(input: { title: string; author?: string; text: 
   const author = String(input.author || '').trim().slice(0, 60)
   const text = normalizedText(input.text)
   if (!title) throw new Error('请填写书名')
-  if (!text) throw new Error('请粘贴小说正文')
+  if (!text) throw new Error('请先选择 TXT 文件')
   if (text.length > MAX_READER_TEXT_LENGTH) throw new Error('单本内容暂时不能超过 150 万字')
   const chapters = parseReaderChapters(text)
   if (!chapters.length) throw new Error('没有识别到可阅读的正文')

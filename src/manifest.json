@@ -13,6 +13,9 @@
       },
       "Share": {
         "description": "调用 Android 系统分享面板发送邀请码和公开分享链接"
+      },
+      "Invocation": {
+        "description": "调用 Android 系统文件选择器导入本机 TXT 文件"
       }
     },
     "screenOrientation": [
