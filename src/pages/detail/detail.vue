@@ -254,7 +254,7 @@ onUnload(() => { active = false })
 </template>
 
 <style scoped>
-.shell{max-width:640px;min-height:100vh;margin:auto;padding:calc(8px + var(--status-bar-height)) 24px calc(42px + env(safe-area-inset-bottom));background:#faf8f2;color:#3e382d}
+.shell{max-width:640px;min-height:100vh;margin:auto;padding:0 24px calc(42px + env(safe-area-inset-bottom));background:#faf8f2;color:#3e382d}
 .state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:55vh;color:#786d5b;text-align:center}
 .error-state{padding:30px}.state-title{font-size:20px;font-weight:600;color:#3e382d}.loading-dot{width:24px;height:24px;border:2px solid #e7d7a4;border-right-color:#494032;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .meta-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:4px}.meta-tags{display:flex;align-items:center;gap:6px;flex-shrink:0}.kind-tag,.scope-tag,.pin-tag{display:inline-flex;align-items:center;height:25px;padding:0 8px;border-radius:8px;background:#fff;border:1px solid #ece5d6;color:#786d5b;font-size:11px;white-space:nowrap}.pin-tag{background:#f7e7ad;border-color:#efd98d;color:#6c5624}.updated{min-width:0;color:#786d5b;font-size:11px;line-height:1.5;text-align:right;font-variant-numeric:tabular-nums}
@@ -263,15 +263,6 @@ onUnload(() => { active = false })
 .share-notice{padding:15px 16px;margin:-8px 0 28px;border:1px solid #efd98d;border-radius:15px;background:#fff9e9}.share-notice-title{display:block;margin-bottom:4px;color:#6c5624;font-size:13px;font-weight:600}.share-action{display:flex;align-items:center;justify-content:center;width:100%;height:50px;margin:34px 0 0;border:0;border-radius:15px;background:#f7e7ad;color:#494032;font-size:15px}.share-action::after{border:0}.share-action[disabled]{border:1px solid #ddd3c3;background:#e8e1d3;color:#8a7e6a;opacity:1}.share-error{display:block;margin-top:9px;color:#9b4b40;font-size:11px;text-align:center}
 .section{margin:26px 0}.resource{display:flex;align-items:center;gap:12px;width:100%;min-height:68px;margin:10px 0;padding:12px 14px;border:1px solid #ece5d6;border-radius:16px;background:#fff;color:#3e382d;text-align:left;line-height:1.4}.resource::after{border:0}.resource-mark{display:flex;align-items:center;justify-content:center;width:38px;height:38px;flex:0 0 38px;border-radius:12px;background:#f7e7ad}.resource-icon{display:block;width:20px;height:20px}.resource-copy{min-width:0;flex:1}.resource-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.link-title{color:#83692e}.small{display:block;margin-top:4px;font-size:11px}.muted{color:#786d5b}.chevron{width:8px;height:8px;flex:0 0 8px;margin-right:3px;border-top:1.5px solid #a79b87;border-right:1.5px solid #a79b87;transform:rotate(45deg)}
 .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.actions button{display:flex;align-items:center;justify-content:center;width:100%;height:50px;min-height:50px;margin:0;padding:0 16px;border-radius:15px;font-size:15px;line-height:normal}.actions button:only-child{grid-column:1/-1}.actions button::after{border:0}.primary{background:#494032;color:#fff9e9}.danger{border:1px solid #eadfd1;background:#fff;color:#ae4b3b}.secondary{min-width:140px;height:46px;margin-top:8px;border:1px solid #ece5d6;border-radius:14px;background:#fff;color:#494032}.secondary::after{border:0}
-/* #ifdef MP-WEIXIN */
-.shell{padding-top:0}
-/* #endif */
-/* #ifdef H5 */
-.shell{padding-top:calc(22px + env(safe-area-inset-top))}
-/* #endif */
-/* #ifdef APP-PLUS */
-.shell{padding-top:calc(12px + var(--status-bar-height))}
-/* #endif */
 @media(max-width:360px){.shell{padding-left:20px;padding-right:20px}.updated{max-width:122px}.headline{font-size:29px}.meta-tags{gap:4px}.kind-tag,.scope-tag,.pin-tag{padding-left:7px;padding-right:7px}.reminder-time{align-items:flex-start;flex-direction:column;gap:5px}.reminder-clock{font-size:27px}}
 .shell{padding-left:calc(24px + env(safe-area-inset-left));padding-right:calc(24px + env(safe-area-inset-right))}
 @media(max-width:360px){.shell{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}}
