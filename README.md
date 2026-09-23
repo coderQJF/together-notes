@@ -148,7 +148,7 @@ npm run build:app
 
 ### Android 内测安装包
 
-代码仓库已经固定 DCloud AppID `__UNI__10E8CA8`、包名 `cn.coderf.togethernotes` 和版本 `0.2.3 (23)`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享及 Android 本机定时通知。当前内测版不需要开通 UniPush 或 uniCloud；验收时只需准备一台 Android 真机：
+代码仓库已经固定 DCloud AppID `__UNI__10E8CA8`、包名 `cn.coderf.togethernotes` 和版本 `0.2.4 (24)`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享及 Android 本机定时通知。当前内测版不需要开通 UniPush 或 uniCloud；验收时只需准备一台 Android 真机：
 
 - 在手机系统设置中允许“小记”通知；如果系统提供“闹钟与提醒”特殊权限，也一并允许。测试时创建两分钟后的提醒，划掉 App 并锁屏等待通知。不要用系统设置中的“强行停止”作为普通关闭方式。
 

@@ -109,10 +109,19 @@ await writeFile(configPath, `${JSON.stringify({
 }, null, 2)}\n`, { mode: 0o600 })
 
 const info = spawnSync(cliPath, ['user', 'info'], { encoding: 'utf8', windowsHide: true })
-if (info.status !== 0) {
-  const child = spawn(appPath, [], { detached: true, stdio: 'ignore', windowsHide: true })
-  child.unref()
-  await new Promise(resolveWait => setTimeout(resolveWait, 5000))
+if (info.status !== 0 || /未检测到已打开|not running/i.test(`${info.stdout}\n${info.stderr}`)) {
+  const opened = spawnSync(cliPath, ['open'], { encoding: 'utf8', windowsHide: true })
+  if (opened.status !== 0) {
+    const child = spawn(appPath, [], { detached: true, stdio: 'ignore', windowsHide: true })
+    child.unref()
+  }
+  let ready = false
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise(resolveWait => setTimeout(resolveWait, 1000))
+    const current = spawnSync(cliPath, ['user', 'info'], { encoding: 'utf8', windowsHide: true })
+    if (current.status === 0 && !/未检测到已打开|not running/i.test(`${current.stdout}\n${current.stderr}`)) { ready = true; break }
+  }
+  if (!ready) throw new Error('HBuilderX 启动超时，请打开并登录后重试')
 }
 
 const open = spawnSync(cliPath, ['project', 'open', '--path', projectPath], { encoding: 'utf8', windowsHide: true })
@@ -133,7 +142,7 @@ for (const stream of [pack.stdout, pack.stderr]) stream.on('data', chunk => {
   process.stdout.write(text)
 })
 pack.on('exit', code => {
-  const rejected = /\[Error\]|user not login|文件不存在|尚未开通|打包失败|packaging failed|提交失败/i.test(output)
+  const rejected = /\[Error\]|user not login|未检测到已打开|文件不存在|尚未开通|打包失败|packaging failed|提交失败/i.test(output)
   if (code !== 0 || rejected) {
     process.exitCode = 1
     return
