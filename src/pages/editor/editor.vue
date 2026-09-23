@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { attachFile, request, type Item, type User } from '../../services/api'
+import { syncHomeWidgetNotes } from '../../services/home-widget'
 import { requestLocalReminderPermissions, scheduleLocalReminderForUser } from '../../services/local-reminders'
 import { dateInputValue, timeInputValue } from '../../utils/date'
 
@@ -154,6 +155,9 @@ async function save() {
   try {
     const saved = await request<Item & { wechatSubscribed?: boolean }>(draft.value.id ? `/items/${encodeURIComponent(draft.value.id)}` : '/items', draft.value.id ? 'PUT' : 'POST', { ...draft.value, wechatSubscribe: wechatAccepted.value && canSubscribeSelf.value })
     if (!active) return
+    // #ifdef APP-PLUS
+    request<Item[]>('/items').then(syncHomeWidgetNotes).catch(() => {})
+    // #endif
     const localReminderScheduled = saved.kind === 'reminder' && user.value ? scheduleLocalReminderForUser(saved, user.value) : false
     if (localReminderScheduled) requestLocalReminderPermissions()
     closing = true

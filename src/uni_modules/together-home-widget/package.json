@@ -1,0 +1,37 @@
+{
+  "id": "together-home-widget",
+  "displayName": "小记桌面服务卡片",
+  "version": "1.0.0",
+  "description": "在 Android 与华为桌面显示可选择的小记服务卡片",
+  "engines": {
+    "HBuilderX": "^4.81"
+  },
+  "dcloudext": {
+    "type": "uts",
+    "declaration": {
+      "ads": "无",
+      "data": "卡片标题、正文摘要、更新时间和所选小记 ID 仅缓存在本机",
+      "permissions": "无新增权限"
+    }
+  },
+  "uni_modules": {
+    "dependencies": [],
+    "encrypt": [],
+    "platforms": {
+      "client": {
+        "Vue": {
+          "vue2": "n",
+          "vue3": "y"
+        },
+        "App": {
+          "app-android": {
+            "minVersion": "21"
+          },
+          "app-ios": {
+            "minVersion": "x"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="together_widget_name">小记服务卡片</string>
+  <string name="together_widget_description">把一条小记放到桌面，点击即可打开详情</string>
+  <string name="together_widget_choose_note">选择卡片内容</string>
+  <string name="together_widget_preview_title">世界杯</string>
+  <string name="together_widget_preview_body">6-12：买42 赢0\n6-13：买120 赢264\n6-14：买160 赢0</string>
+  <string name="together_widget_preview_date">9月12日</string>
+  <string name="together_widget_pinned">置顶小记</string>
+</resources>

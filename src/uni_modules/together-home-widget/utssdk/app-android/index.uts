@@ -1,0 +1,35 @@
+import {
+  HomeWidgetBooleanAction,
+  HomeWidgetJsonAction,
+  HomeWidgetRouteAction
+} from '../interface.uts'
+
+export const syncHomeWidgetNotes : HomeWidgetJsonAction = function (notesJson : string) : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return TogetherHomeWidgetNative.syncNotes(context, notesJson)
+}
+
+export const clearHomeWidgetNotes : HomeWidgetBooleanAction = function () : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return TogetherHomeWidgetNative.clearNotes(context)
+}
+
+export const requestHomeWidgetPin : HomeWidgetBooleanAction = function () : boolean {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) return false
+  return TogetherHomeWidgetNative.requestPin(activity)
+}
+
+export const isHomeWidgetPinSupported : HomeWidgetBooleanAction = function () : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return TogetherHomeWidgetNative.isPinSupported(context)
+}
+
+export const consumeHomeWidgetRoute : HomeWidgetRouteAction = function () : string {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) return ''
+  return TogetherHomeWidgetNative.consumeRoute(activity)
+}

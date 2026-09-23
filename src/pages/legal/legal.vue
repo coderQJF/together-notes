@@ -35,10 +35,11 @@ onLoad(options => {
         <view class="section"><text class="section-title">3. 权限与设备能力</text><text>在 App 中选择图片附件时，系统可能请求照片访问权限；导入 TXT 时会打开 Android 系统文件选择器，并只读取你主动选中的文件，不申请访问全部存储空间。本版本不会请求相机权限。启用本机提醒时会请求通知权限，并使用 Android 的闹钟与开机恢复能力。只有你主动使用对应功能时才会申请；拒绝不会影响其他基础功能，但划掉 App 后可能无法按时弹出提醒。</text></view>
         <view class="section"><text class="section-title">4. App 运行框架</text><text>本产品基于 DCloud uni-app（5+ App）开发。App 运行期间，DCloud App 引擎可能处理设备标识、应用启动数据和异常错误日志，以保障基础运行并分析性能。详情可查看 DCloud App 引擎隐私政策。</text></view>
         <view class="section"><text class="section-title">5. 本机系统提醒</text><text>App 会把已经同步且提醒对象包含你的提醒标题、内容、时间、重复规则和打开目标保存在当前 Android 设备，用于在 App 被划掉或进程被系统回收后创建通知。相关数据不会发送给 UniPush、个推或 uniCloud。对方在你离线期间新建或修改的提醒，需要你再次打开 App 完成同步后才能登记到本机。退出登录、注销账号或删除提醒时，会同步清理对应的本机计划；在系统设置中“强行停止”App 后，Android 可能取消后续提醒。</text></view>
-        <view class="section"><text class="section-title">6. 其他第三方服务</text><text>联网搜索、赛事、资讯和图片缓存可能调用页面中标明的第三方服务。请求仅包含实现功能所需的信息；账号密码和私人小记不会提供给内容数据源。</text></view>
-        <view class="section"><text class="section-title">7. 保存与保护</text><text>业务数据保存在本服务配置的服务器和备份中，通过 HTTPS 传输并按账号权限隔离。我们会采取合理安全措施，但互联网服务无法保证绝对安全。</text></view>
-        <view class="section"><text class="section-title">8. 共享与删除</text><text>只有你主动选择“我们俩”时，绑定对象才能访问相应内容。你可以删除单条内容，也可以在“小空间”中注销账号；账号注销会解除双人绑定并删除本人账号和本人创建的服务端数据。本地书架不随账号同步，需在书架中单独删除，卸载 App 也可能清除它。</text></view>
-        <view class="section"><text class="section-title">9. 联系与变更</text><text>内测问题请联系向你提供安装包的维护者。政策发生实质变化时，将在后续版本中更新日期和说明。</text></view>
+        <view class="section"><text class="section-title">6. 桌面服务卡片</text><text>你主动添加桌面服务卡片后，App 会把已同步的小记标题、正文摘要、更新时间和所选小记 ID 缓存在当前 Android 设备，用于在华为桌面显示卡片。桌面上的内容可能被能查看或操作本设备的人看到；这些缓存不会发送给新的第三方服务，退出登录或注销账号时会清理。</text></view>
+        <view class="section"><text class="section-title">7. 其他第三方服务</text><text>联网搜索、赛事、资讯和图片缓存可能调用页面中标明的第三方服务。请求仅包含实现功能所需的信息；账号密码和私人小记不会提供给内容数据源。</text></view>
+        <view class="section"><text class="section-title">8. 保存与保护</text><text>业务数据保存在本服务配置的服务器和备份中，通过 HTTPS 传输并按账号权限隔离。我们会采取合理安全措施，但互联网服务无法保证绝对安全。</text></view>
+        <view class="section"><text class="section-title">9. 共享与删除</text><text>只有你主动选择“我们俩”时，绑定对象才能访问相应内容。你可以删除单条内容，也可以在“小空间”中注销账号；账号注销会解除双人绑定并删除本人账号和本人创建的服务端数据。本地书架不随账号同步，需在书架中单独删除，卸载 App 也可能清除它。</text></view>
+        <view class="section"><text class="section-title">10. 联系与变更</text><text>内测问题请联系向你提供安装包的维护者。政策发生实质变化时，将在后续版本中更新日期和说明。</text></view>
       </template>
     </view>
   </view>

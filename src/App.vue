@@ -1,5 +1,20 @@
 <script lang="ts">
-export default {}
+import { consumeHomeWidgetRoute } from './services/home-widget'
+
+let widgetRouteTimer: ReturnType<typeof setTimeout> | undefined
+
+export default {
+  onShow() {
+    if (!uni.getStorageSync('session')) return
+    const route = consumeHomeWidgetRoute()
+    if (!/^\/pages\/detail\/detail\?id=[^\s]+$/.test(route)) return
+    clearTimeout(widgetRouteTimer)
+    widgetRouteTimer = setTimeout(() => uni.navigateTo({ url: route }), 180)
+  },
+  onHide() {
+    clearTimeout(widgetRouteTimer)
+  },
+}
 </script>
 
 <style>
