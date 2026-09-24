@@ -63,7 +63,7 @@ jobs:
           VITE_API_BASE: ${{ vars.API_BASE_URL }}
       - run: npm run package:app-update
       - name: Pack release
-        run: tar -czf together-notes-release.tgz server dist/build/h5
+        run: tar -czf together-notes-release.tgz server dist/build/h5 deploy/nginx-notes.conf
       - name: Configure SSH
         env:
           SSH_KEY: ${{ secrets.ECS_SSH_KEY }}

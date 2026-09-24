@@ -25,6 +25,39 @@ fi
 rm -rf "$release_dir"
 install -d -m 755 "$release_dir"
 tar -xzf "$archive" --no-same-owner -C "$release_dir"
+
+nginx_template="$release_dir/deploy/nginx-notes.conf"
+nginx_body_limit="$(awk '/^[[:space:]]*client_max_body_size[[:space:]]+/ { value=$2; sub(/;$/, "", value); print value; exit }' "$nginx_template")"
+printf '%s' "$nginx_body_limit" | grep -Eq '^[1-9][0-9]*[mM]$' || {
+  echo "invalid Nginx upload limit" >&2
+  exit 1
+}
+nginx_config="$(
+  grep -Rsl 'server_name[[:space:]][^;]*notes\.coder-f-nowork\.cn' \
+    /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | head -n 1
+)"
+test -n "$nginx_config" || {
+  echo "active Together Notes Nginx config was not found" >&2
+  exit 1
+}
+nginx_config="$(readlink -f "$nginx_config")"
+test -f "$nginx_config"
+nginx_backup="$(mktemp)"
+cp -p "$nginx_config" "$nginx_backup"
+if grep -Eq '^[[:space:]]*client_max_body_size[[:space:]]+[^;]+;' "$nginx_config"; then
+  sed -i -E "s/^([[:space:]]*)client_max_body_size[[:space:]]+[^;]+;/\\1client_max_body_size $nginx_body_limit;/" "$nginx_config"
+else
+  sed -i "/server_name[[:space:]][^;]*notes\\.coder-f-nowork\\.cn/a\\    client_max_body_size $nginx_body_limit;" "$nginx_config"
+fi
+if ! nginx -t || ! systemctl reload nginx; then
+  cp -p "$nginx_backup" "$nginx_config"
+  nginx -t && systemctl reload nginx || true
+  rm -f "$nginx_backup"
+  echo "Nginx upload limit update failed; previous config restored" >&2
+  exit 1
+fi
+rm -f "$nginx_backup"
+
 ln -sfn "$release_dir" "$app_root/current.next"
 mv -Tf "$app_root/current.next" "$app_root/current"
 
