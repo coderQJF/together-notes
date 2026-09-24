@@ -1,5 +1,7 @@
-import type { Item, User } from './api'
-import { localReminderPlan } from './local-reminder-rules'
+import type { Item, Message, User } from './api'
+import { localReminderPlan, stockSystemNotificationPlans } from './local-reminder-rules'
+
+const STOCK_SYSTEM_NOTIFICATION_IDS_KEY = 'stock-system-notification-ids'
 
 // #ifdef APP-PLUS
 import {
@@ -39,6 +41,32 @@ export function syncLocalReminders(items: Item[], user: User) {
       const plan = localReminderPlan(item, user)
       if (plan && nativeSchedule(plan.id, plan.title, plan.content, plan.triggerAt, plan.repeat, plan.route)) scheduled += 1
     }
+    return scheduled
+  })
+  // #endif
+  // #ifndef APP-PLUS
+  return 0
+  // #endif
+}
+
+export function syncStockSystemNotifications(items: Item[], messages: Message[]) {
+  // #ifdef APP-PLUS
+  return runNativeSafely(0, () => {
+    if (!hasLocalNotificationPermission()) {
+      requestLocalNotificationPermission()
+      return 0
+    }
+    const stored = uni.getStorageSync(STOCK_SYSTEM_NOTIFICATION_IDS_KEY)
+    const deliveredIds = Array.isArray(stored) ? stored.map(value => String(value)) : []
+    const plans = stockSystemNotificationPlans(items, messages, deliveredIds)
+    const delivered = new Set(deliveredIds)
+    let scheduled = 0
+    for (const plan of plans) {
+      if (!nativeSchedule(plan.id, plan.title, plan.content, plan.triggerAt, plan.repeat, plan.route)) continue
+      delivered.add(plan.messageId)
+      scheduled += 1
+    }
+    if (scheduled) uni.setStorageSync(STOCK_SYSTEM_NOTIFICATION_IDS_KEY, [...delivered].slice(-200))
     return scheduled
   })
   // #endif
