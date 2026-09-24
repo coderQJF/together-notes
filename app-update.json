@@ -1,5 +1,5 @@
 {
   "nativeMinVersion": "0.3.0",
-  "releaseNotes": "完善小说已读章节迁移与沉浸阅读细节；原生 0.3.0 已支持备忘录多图和桌面轮播。",
+  "releaseNotes": "修复部分华为设备从相册选择图片后读取失败的问题。",
   "mandatory": false
 }

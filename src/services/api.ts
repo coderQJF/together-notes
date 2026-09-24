@@ -89,15 +89,43 @@ async function readUploadBytes(file:any):Promise<ArrayBuffer>{
 }
 
 async function uploadAttachment(file:any,index:number):Promise<Attachment>{
+ const name=imageName(file,index)
+ // Android 相册可能返回 content:// URI，交给原生上传通道直接读取。
+ // #ifdef APP-PLUS
+ const path=String(file?.path||file?.tempFilePath||'')
+ if(!path)throw new Error('读取图片失败')
+ if(Number(file?.size||0)>12*1024*1024)throw new Error('单张图片不能超过 12MB')
+ return new Promise((resolve,reject)=>uni.uploadFile({
+  url:apiBase()+'/files',
+  filePath:path,
+  name:'file',
+  header:{Authorization:'Bearer '+uni.getStorageSync('session'),'X-File-Name':encodeURIComponent(name)},
+  success:r=>{
+   let payload:any={}
+   try{payload=typeof r.data==='string'?JSON.parse(r.data):r.data}catch{}
+   if(r.statusCode>=200&&r.statusCode<300&&payload?.id){resolve(payload as Attachment);return}
+   if(r.statusCode===401)uni.removeStorageSync('session')
+   reject(new Error(payload?.error?.message||payload?.message||'上传失败'))
+  },
+  fail:()=>reject(new Error('上传失败')),
+ }))
+ // #endif
+ // #ifndef APP-PLUS
  const bytes=await readUploadBytes(file)
  if(bytes.byteLength>12*1024*1024)throw new Error('单张图片不能超过 12MB');
- const name=imageName(file,index)
  return new Promise((resolve,reject)=>uni.request({url:(import.meta.env.VITE_API_BASE||'/api')+'/files',method:'POST',data:bytes,header:{Authorization:'Bearer '+uni.getStorageSync('session'),'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(name)},success:r=>r.statusCode===200?resolve(r.data as Attachment):reject(new Error((r.data as any).message||'上传失败')),fail:()=>reject(new Error('上传失败'))}));
+ // #endif
 }
 
 export async function attachImages(count=10):Promise<Attachment[]>{
  const selected=await new Promise<any>((resolve,reject)=>uni.chooseImage({count:Math.max(1,Math.min(10,Math.floor(count))),sourceType:['album'],success:resolve,fail:()=>reject(new Error('未选择图片'))}))
- const paths=(selected.tempFiles?.length?selected.tempFiles:(selected.tempFilePaths||[]).map((path:string)=>({path}))) as any[]
+ let paths:any[]=[]
+ // #ifdef APP-PLUS
+ paths=(selected.tempFilePaths||[]).map((path:string,index:number)=>({path,size:selected.tempFiles?.[index]?.size}))
+ // #endif
+ // #ifndef APP-PLUS
+ paths=(selected.tempFiles?.length?selected.tempFiles:(selected.tempFilePaths||[]).map((path:string)=>({path}))) as any[]
+ // #endif
  const attachments:Attachment[]=[]
  for(let index=0;index<paths.length;index+=1)attachments.push(await uploadAttachment(paths[index],index))
  return attachments
