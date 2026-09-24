@@ -20,7 +20,7 @@
     "server": "node --env-file-if-exists=server/.env server/index.mjs",
     "vip": "node --env-file-if-exists=server/.env server/manage-vip.mjs",
     "backup": "node --env-file-if-exists=server/.env server/backup.mjs",
-    "test": "node --test server/test.mjs server/content.test.mjs server/ai-search.test.mjs server/ai-route.test.mjs server/wechat-reminders.test.mjs test/reader.test.mts test/local-reminder-rules.test.mts test/home-widget-rules.test.mts test/app-update-rules.test.mts test/ui-contract.test.mts"
+    "test": "node --test server/test.mjs server/content.test.mjs server/ai-search.test.mjs server/ai-route.test.mjs server/wechat-reminders.test.mjs server/novel-chapters.test.mjs test/reader.test.mts test/local-reminder-rules.test.mts test/home-widget-rules.test.mts test/app-update-rules.test.mts test/ui-contract.test.mts"
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-5020420260813003",

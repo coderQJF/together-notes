@@ -3,6 +3,8 @@ export type ReaderTheme = 'paper' | 'butter' | 'white'
 export interface ReaderChapter {
   title: string
   content: string
+  remoteIndex?: number
+  characterCount?: number
 }
 
 export interface ReaderProgress {
@@ -19,6 +21,8 @@ export interface ReaderBook {
   createdAt: string
   updatedAt: string
   progress: ReaderProgress
+  source?: 'local' | 'cloud'
+  cloudId?: string
 }
 
 export interface ReaderSettings {
@@ -44,6 +48,11 @@ function fallbackChapters(text: string, targetLength = 6_000): ReaderChapter[] {
   const groups: string[] = []
   let current = ''
   for (const paragraph of paragraphs) {
+    if (paragraph.length > targetLength) {
+      if (current) { groups.push(current); current = '' }
+      for (let offset = 0; offset < paragraph.length; offset += targetLength) groups.push(paragraph.slice(offset, offset + targetLength))
+      continue
+    }
     if (current && current.length + paragraph.length + 2 > targetLength) {
       groups.push(current)
       current = paragraph
@@ -141,6 +150,26 @@ export function prepareReaderBook(input: { title: string; author?: string; text:
     progress: { chapterIndex: 0, scrollTop: 0, updatedAt: now },
   }
   return book
+}
+
+export function prepareCloudReaderBook(input: { id: string; title: string; author: string; chapters: Array<{ chapterIndex: number; title: string; characterCount: number }>; createdAt: string; updatedAt: string }): ReaderBook {
+  if (!input.id || !input.title.trim() || !input.chapters.length) throw new Error('云端小说目录不完整')
+  return {
+    id: `cloud-${input.id}`,
+    cloudId: input.id,
+    source: 'cloud',
+    title: input.title.trim().slice(0, 80),
+    author: input.author.trim().slice(0, 60) || '未署名',
+    chapters: input.chapters.map(chapter => ({
+      title: chapter.title,
+      content: '',
+      remoteIndex: chapter.chapterIndex,
+      characterCount: chapter.characterCount,
+    })),
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt,
+    progress: { chapterIndex: 0, scrollTop: 0, updatedAt: new Date().toISOString() },
+  }
 }
 
 export function saveReaderBook(book: ReaderBook) {

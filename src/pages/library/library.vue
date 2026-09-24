@@ -2,11 +2,12 @@
 import { computed, nextTick, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
-import { getCloudNovel, listCloudNovels, type CloudNovelSummary } from '../../services/api'
+import { getCloudNovelCatalog, listCloudNovels, type CloudNovelSummary } from '../../services/api'
 import { ensureReaderVipAccess } from '../../services/reader-access'
 import { chooseReaderTextFile, readerTitleFromFileName, type ReaderImportProgress } from '../../services/reader-import'
 import {
   loadReaderLibrary,
+  prepareCloudReaderBook,
   prepareReaderBook,
   removeReaderBook,
   saveReaderBook,
@@ -24,7 +25,7 @@ const importState = ref<LibraryImportState | null>(null)
 const error = ref('')
 const cloudNovels = ref<CloudNovelSummary[]>([])
 const cloudError = ref('')
-const downloadingId = ref('')
+const openingId = ref('')
 
 const orderedBooks = computed(() => [...books.value].sort((left, right) => (right.progress.updatedAt || right.updatedAt).localeCompare(left.progress.updatedAt || left.updatedAt)))
 const importStep = computed(() => ({ choosing: 1, reading: 2, decoding: 3, organizing: 4, saving: 5 }[importState.value?.phase || 'choosing']))
@@ -130,28 +131,24 @@ function cloudBookId(id: string) {
   return `cloud-${id}`
 }
 
-function cloudBookDownloaded(id: string) {
+function cloudBookAdded(id: string) {
   return books.value.some(book => book.id === cloudBookId(id))
 }
 
-async function downloadCloudBook(summary: CloudNovelSummary) {
-  if (downloadingId.value) return
-  downloadingId.value = summary.id
+async function openCloudBook(summary: CloudNovelSummary) {
+  if (openingId.value) return
+  openingId.value = summary.id
   cloudError.value = ''
   try {
-    const novel = await getCloudNovel(summary.id)
-    const book = prepareReaderBook({ title: novel.title, author: novel.author, text: novel.content })
-    book.id = cloudBookId(novel.id)
-    book.createdAt = novel.createdAt
-    book.updatedAt = novel.updatedAt
+    const catalog = await getCloudNovelCatalog(summary.id)
+    const book = prepareCloudReaderBook(catalog)
     const saved = saveReaderBook(book)
     refresh()
-    uni.showToast({ title: `已加入书架，共 ${saved.chapters.length} 章`, icon: 'none' })
     setTimeout(() => openBook(saved), 250)
   } catch (reason) {
-    cloudError.value = reason instanceof Error ? reason.message : '下载失败，请稍后重试'
+    cloudError.value = reason instanceof Error ? reason.message : '打开失败，请稍后重试'
   } finally {
-    downloadingId.value = ''
+    openingId.value = ''
   }
 }
 
@@ -189,14 +186,14 @@ onShow(checkAccess)
         <view><text class="page-title">我的书架</text><text class="book-count">{{ books.length }} 本</text></view>
         <button class="add-book" :disabled="importing" hover-class="button-pressed" @click="importBook"><view v-if="importing" class="mini-spinner" /><view v-else class="mini-plus" /><text>{{ importing ? '处理中' : '导入 TXT' }}</text></button>
       </view>
-      <text class="subtitle">可以下载小记云端书库，也可以导入手机里的 TXT。阅读正文和进度会保存在当前设备。</text>
+      <text class="subtitle">云端书籍按章加载，不用先下载整本；也可以导入手机里的 TXT。阅读进度会保存在当前设备。</text>
 
       <view v-if="cloudNovels.length || cloudError" class="cloud-library">
-        <view class="cloud-heading"><view><text class="section-title">云端书库</text><text>{{ cloudNovels.length }} 本</text></view><button :disabled="Boolean(downloadingId)" @click="refreshCloudNovels">刷新</button></view>
+        <view class="cloud-heading"><view><text class="section-title">云端书库</text><text>{{ cloudNovels.length }} 本</text></view><button :disabled="Boolean(openingId)" @click="refreshCloudNovels">刷新</button></view>
         <text v-if="cloudError" class="cloud-error" role="alert">{{ cloudError }}</text>
         <view v-for="novel in cloudNovels" :key="novel.id" class="cloud-row">
           <view><text class="cloud-title">{{ novel.title }}</text><text class="cloud-meta">{{ novel.author }} · {{ novel.characterCount.toLocaleString() }} 字</text></view>
-          <button :disabled="Boolean(downloadingId)" @click="downloadCloudBook(novel)">{{ downloadingId === novel.id ? '下载中' : cloudBookDownloaded(novel.id) ? '重新下载' : '加入书架' }}</button>
+          <button :disabled="Boolean(openingId)" @click="openCloudBook(novel)">{{ openingId === novel.id ? '正在打开' : cloudBookAdded(novel.id) ? '继续阅读' : '开始阅读' }}</button>
         </view>
       </view>
 
@@ -216,7 +213,7 @@ onShow(checkAccess)
       <view v-if="!importing && !orderedBooks.length" class="empty-card">
         <view class="empty-book"><view /><view /><view /></view>
         <text class="section-title">书架还是空的</text>
-        <text>点击上方“导入 TXT”，选择自己创作、已获授权或公版的小说文件。</text>
+        <text>从云端书库选一本直接阅读，或导入自己创作、已获授权或公版的 TXT 文件。</text>
       </view>
 
       <view v-for="book in orderedBooks" :key="book.id" class="book-card" hover-class="card-pressed" role="button" :aria-label="`${book.title}，${chapterLabel(book)}`" @click="openBook(book)">
@@ -228,7 +225,7 @@ onShow(checkAccess)
         </view>
       </view>
 
-      <view class="source-note"><text>内容说明</text><text>云端书库由运营后台发布；本机导入仍不会上传服务器。请只保存原创、已获授权或公版文本。</text></view>
+      <view class="source-note"><text>内容说明</text><text>云端书库由运营后台发布，打开时只请求当前章节；本机导入仍不会上传服务器。</text></view>
     </template>
   </view>
 </template>

@@ -2,7 +2,7 @@ import { apiAssetUrl } from './api'
 import { canInstallResourceUpdate, type AppUpdateMetadata } from './app-update-rules'
 
 const LAST_CHECK_KEY = 'app-resource-update-last-check'
-const CHECK_INTERVAL = 6 * 60 * 60 * 1000
+const CHECK_INTERVAL = 15 * 60 * 1000
 
 function resourceVersion(): Promise<string> {
   return new Promise(resolve => plus.runtime.getProperty(String(plus.runtime.appid || ''), info => resolve(String(info.version || '0.0.0'))))

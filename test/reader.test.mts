@@ -5,6 +5,7 @@ import {
   getReaderBook,
   loadReaderLibrary,
   parseReaderChapters,
+  prepareCloudReaderBook,
   prepareReaderBook,
   removeReaderBook,
   saveReaderBook,
@@ -45,7 +46,9 @@ test('reader parser normalizes newlines and rejects blank content', () => {
 test('reader accepts local TXT content larger than the former 1.5 million character limit', () => {
   const text = '甲'.repeat(1_500_001)
   assert.equal(decodeReaderText(new TextEncoder().encode(text).buffer).length, text.length)
-  assert.equal(prepareReaderBook({ title: '长篇测试', text }).chapters[0].content.length, text.length)
+  const book = prepareReaderBook({ title: '长篇测试', text })
+  assert.ok(book.chapters.length > 1)
+  assert.equal(book.chapters.reduce((sum, chapter) => sum + chapter.content.length, 0), text.length)
 })
 
 test('local reader storage creates books, saves progress, and removes content', () => {
@@ -91,4 +94,23 @@ test('reader preparation does not write until the explicit local save step', () 
     if (original === undefined) delete target.uni
     else target.uni = original
   }
+})
+
+test('cloud reader books store only the catalog instead of the whole novel', () => {
+  const book = prepareCloudReaderBook({
+    id: 'remote-1',
+    title: '北派盗墓笔记',
+    author: '云峰',
+    createdAt: '2026-09-24T00:00:00.000Z',
+    updatedAt: '2026-09-24T00:00:00.000Z',
+    chapters: [
+      { chapterIndex: 0, title: '第一章', characterCount: 3200 },
+      { chapterIndex: 1, title: '第二章', characterCount: 2800 },
+    ],
+  })
+  assert.equal(book.id, 'cloud-remote-1')
+  assert.equal(book.source, 'cloud')
+  assert.equal(book.chapters.length, 2)
+  assert.equal(book.chapters[0].content, '')
+  assert.equal(book.chapters[1].remoteIndex, 1)
 })

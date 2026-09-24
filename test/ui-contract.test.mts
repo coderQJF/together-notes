@@ -89,6 +89,18 @@ test('Android app checks for native-base-compatible resource updates without int
   assert.doesNotMatch(updater, /showToast\([^)]*更新失败/)
 })
 
+test('cloud novels open from a lightweight catalog and fetch one chapter at a time', async () => {
+  const library = await readFile('src/pages/library/library.vue', 'utf8')
+  const reader = await readFile('src/pages/reader/reader.vue', 'utf8')
+  const api = await readFile('src/services/api.ts', 'utf8')
+  assert.match(library, /getCloudNovelCatalog/)
+  assert.match(library, /开始阅读/)
+  assert.doesNotMatch(library, /下载中|重新下载/)
+  assert.match(reader, /getCloudNovelChapter/)
+  assert.match(reader, /重新加载/)
+  assert.match(api, /\/chapters\/'/)
+})
+
 test('nickname editing uses the shared raster icon asset', async () => {
   const source = await readFile('src/pages/us/us.vue', 'utf8')
   assert.match(source, /nav-icons\/edit-active\.png/)
