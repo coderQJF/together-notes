@@ -35,6 +35,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            VITE_API_BASE=${{ vars.API_BASE_URL }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -55,6 +57,11 @@ jobs:
         env:
           CI: 1
           VITE_API_BASE: /api
+      - run: npm run build:app
+        env:
+          CI: 1
+          VITE_API_BASE: ${{ vars.API_BASE_URL }}
+      - run: npm run package:app-update
       - name: Pack release
         run: tar -czf together-notes-release.tgz server dist/build/h5
       - name: Configure SSH

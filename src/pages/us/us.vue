@@ -153,7 +153,7 @@ function addHomeWidget() {
   }
   uni.showModal({
     title: '添加桌面小工具',
-    content: '请长按华为桌面空白处，进入“窗口小工具”，找到“小记桌面卡片”后添加。它不会出现在 HarmonyOS 的“服务卡片”列表中。',
+    content: '请长按华为桌面空白处，进入“窗口小工具”，在 X 分组找到“小记”后添加。0.2.7 及更早版本的应用名为“两个人的小记”，会被华为分到 L。它不会出现在 HarmonyOS 的“服务卡片”列表中。',
     showCancel: false,
     confirmText: '知道了',
   })

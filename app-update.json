@@ -1,0 +1,5 @@
+{
+  "nativeMinVersion": "0.2.8",
+  "releaseNotes": "新增应用内资源更新，后续页面、样式和业务修复无需重新安装 APK。",
+  "mandatory": false
+}

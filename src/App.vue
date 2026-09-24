@@ -1,9 +1,13 @@
 <script lang="ts">
 import { consumeHomeWidgetRoute } from './services/home-widget'
+import { checkForAppResourceUpdate } from './services/app-update'
 
 let widgetRouteTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
+  onLaunch() {
+    setTimeout(() => { void checkForAppResourceUpdate() }, 1800)
+  },
   onShow() {
     if (!uni.getStorageSync('session')) return
     const route = consumeHomeWidgetRoute()

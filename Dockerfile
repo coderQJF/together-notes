@@ -1,12 +1,13 @@
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN apk add --no-cache zip && npm ci
 COPY . .
 ARG VITE_API_BASE=/api
 ENV VITE_API_BASE=${VITE_API_BASE}
 ENV CI=1
 RUN npm run build:h5
+RUN npm run build:app && npm run package:app-update
 
 FROM node:24-alpine AS runtime
 WORKDIR /app

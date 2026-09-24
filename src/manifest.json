@@ -1,9 +1,9 @@
 {
-  "name": "两个人的小记",
+  "name": "小记",
   "appid": "__UNI__10E8CA8",
   "description": "备忘录与双人提醒",
-  "versionName": "0.2.7",
-  "versionCode": "27",
+  "versionName": "0.2.8",
+  "versionCode": "28",
   "vueVersion": "3",
   "app-plus": {
     "usingComponents": true,

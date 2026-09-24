@@ -74,8 +74,19 @@ test('Android home widget guidance points Huawei users to the correct launcher e
   const profile = await readFile('src/pages/us/us.vue', 'utf8')
   const strings = await readFile('src/uni_modules/together-home-widget/utssdk/app-android/res/values/strings.xml', 'utf8')
   assert.match(profile, /进入“窗口小工具”/)
+  assert.match(profile, /0\.2\.7[^']+会被华为分到 L/)
   assert.match(profile, /不会出现在 HarmonyOS 的“服务卡片”列表中/)
   assert.match(strings, /小记桌面卡片/)
+})
+
+test('Android app checks for native-base-compatible resource updates without interrupting other platforms', async () => {
+  const app = await readFile('src/App.vue', 'utf8')
+  const updater = await readFile('src/services/app-update.ts', 'utf8')
+  assert.match(app, /checkForAppResourceUpdate/)
+  assert.match(updater, /#ifdef APP-PLUS/)
+  assert.match(updater, /plus\.runtime\.install/)
+  assert.match(updater, /canInstallResourceUpdate/)
+  assert.doesNotMatch(updater, /showToast\([^)]*更新失败/)
 })
 
 test('nickname editing uses the shared raster icon asset', async () => {
