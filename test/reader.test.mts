@@ -12,6 +12,15 @@ import {
   saveReaderProgress,
 } from '../src/services/reader.ts'
 import { decodeReaderText, readerTitleFromFileName } from '../src/services/reader-import.ts'
+import { chapterStepFromSwipe } from '../src/services/reader-gesture.ts'
+
+test('reader swipe gesture maps left to next and right to previous without stealing vertical scroll', () => {
+  const at = 1_000
+  assert.equal(chapterStepFromSwipe({ x: 260, y: 400, at }, { x: 120, y: 410, at: at + 240 }), 1)
+  assert.equal(chapterStepFromSwipe({ x: 100, y: 400, at }, { x: 240, y: 390, at: at + 240 }), -1)
+  assert.equal(chapterStepFromSwipe({ x: 200, y: 300, at }, { x: 160, y: 480, at: at + 240 }), 0)
+  assert.equal(chapterStepFromSwipe({ x: 260, y: 400, at }, { x: 120, y: 410, at: at + 1_200 }), 0)
+})
 
 test('reader file import decodes common Chinese TXT encodings and derives a title', () => {
   const utf8Body = new TextEncoder().encode('第一章\r\n从这里开始。')

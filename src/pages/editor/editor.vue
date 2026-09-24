@@ -157,7 +157,12 @@ async function save() {
     const saved = await request<Item & { wechatSubscribed?: boolean }>(draft.value.id ? `/items/${encodeURIComponent(draft.value.id)}` : '/items', draft.value.id ? 'PUT' : 'POST', { ...draft.value, wechatSubscribe: wechatAccepted.value && canSubscribeSelf.value })
     if (!active) return
     // #ifdef APP-PLUS
-    request<Item[]>('/items').then(syncHomeWidgetNotes).catch(() => {})
+    try {
+      const latestItems = await request<Item[]>('/items')
+      await syncHomeWidgetNotes(latestItems)
+    } catch {
+      // Saving the note succeeded even if the optional desktop cache is unavailable.
+    }
     // #endif
     const localReminderScheduled = saved.kind === 'reminder' && user.value ? scheduleLocalReminderForUser(saved, user.value) : false
     if (localReminderScheduled) requestLocalReminderPermissions()

@@ -39,6 +39,8 @@ private const val EXTRA_ROUTE = "home_widget_route"
 private const val MAX_NOTES = 60
 private const val MAX_IMAGES_PER_NOTE = 10
 private const val IMAGE_DIRECTORY = "widget-images"
+private const val IMAGE_CACHE_VERSION = "v2"
+private const val MAX_WIDGET_IMAGE_EDGE = 720
 
 internal data class TogetherWidgetNote(
     val id: String,
@@ -165,10 +167,10 @@ internal object TogetherHomeWidgetStore {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
             var sample = 1
-            while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) sample *= 2
+            while (bounds.outWidth / sample > MAX_WIDGET_IMAGE_EDGE || bounds.outHeight / sample > MAX_WIDGET_IMAGE_EDGE) sample *= 2
             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return ""
             target.parentFile?.mkdirs()
-            FileOutputStream(target).use { output -> bitmap.compress(Bitmap.CompressFormat.JPEG, 84, output) }
+            FileOutputStream(target).use { output -> bitmap.compress(Bitmap.CompressFormat.JPEG, 80, output) }
             bitmap.recycle()
             key
         } catch (_: Exception) {
@@ -183,7 +185,7 @@ internal object TogetherHomeWidgetStore {
     }
 
     private fun imageKey(noteId: String, attachmentId: String): String {
-        val bytes = MessageDigest.getInstance("SHA-256").digest("$noteId:$attachmentId".toByteArray())
+        val bytes = MessageDigest.getInstance("SHA-256").digest("$IMAGE_CACHE_VERSION:$noteId:$attachmentId".toByteArray())
         return bytes.joinToString("") { "%02x".format(it) } + ".jpg"
     }
 }
@@ -197,29 +199,29 @@ internal object TogetherHomeWidgetRenderer {
 
     fun update(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
         val note = TogetherHomeWidgetStore.selected(context, appWidgetId)
-        val views = RemoteViews(context.packageName, R.layout.together_note_widget)
+        val hasImages = note?.images?.isNotEmpty() == true
+        val layoutId = if (hasImages) R.layout.together_note_widget else R.layout.together_note_widget_text
+        val views = RemoteViews(context.packageName, layoutId)
         if (note == null) {
             views.setTextViewText(R.id.together_widget_title, "小记")
             views.setTextViewText(R.id.together_widget_body, "打开 App 同步小记后，长按卡片选择要展示的内容。")
             views.setTextViewText(R.id.together_widget_date, "桌面小工具")
             views.setViewVisibility(R.id.together_widget_pin, View.GONE)
-            views.setViewVisibility(R.id.together_widget_images, View.GONE)
-            views.setViewVisibility(R.id.together_widget_body, View.VISIBLE)
             views.setContentDescription(android.R.id.background, "打开小记")
         } else {
             views.setTextViewText(R.id.together_widget_title, note.title)
             views.setTextViewText(R.id.together_widget_body, note.content.ifBlank { "暂无正文" })
             views.setTextViewText(R.id.together_widget_date, note.date)
             views.setViewVisibility(R.id.together_widget_pin, if (note.pinned) View.VISIBLE else View.GONE)
-            views.setViewVisibility(R.id.together_widget_images, if (note.images.isEmpty()) View.GONE else View.VISIBLE)
-            views.setViewVisibility(R.id.together_widget_body, if (note.images.isEmpty()) View.VISIBLE else View.GONE)
             views.setContentDescription(android.R.id.background, "${note.title}，打开小记详情")
         }
-        val imageIntent = Intent(context, TogetherWidgetImageService::class.java).apply {
-            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            data = Uri.parse("together-notes://widget/images/$appWidgetId/${note?.id.orEmpty().hashCode()}")
+        if (hasImages) {
+            val imageIntent = Intent(context, TogetherWidgetImageService::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                data = Uri.parse("together-notes://widget/images/$appWidgetId/${note?.id.orEmpty().hashCode()}")
+            }
+            views.setRemoteAdapter(R.id.together_widget_images, imageIntent)
         }
-        views.setRemoteAdapter(R.id.together_widget_images, imageIntent)
         val options = manager.getAppWidgetOptions(appWidgetId)
         val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110)
         views.setInt(R.id.together_widget_body, "setMaxLines", when {
@@ -231,7 +233,7 @@ internal object TogetherHomeWidgetRenderer {
             views.setOnClickPendingIntent(android.R.id.background, it)
         }
         manager.updateAppWidget(appWidgetId, views)
-        manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.together_widget_images)
+        if (hasImages) manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.together_widget_images)
     }
 
     private fun launchPendingIntent(context: Context, appWidgetId: Int, note: TogetherWidgetNote?): PendingIntent? {
@@ -433,7 +435,11 @@ class TogetherNoteWidgetConfigureActivity : Activity() {
                 maxLines = 1
             })
             addView(TextView(this@TogetherNoteWidgetConfigureActivity).apply {
-                text = note.content.ifBlank { "暂无正文" }
+                text = when {
+                    note.images.isNotEmpty() && note.content.isNotBlank() -> "${note.content} · ${note.images.size} 张图片"
+                    note.images.isNotEmpty() -> "${note.images.size} 张图片"
+                    else -> note.content.ifBlank { "暂无正文" }
+                }
                 setTextColor(Color.parseColor("#786D5B"))
                 textSize = 13f
                 maxLines = 2

@@ -18,7 +18,9 @@ function runNativeSafely<T>(fallback: T, action: () => T) {
   catch { return fallback }
 }
 
-export async function syncHomeWidgetNotes(items: Item[]) {
+let widgetSyncQueue = Promise.resolve(false)
+
+async function performHomeWidgetSync(items: Item[]) {
   // #ifdef APP-PLUS
   try {
     const notes = buildHomeWidgetNotes(items)
@@ -47,6 +49,17 @@ export async function syncHomeWidgetNotes(items: Item[]) {
   // #ifndef APP-PLUS
   return false
   // #endif
+}
+
+export function syncHomeWidgetNotes(items: Item[]) {
+  // Native image caching and SharedPreferences replacement must stay ordered.
+  // A save immediately followed by an index refresh used to let the older list
+  // overwrite the newer one while its images were still downloading.
+  widgetSyncQueue = widgetSyncQueue.then(
+    () => performHomeWidgetSync(items),
+    () => performHomeWidgetSync(items),
+  )
+  return widgetSyncQueue
 }
 
 export function clearHomeWidgetNotes() {

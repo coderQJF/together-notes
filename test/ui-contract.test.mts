@@ -124,7 +124,20 @@ test('reader controls stay immersive and chapter read state is visible in the di
   assert.match(reader, /v-if="controlsVisible" class="reader-chrome"/)
   assert.match(reader, /class="sheet directory-sheet"/)
   assert.match(reader, /readChapterIndexes\.has\(entry\.index\)/)
+  assert.match(reader, /DIRECTORY_PAGE_SIZE = 10/)
+  assert.match(reader, /<StatusIcon/)
+  assert.match(reader, /@touchstart="onReadingTouchStart" @touchend="onReadingTouchEnd"/)
+  assert.match(reader, /playPageTurnSound/)
   assert.match(progress, /readChapterIndexes/)
+})
+
+test('Android home widget isolates text cards from its image carousel and keeps image payloads small', async () => {
+  const native = await readFile('src/uni_modules/together-home-widget/utssdk/app-android/TogetherHomeWidgetNative.kt', 'utf8')
+  const provider = await readFile('src/uni_modules/together-home-widget/utssdk/app-android/res/xml/together_note_widget_info.xml', 'utf8')
+  assert.match(native, /R\.layout\.together_note_widget_text/)
+  assert.match(native, /if \(hasImages\) manager\.notifyAppWidgetViewDataChanged/)
+  assert.match(native, /MAX_WIDGET_IMAGE_EDGE = 720/)
+  assert.match(provider, /autoAdvanceViewId="@id\/together_widget_images"/)
 })
 
 test('the profile shows the build version and release scripts separate native from hot updates', async () => {

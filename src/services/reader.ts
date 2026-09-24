@@ -30,13 +30,14 @@ export interface ReaderSettings {
   fontSize: number
   lineHeight: number
   theme: ReaderTheme
+  pageSound: boolean
 }
 
 const LIBRARY_KEY = 'reader-library-v1'
 const SETTINGS_KEY = 'reader-settings-v2'
 const PROGRESS_KEY = 'reader-progress-v1'
 
-const DEFAULT_SETTINGS: ReaderSettings = { fontSize: 21, lineHeight: 2.15, theme: 'butter' }
+const DEFAULT_SETTINGS: ReaderSettings = { fontSize: 21, lineHeight: 2.15, theme: 'butter', pageSound: true }
 const CHAPTER_HEADING = /^(?:第[0-9〇零一二三四五六七八九十百千万两]{1,12}[章节回卷篇部集](?:\s+|[：:、.-])?.{0,36}|序章|楔子|引子|前言|后记|尾声)$/
 
 function normalizedText(value: string) {
@@ -98,6 +99,10 @@ function loadProgressMap() {
 
 function qaStarterBook(): ReaderBook {
   const now = new Date().toISOString()
+  const extraChapters = Array.from({ length: 9 }, (_, index) => ({
+    title: `第${index + 4}章 QA 目录样式 ${index + 4}`,
+    content: `这是用于检查十章分页、长标题省略和阅读状态的第 ${index + 4} 章示例正文。`,
+  }))
   return {
     id: 'starter-window-light',
     title: '窗边的小灯',
@@ -109,6 +114,7 @@ function qaStarterBook(): ReaderBook {
       { title: '第一章 晚归的人', content: '雨停的时候，巷口只剩一盏灯还亮着。\n\n林乔把伞靠在门边，发现桌上压着一张便签：锅里有汤，记得热一热。字迹被灯光照得很柔，像有人把一句普通的话认真保存了下来。\n\n她没有立刻开灯，只站在窗边看了一会儿。楼下的积水映着云后的月亮，风经过晾衣绳，发出很轻的声响。原来有人等过，房间就不会真正变暗。' },
       { title: '第二章 留下的话', content: '第二天清晨，桌上的便签旁多了一行新字：汤很好喝，我到家了。\n\n他们开始把来不及说的小事写下来。牛奶放在第二层，窗台的花今天开了，周六想去旧书店。纸片越来越多，却没有一张显得多余。\n\n有些日子并不需要隆重纪念。只要回头时，还能找到彼此留下的那句话，就已经足够。' },
       { title: '第三章 灯亮的时候', content: '又一个雨夜，林乔在巷口抬头，看见那扇熟悉的窗亮着。\n\n她忽然明白，灯并不是为了照亮整条路。它只是告诉晚归的人：你可以慢一点，门后有人记得你。\n\n于是她加快脚步，推开门，把今天想说的第一句话写在新的便签上。' },
+      ...extraChapters,
     ],
   }
 }
@@ -232,7 +238,8 @@ export function loadReaderSettings(): ReaderSettings {
   const fontSize = Math.max(15, Math.min(26, Number(value?.fontSize) || DEFAULT_SETTINGS.fontSize))
   const lineHeight = Math.max(1.7, Math.min(2.4, Number(value?.lineHeight) || DEFAULT_SETTINGS.lineHeight))
   const theme: ReaderTheme = ['paper', 'butter', 'white'].includes(String(value?.theme)) ? value?.theme as ReaderTheme : DEFAULT_SETTINGS.theme
-  return { fontSize, lineHeight, theme }
+  const pageSound = value?.pageSound !== false
+  return { fontSize, lineHeight, theme, pageSound }
 }
 
 export function saveReaderSettings(settings: ReaderSettings) {

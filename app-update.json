@@ -1,5 +1,5 @@
 {
-  "nativeMinVersion": "0.3.0",
-  "releaseNotes": "修复部分华为设备从相册选择图片后读取失败的问题。",
+  "nativeMinVersion": "0.4.0",
+  "releaseNotes": "修复华为桌面小工具加载和最新图片随记同步；小说目录改为每页十章，并新增左右滑动翻章、翻页动画与音效。",
   "mandatory": false
 }
