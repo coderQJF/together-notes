@@ -7,6 +7,11 @@ export interface HomeWidgetNote {
   date: string
   pinned: boolean
   updatedAt: string
+  images: Array<{ id: string; name: string }>
+}
+
+export function isImageAttachment(name: string) {
+  return /\.(?:png|jpe?g|webp|gif|bmp|heic|heif)$/i.test(name.trim())
 }
 
 function formatWidgetDate(value?: string) {
@@ -30,6 +35,10 @@ export function buildHomeWidgetNotes(items: Item[]): HomeWidgetNote[] {
       date: formatWidgetDate(item.updatedAt),
       pinned: Boolean(item.pinned),
       updatedAt: item.updatedAt || '',
+      images: (item.attachments || [])
+        .filter(attachment => isImageAttachment(attachment.name))
+        .slice(0, 10)
+        .map(attachment => ({ id: attachment.id.slice(0, 200), name: attachment.name.slice(0, 150) })),
     }))
     .sort((left, right) => Number(right.pinned) - Number(left.pinned) || right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, 60)

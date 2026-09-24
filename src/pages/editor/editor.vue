@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import TimePickerField from '../../components/TimePickerField.vue'
-import { attachFile, request, type Item, type User } from '../../services/api'
+import { attachImages, request, type Item, type User } from '../../services/api'
 import { syncHomeWidgetNotes } from '../../services/home-widget'
 import { requestLocalReminderPermissions, scheduleLocalReminderForUser } from '../../services/local-reminders'
 import { dateInputValue, timeInputValue } from '../../utils/date'
@@ -90,11 +90,11 @@ async function addAttachment() {
   }
   pending.value = 'attachment'
   try {
-    const attachment = await attachFile()
-    draft.value.attachments = [...(draft.value.attachments || []), attachment]
+    const attachments = await attachImages(10 - (draft.value.attachments || []).length)
+    draft.value.attachments = [...(draft.value.attachments || []), ...attachments].slice(0, 10)
   } catch (e) {
     const message = e instanceof Error ? e.message : '添加附件失败'
-    if (message !== '未选择文件' && message !== '未选择图片') uni.showToast({ title: message, icon: 'none' })
+    if (message !== '未选择图片') uni.showToast({ title: message, icon: 'none' })
   } finally {
     pending.value = ''
   }
@@ -202,7 +202,7 @@ onUnload(() => { active = false })
       <text class="label">链接（每行一个）</text>
       <textarea class="links-input" v-model="linkText" placeholder="https://…" disable-default-padding />
 
-      <text class="label">附件</text>
+      <text class="label">图片</text>
       <view v-for="(attachment, index) in draft.attachments" :key="attachment.id" class="setting">
         <view class="setting-copy">
           <text class="setting-title">{{ attachment.name }}</text>
@@ -213,9 +213,9 @@ onUnload(() => { active = false })
       <button class="attachment-button" :disabled="Boolean(pending)" @click="addAttachment">
         <view v-if="pending === 'attachment'" class="spinner" />
         <view v-else class="mini-plus" />
-        <text>{{ pending === 'attachment' ? '选择中…' : '添加附件' }}<!-- #ifdef APP-PLUS -->（图片）<!-- #endif --></text>
+        <text>{{ pending === 'attachment' ? '上传中…' : '选择图片（可多选）' }}</text>
       </button>
-      <text class="muted small hint">单个最大 12MB，最多 10 个。<!-- #ifdef APP-PLUS -->内测版 App 暂支持图片附件。<!-- #endif --></text>
+      <text class="muted small hint">单张最大 12MB，最多 10 张；桌面小组件会自动轮播所选小记的图片。</text>
 
       <text class="label">可见范围</text>
       <view v-if="isGuestEditor" class="picker readonly">

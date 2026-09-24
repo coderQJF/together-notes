@@ -11,6 +11,7 @@ export interface ReaderProgress {
   chapterIndex: number
   scrollTop: number
   updatedAt: string
+  readChapterIndexes?: number[]
 }
 
 export interface ReaderBook {
@@ -120,7 +121,18 @@ export function loadReaderLibrary(): ReaderBook[] {
   books = withoutLegacySample
   if (import.meta.env?.VITE_QA_READER_SAMPLE === '1') books = [qaStarterBook(), ...books]
   const progress = loadProgressMap()
-  return books.map(book => ({ ...book, progress: progress[book.id] || book.progress }))
+  return books.map(book => {
+    const saved = progress[book.id] || book.progress
+    const chapterIndex = Math.max(0, Math.min(book.chapters.length - 1, Math.floor(saved.chapterIndex || 0)))
+    const normalizedProgress: ReaderProgress = {
+      ...saved,
+      chapterIndex,
+      readChapterIndexes: Array.isArray(saved.readChapterIndexes)
+        ? saved.readChapterIndexes
+        : Array.from({ length: chapterIndex + 1 }, (_, index) => index),
+    }
+    return { ...book, progress: normalizedProgress }
+  })
 }
 
 function saveLibrary(books: ReaderBook[]) {
@@ -198,14 +210,21 @@ export function removeReaderBook(id: string) {
 
 export function saveReaderProgress(id: string, chapterIndex: number, scrollTop: number) {
   const book = loadReaderLibrary().find(item => item.id === id)
-  if (!book) return
+  if (!book) return null
   const progress = loadProgressMap()
-  progress[id] = {
-    chapterIndex: Math.max(0, Math.min(book.chapters.length - 1, Math.floor(chapterIndex))),
+  const normalizedChapter = Math.max(0, Math.min(book.chapters.length - 1, Math.floor(chapterIndex)))
+  const readChapterIndexes = [...new Set([...(progress[id]?.readChapterIndexes || book.progress.readChapterIndexes || []), normalizedChapter])]
+    .filter(index => Number.isInteger(index) && index >= 0 && index < book.chapters.length)
+    .sort((left, right) => left - right)
+  const next: ReaderProgress = {
+    chapterIndex: normalizedChapter,
     scrollTop: Math.max(0, Math.floor(scrollTop)),
     updatedAt: new Date().toISOString(),
+    readChapterIndexes,
   }
+  progress[id] = next
   uni.setStorageSync(PROGRESS_KEY, progress)
+  return next
 }
 
 export function loadReaderSettings(): ReaderSettings {

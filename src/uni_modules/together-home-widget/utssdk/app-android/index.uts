@@ -1,5 +1,7 @@
 import {
   HomeWidgetBooleanAction,
+  HomeWidgetImageCacheAction,
+  HomeWidgetImageLookupAction,
   HomeWidgetJsonAction,
   HomeWidgetRouteAction
 } from '../interface.uts'
@@ -8,6 +10,18 @@ export const syncHomeWidgetNotes : HomeWidgetJsonAction = function (notesJson : 
   const context = UTSAndroid.getAppContext()
   if (context == null) return false
   return TogetherHomeWidgetNative.syncNotes(context, notesJson)
+}
+
+export const cachedHomeWidgetImage : HomeWidgetImageLookupAction = function (noteId : string, attachmentId : string) : string {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return ''
+  return TogetherHomeWidgetNative.cachedImage(context, noteId, attachmentId)
+}
+
+export const cacheHomeWidgetImage : HomeWidgetImageCacheAction = function (noteId : string, attachmentId : string, imageBase64 : string) : string {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return ''
+  return TogetherHomeWidgetNative.cacheImage(context, noteId, attachmentId, imageBase64)
 }
 
 export const clearHomeWidgetNotes : HomeWidgetBooleanAction = function () : boolean {

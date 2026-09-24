@@ -199,8 +199,9 @@ const screens = [
   { name: 'news-detail-error', path: '/pages/news-detail/news-detail?id=unavailable', ready: '无法显示这条新闻' },
   { name: 'library', path: '/pages/library/library', ready: '窗边的小灯' },
   { name: 'reader', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人' },
-  { name: 'reader-directory', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人', click: '目录', clicked: '第二章 留下的话' },
-  { name: 'reader-settings', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人', click: '阅读设置', clicked: '阅读背景' },
+  { name: 'reader-controls', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人', preClickSelector: '.reading-surface' },
+  { name: 'reader-directory', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人', preClickSelector: '.reading-surface', click: '目录', clicked: '第二章 留下的话' },
+  { name: 'reader-settings', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人', preClickSelector: '.reading-surface', click: '阅读设置', clicked: '阅读背景' },
   { name: 'pair-invite', path: '/pages/pair/pair?mode=invite', ready: '把小记' },
   { name: 'pair-join', path: '/pages/pair/pair?mode=join', ready: '加入彼此' },
   { name: 'inbox', path: '/pages/inbox/inbox', ready: '到时间了' },
@@ -266,6 +267,14 @@ try {
       await page.call('Page.navigate', { url: route(screen.path, ++navigationNonce) })
       await wait(500)
       await waitForText(page, screen.ready)
+      if (screen.preClickSelector) {
+        const preClickResult = await page.call('Runtime.evaluate', {
+          expression: `(() => { const node = document.querySelector(${JSON.stringify(screen.preClickSelector)}); if (!node) return false; node.click(); return true })()`,
+          returnByValue: true,
+        })
+        if (!preClickResult.result.value) throw new Error(`Could not find pre-click target: ${screen.preClickSelector}`)
+        await wait(120)
+      }
       if (screen.click) {
         const targetAlreadyVisible = await page.call('Runtime.evaluate', {
           expression: `Boolean(document.body && document.body.innerText.includes(${JSON.stringify(screen.clicked)}))`,

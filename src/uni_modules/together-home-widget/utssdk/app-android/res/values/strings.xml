@@ -7,4 +7,5 @@
   <string name="together_widget_preview_body">6-12：买42 赢0\n6-13：买120 赢264\n6-14：买160 赢0</string>
   <string name="together_widget_preview_date">9月12日</string>
   <string name="together_widget_pinned">置顶小记</string>
+  <string name="together_widget_image">小记图片</string>
 </resources>

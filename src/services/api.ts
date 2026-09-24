@@ -67,29 +67,52 @@ export async function registerWithApp(username:string,password:string,nickname:s
 export async function listCloudNovels(){return (await request<{items:CloudNovelSummary[]}>('/novels')).items}
 export async function getCloudNovelCatalog(id:string){return request<CloudNovelCatalog>('/novels/'+encodeURIComponent(id)+'/chapters','GET',undefined,{timeout:60000})}
 export async function getCloudNovelChapter(id:string,chapterIndex:number){return request<CloudNovelChapter>('/novels/'+encodeURIComponent(id)+'/chapters/'+Math.max(0,Math.floor(chapterIndex)),'GET',undefined,{timeout:30000})}
-export async function attachFile():Promise<Attachment>{
- let file:any;
- // #ifdef H5
- file=await new Promise<any>((resolve,reject)=>uni.chooseFile({count:1,success:r=>resolve((r.tempFiles as any[])[0]),fail:()=>reject(new Error('未选择文件'))}));
- // #endif
- // #ifdef MP-WEIXIN
- file=await new Promise<any>((resolve,reject)=>uni.chooseMessageFile({count:1,type:'all',success:r=>resolve((r.tempFiles as any[])[0]),fail:()=>reject(new Error('未选择文件'))}));
- // #endif
- // #ifdef APP-PLUS
- const selected=await new Promise<any>((resolve,reject)=>uni.chooseImage({count:1,sourceType:['album'],success:resolve,fail:()=>reject(new Error('未选择图片'))}));file={path:selected.tempFilePaths[0],name:'图片.jpg'};
- // #endif
+function imageName(file:any,index:number){
+ const original=String(file?.name||'').trim();if(original)return original.slice(0,150)
+ const path=String(file?.path||file?.tempFilePath||'');const match=path.match(/\.([a-z0-9]{2,5})(?:[?#].*)?$/i);const extension=match?.[1]?.toLowerCase()||'jpg'
+ return `图片-${Date.now()}-${index+1}.${extension}`
+}
+
+async function readUploadBytes(file:any):Promise<ArrayBuffer>{
+ const path=String(file?.path||file?.tempFilePath||'')
  let bytes:ArrayBuffer;
  // #ifdef H5
- bytes=await fetch(file.path).then(r=>r.arrayBuffer());
+ bytes=await fetch(path).then(r=>r.arrayBuffer());
  // #endif
  // #ifdef MP-WEIXIN
- bytes=await new Promise<ArrayBuffer>((resolve,reject)=>uni.getFileSystemManager().readFile({filePath:file.path,success:r=>resolve(r.data as ArrayBuffer),fail:()=>reject(new Error('读取附件失败'))}));
+ bytes=await new Promise<ArrayBuffer>((resolve,reject)=>uni.getFileSystemManager().readFile({filePath:path,success:r=>resolve(r.data as ArrayBuffer),fail:()=>reject(new Error('读取图片失败'))}));
  // #endif
  // #ifdef APP-PLUS
- bytes=await new Promise<ArrayBuffer>((resolve,reject)=>plus.io.resolveLocalFileSystemURL(file.path,(entry:any)=>entry.file((f:any)=>{const reader=new plus.io.FileReader();reader.onloadend=(e:any)=>resolve(uni.base64ToArrayBuffer(e.target.result.split(',')[1]));reader.onerror=()=>reject(new Error('读取图片失败'));reader.readAsDataURL(f)}),()=>reject(new Error('读取图片失败'))));
+ bytes=await new Promise<ArrayBuffer>((resolve,reject)=>plus.io.resolveLocalFileSystemURL(path,(entry:any)=>entry.file((f:any)=>{const reader=new plus.io.FileReader();reader.onloadend=(e:any)=>resolve(uni.base64ToArrayBuffer(e.target.result.split(',')[1]));reader.onerror=()=>reject(new Error('读取图片失败'));reader.readAsDataURL(f)}),()=>reject(new Error('读取图片失败'))));
  // #endif
- if(bytes!.byteLength>12*1024*1024)throw new Error('单个附件不能超过 12MB');
- return new Promise((resolve,reject)=>uni.request({url:(import.meta.env.VITE_API_BASE||'/api')+'/files',method:'POST',data:bytes!,header:{Authorization:'Bearer '+uni.getStorageSync('session'),'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name||'附件')},success:r=>r.statusCode===200?resolve(r.data as Attachment):reject(new Error((r.data as any).message||'上传失败')),fail:()=>reject(new Error('上传失败'))}));
+ return bytes!
+}
+
+async function uploadAttachment(file:any,index:number):Promise<Attachment>{
+ const bytes=await readUploadBytes(file)
+ if(bytes.byteLength>12*1024*1024)throw new Error('单张图片不能超过 12MB');
+ const name=imageName(file,index)
+ return new Promise((resolve,reject)=>uni.request({url:(import.meta.env.VITE_API_BASE||'/api')+'/files',method:'POST',data:bytes,header:{Authorization:'Bearer '+uni.getStorageSync('session'),'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(name)},success:r=>r.statusCode===200?resolve(r.data as Attachment):reject(new Error((r.data as any).message||'上传失败')),fail:()=>reject(new Error('上传失败'))}));
+}
+
+export async function attachImages(count=10):Promise<Attachment[]>{
+ const selected=await new Promise<any>((resolve,reject)=>uni.chooseImage({count:Math.max(1,Math.min(10,Math.floor(count))),sourceType:['album'],success:resolve,fail:()=>reject(new Error('未选择图片'))}))
+ const paths=(selected.tempFiles?.length?selected.tempFiles:(selected.tempFilePaths||[]).map((path:string)=>({path}))) as any[]
+ const attachments:Attachment[]=[]
+ for(let index=0;index<paths.length;index+=1)attachments.push(await uploadAttachment(paths[index],index))
+ return attachments
+}
+
+export async function attachFile():Promise<Attachment>{
+ const [attachment]=await attachImages(1)
+ if(!attachment)throw new Error('未选择图片')
+ return attachment
+}
+export async function attachmentBase64(file:Attachment):Promise<string>{
+ const url=(import.meta.env.VITE_API_BASE||'/api')+'/files/'+encodeURIComponent(file.id)
+ const response=await new Promise<UniApp.RequestSuccessCallbackResult>((resolve,reject)=>uni.request({url,method:'GET',responseType:'arraybuffer',header:{Authorization:'Bearer '+uni.getStorageSync('session')},success:resolve,fail:()=>reject(new Error('图片下载失败'))}))
+ if(response.statusCode!==200||!(response.data instanceof ArrayBuffer))throw new Error('图片下载失败或无权访问')
+ return uni.arrayBufferToBase64(response.data)
 }
 export async function downloadFile(file:Attachment){
  const url=(import.meta.env.VITE_API_BASE||'/api')+'/files/'+file.id;

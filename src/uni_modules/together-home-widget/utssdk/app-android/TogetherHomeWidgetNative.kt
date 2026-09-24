@@ -8,28 +8,37 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Base64
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.RemoteViews
+import android.widget.RemoteViewsService
 import android.widget.ScrollView
 import android.widget.TextView
 import io.dcloud.uni_modules.together_home_widget.R
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.security.MessageDigest
 
 private const val PREFS_NAME = "together_home_widget"
 private const val NOTES_KEY = "notes_json"
 private const val SELECTION_PREFIX = "selection:"
 private const val EXTRA_ROUTE = "home_widget_route"
 private const val MAX_NOTES = 60
+private const val MAX_IMAGES_PER_NOTE = 10
+private const val IMAGE_DIRECTORY = "widget-images"
 
 internal data class TogetherWidgetNote(
     val id: String,
@@ -37,6 +46,7 @@ internal data class TogetherWidgetNote(
     val content: String,
     val date: String,
     val pinned: Boolean,
+    val images: List<String>,
 )
 
 internal object TogetherHomeWidgetStore {
@@ -49,17 +59,31 @@ internal object TogetherHomeWidgetStore {
                 val item = source.optJSONObject(index) ?: continue
                 val id = item.optString("id").trim().take(200)
                 if (id.isBlank()) continue
+                val images = JSONArray()
+                val sourceImages = item.optJSONArray("images") ?: JSONArray()
+                for (imageIndex in 0 until minOf(sourceImages.length(), MAX_IMAGES_PER_NOTE)) {
+                    val key = sourceImages.optString(imageIndex).trim().take(160)
+                    if (key.isNotBlank() && imageFile(context, key).isFile) images.put(key)
+                }
                 cleaned.put(JSONObject()
                     .put("id", id)
                     .put("title", item.optString("title").trim().ifBlank { "未命名小记" }.take(100))
                     .put("content", item.optString("content").trim().take(4000))
                     .put("date", item.optString("date").trim().ifBlank { "最近更新" }.take(30))
-                    .put("pinned", item.optBoolean("pinned", false)))
+                    .put("pinned", item.optBoolean("pinned", false))
+                    .put("images", images))
             }
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .putString(NOTES_KEY, cleaned.toString())
                 .apply()
+            val retained = buildSet {
+                for (noteIndex in 0 until cleaned.length()) {
+                    val images = cleaned.optJSONObject(noteIndex)?.optJSONArray("images") ?: continue
+                    for (imageIndex in 0 until images.length()) add(images.optString(imageIndex))
+                }
+            }
+            File(context.filesDir, IMAGE_DIRECTORY).listFiles()?.forEach { file -> if (file.name !in retained) file.delete() }
             true
         } catch (_: Exception) {
             false
@@ -71,6 +95,7 @@ internal object TogetherHomeWidgetStore {
             .edit()
             .remove(NOTES_KEY)
             .apply()
+        File(context.filesDir, IMAGE_DIRECTORY).deleteRecursively()
     }
 
     fun notes(context: Context): List<TogetherWidgetNote> = try {
@@ -88,6 +113,13 @@ internal object TogetherHomeWidgetStore {
                     content = item.optString("content").trim().take(4000),
                     date = item.optString("date").trim().ifBlank { "最近更新" }.take(30),
                     pinned = item.optBoolean("pinned", false),
+                    images = buildList {
+                        val images = item.optJSONArray("images") ?: JSONArray()
+                        for (imageIndex in 0 until minOf(images.length(), MAX_IMAGES_PER_NOTE)) {
+                            val key = images.optString(imageIndex).trim().take(160)
+                            if (key.isNotBlank() && imageFile(context, key).isFile) add(key)
+                        }
+                    },
                 ))
             }
         }
@@ -116,6 +148,44 @@ internal object TogetherHomeWidgetStore {
         appWidgetIds.forEach { editor.remove(SELECTION_PREFIX + it) }
         editor.apply()
     }
+
+    private fun imageFile(context: Context, key: String) = File(File(context.filesDir, IMAGE_DIRECTORY), key)
+
+    fun cachedImage(context: Context, noteId: String, attachmentId: String): String {
+        val key = imageKey(noteId, attachmentId)
+        return if (imageFile(context, key).isFile) key else ""
+    }
+
+    fun cacheImage(context: Context, noteId: String, attachmentId: String, imageBase64: String): String {
+        return try {
+            val key = imageKey(noteId, attachmentId)
+            val target = imageFile(context, key)
+            if (target.isFile) return key
+            val bytes = Base64.decode(imageBase64, Base64.DEFAULT)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) sample *= 2
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return ""
+            target.parentFile?.mkdirs()
+            FileOutputStream(target).use { output -> bitmap.compress(Bitmap.CompressFormat.JPEG, 84, output) }
+            bitmap.recycle()
+            key
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    fun image(context: Context, key: String): Bitmap? = try {
+        BitmapFactory.decodeFile(imageFile(context, key).absolutePath)
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun imageKey(noteId: String, attachmentId: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest("$noteId:$attachmentId".toByteArray())
+        return bytes.joinToString("") { "%02x".format(it) } + ".jpg"
+    }
 }
 
 internal object TogetherHomeWidgetRenderer {
@@ -133,14 +203,23 @@ internal object TogetherHomeWidgetRenderer {
             views.setTextViewText(R.id.together_widget_body, "打开 App 同步小记后，长按卡片选择要展示的内容。")
             views.setTextViewText(R.id.together_widget_date, "桌面小工具")
             views.setViewVisibility(R.id.together_widget_pin, View.GONE)
+            views.setViewVisibility(R.id.together_widget_images, View.GONE)
+            views.setViewVisibility(R.id.together_widget_body, View.VISIBLE)
             views.setContentDescription(android.R.id.background, "打开小记")
         } else {
             views.setTextViewText(R.id.together_widget_title, note.title)
             views.setTextViewText(R.id.together_widget_body, note.content.ifBlank { "暂无正文" })
             views.setTextViewText(R.id.together_widget_date, note.date)
             views.setViewVisibility(R.id.together_widget_pin, if (note.pinned) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.together_widget_images, if (note.images.isEmpty()) View.GONE else View.VISIBLE)
+            views.setViewVisibility(R.id.together_widget_body, if (note.images.isEmpty()) View.VISIBLE else View.GONE)
             views.setContentDescription(android.R.id.background, "${note.title}，打开小记详情")
         }
+        val imageIntent = Intent(context, TogetherWidgetImageService::class.java).apply {
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            data = Uri.parse("together-notes://widget/images/$appWidgetId/${note?.id.orEmpty().hashCode()}")
+        }
+        views.setRemoteAdapter(R.id.together_widget_images, imageIntent)
         val options = manager.getAppWidgetOptions(appWidgetId)
         val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110)
         views.setInt(R.id.together_widget_body, "setMaxLines", when {
@@ -152,6 +231,7 @@ internal object TogetherHomeWidgetRenderer {
             views.setOnClickPendingIntent(android.R.id.background, it)
         }
         manager.updateAppWidget(appWidgetId, views)
+        manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.together_widget_images)
     }
 
     private fun launchPendingIntent(context: Context, appWidgetId: Int, note: TogetherWidgetNote?): PendingIntent? {
@@ -179,6 +259,12 @@ object TogetherHomeWidgetNative {
         if (saved) TogetherHomeWidgetRenderer.updateAll(context)
         return saved
     }
+
+    @JvmStatic
+    fun cachedImage(context: Context, noteId: String, attachmentId: String): String = TogetherHomeWidgetStore.cachedImage(context, noteId, attachmentId)
+
+    @JvmStatic
+    fun cacheImage(context: Context, noteId: String, attachmentId: String, imageBase64: String): String = TogetherHomeWidgetStore.cacheImage(context, noteId, attachmentId, imageBase64)
 
     @JvmStatic
     fun clearNotes(context: Context): Boolean = try {
@@ -214,6 +300,41 @@ object TogetherHomeWidgetNative {
         val route = activity.intent?.getStringExtra(EXTRA_ROUTE).orEmpty().take(500)
         if (route.isNotBlank()) activity.intent?.removeExtra(EXTRA_ROUTE)
         return route
+    }
+}
+
+class TogetherWidgetImageService : RemoteViewsService() {
+    override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
+        return TogetherWidgetImageFactory(applicationContext, intent)
+    }
+}
+
+private class TogetherWidgetImageFactory(
+    private val context: Context,
+    intent: Intent,
+) : RemoteViewsService.RemoteViewsFactory {
+    private val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+    private var images: List<String> = emptyList()
+
+    override fun onCreate() { refresh() }
+    override fun onDataSetChanged() { refresh() }
+    override fun onDestroy() { images = emptyList() }
+    override fun getCount(): Int = images.size
+    override fun getViewAt(position: Int): RemoteViews? {
+        val key = images.getOrNull(position) ?: return null
+        val bitmap = TogetherHomeWidgetStore.image(context, key) ?: return null
+        return RemoteViews(context.packageName, R.layout.together_widget_image).apply {
+            setImageViewBitmap(R.id.together_widget_image, bitmap)
+        }
+    }
+    override fun getLoadingView(): RemoteViews? = null
+    override fun getViewTypeCount(): Int = 1
+    override fun getItemId(position: Int): Long = position.toLong()
+    override fun hasStableIds(): Boolean = true
+
+    private fun refresh() {
+        images = if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) emptyList()
+        else TogetherHomeWidgetStore.selected(context, appWidgetId)?.images.orEmpty()
     }
 }
 

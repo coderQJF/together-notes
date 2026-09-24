@@ -23,6 +23,7 @@ const chapterContent = ref('')
 const chapterLoading = ref(false)
 const chapterError = ref('')
 const scrollTop = ref(0)
+const controlsVisible = ref(false)
 const directoryOpen = ref(false)
 const directoryPage = ref(0)
 const settingsOpen = ref(false)
@@ -46,6 +47,7 @@ const chapterCache = new Map<number, string>()
 const chapter = computed(() => book.value?.chapters[chapterIndex.value] || null)
 const chapterParagraphs = computed(() => chapterContent.value.split(/\n+/).map(item => item.trim()).filter(Boolean))
 const progress = computed(() => book.value ? Math.round(((chapterIndex.value + 1) / book.value.chapters.length) * 100) : 0)
+const readChapterIndexes = computed(() => new Set(book.value?.progress.readChapterIndexes || []))
 const directoryPageCount = computed(() => Math.max(1, Math.ceil((book.value?.chapters.length || 0) / DIRECTORY_PAGE_SIZE)))
 const directoryChapters = computed(() => {
   const start = directoryPage.value * DIRECTORY_PAGE_SIZE
@@ -55,7 +57,8 @@ const readingStyle = computed(() => ({ fontSize: `${settings.value.fontSize}px`,
 
 function persistProgress() {
   if (!book.value) return
-  saveReaderProgress(book.value.id, chapterIndex.value, scrollTop.value)
+  const saved = saveReaderProgress(book.value.id, chapterIndex.value, scrollTop.value)
+  if (saved) book.value.progress = saved
 }
 
 function queueProgressSave() {
@@ -107,11 +110,15 @@ async function loadChapterContent(index: number) {
 
 async function openChapter(index: number, restore = false) {
   if (!book.value) return
-  persistProgress()
+  if (!restore) persistProgress()
+  const restoredTop = restore ? Math.max(0, book.value.progress.scrollTop || 0) : 0
   chapterIndex.value = Math.max(0, Math.min(book.value.chapters.length - 1, index))
-  scrollTop.value = restore ? Math.max(0, book.value.progress.scrollTop || 0) : 0
+  scrollTop.value = restoredTop
   directoryOpen.value = false
-  saveReaderProgress(book.value.id, chapterIndex.value, scrollTop.value)
+  settingsOpen.value = false
+  controlsVisible.value = false
+  const saved = saveReaderProgress(book.value.id, chapterIndex.value, scrollTop.value)
+  if (saved) book.value.progress = saved
   await loadChapterContent(chapterIndex.value)
   restoreScroll(scrollTop.value)
 }
@@ -126,10 +133,16 @@ function nextChapter() {
   void openChapter(chapterIndex.value + 1)
 }
 
+function toggleControls() {
+  if (directoryOpen.value || settingsOpen.value) return
+  controlsVisible.value = !controlsVisible.value
+}
+
 function toggleDirectory() {
   directoryOpen.value = !directoryOpen.value
   if (directoryOpen.value) directoryPage.value = Math.floor(chapterIndex.value / DIRECTORY_PAGE_SIZE)
-  if (directoryOpen.value) settingsOpen.value = false
+  settingsOpen.value = false
+  controlsVisible.value = false
 }
 
 function changeDirectoryPage(step: number) {
@@ -138,7 +151,14 @@ function changeDirectoryPage(step: number) {
 
 function toggleSettings() {
   settingsOpen.value = !settingsOpen.value
-  if (settingsOpen.value) directoryOpen.value = false
+  directoryOpen.value = false
+  controlsVisible.value = false
+}
+
+function closePanel() {
+  directoryOpen.value = false
+  settingsOpen.value = false
+  controlsVisible.value = true
 }
 
 function updateSettings(next: Partial<ReaderSettings>) {
@@ -184,50 +204,71 @@ onUnload(() => {
 
 <template>
   <view class="shell" :class="`theme-${settings.theme}`">
-    <SubpageHeader :label="book?.title || '阅读'" fallback="/pages/library/library" />
-
-    <view v-if="accessChecking" class="reader-loading"><text>正在打开…</text></view>
-    <view v-else-if="error" class="state-card"><text class="state-title">无法打开</text><text>{{ error }}</text><button @click="backToLibrary">返回书架</button></view>
+    <template v-if="accessChecking || error">
+      <SubpageHeader label="阅读" fallback="/pages/library/library" />
+      <view v-if="accessChecking" class="reader-loading"><text>正在打开…</text></view>
+      <view v-else class="state-card"><text class="state-title">无法打开</text><text>{{ error }}</text><button @click="backToLibrary">返回书架</button></view>
+    </template>
 
     <template v-else-if="book && chapter">
-      <view class="reader-meta"><text>{{ book.author }}</text><text>第 {{ chapterIndex + 1 }} / {{ book.chapters.length }} 章 · {{ progress }}%</text></view>
-      <view class="reader-tools">
-        <button :aria-expanded="directoryOpen" @click="toggleDirectory">目录</button>
-        <button :aria-expanded="settingsOpen" @click="toggleSettings">阅读设置</button>
+      <view class="reading-surface" @click="toggleControls">
+        <view class="reader-meta"><text>{{ book.author }}</text><text>第 {{ chapterIndex + 1 }} / {{ book.chapters.length }} 章 · {{ progress }}%</text></view>
+        <view class="chapter-heading"><text class="book-name">{{ book.title }}</text><text class="chapter-title">{{ chapter.title }}</text><view class="title-rule" /></view>
+        <view v-if="chapterLoading" class="reader-loading"><text>正在加载本章…</text></view>
+        <view v-else-if="chapterError" class="state-card chapter-state" @click.stop><text class="state-title">本章暂时没打开</text><text>{{ chapterError }}</text><button @click="loadChapterContent(chapterIndex)">重新加载</button></view>
+        <view v-else class="reader-copy" :style="readingStyle"><text v-for="(paragraph,index) in chapterParagraphs" :key="index" class="reader-paragraph">{{ paragraph }}</text></view>
+        <text class="tap-hint">轻触正文显示阅读操作</text>
       </view>
 
-      <view v-if="directoryOpen" class="tool-panel directory-panel">
-        <view class="panel-heading"><text>目录</text><text>{{ book.chapters.length }} 章<text v-if="directoryPageCount > 1"> · 第 {{ directoryPage + 1 }} / {{ directoryPageCount }} 页</text></text></view>
-        <button v-for="entry in directoryChapters" :key="`${entry.index}-${entry.item.title}`" :class="{ active: entry.index === chapterIndex }" :aria-current="entry.index === chapterIndex ? 'page' : undefined" @click="openChapter(entry.index)"><text>{{ entry.item.title }}</text><view class="chapter-arrow" /></button>
-        <view v-if="directoryPageCount > 1" class="directory-pagination"><button :disabled="directoryPage === 0" @click="changeDirectoryPage(-1)">上一页</button><button :disabled="directoryPage >= directoryPageCount - 1" @click="changeDirectoryPage(1)">下一页</button></view>
+      <view v-if="controlsVisible" class="reader-chrome" @click.stop>
+        <view class="top-chrome"><SubpageHeader :label="chapter.title" fallback="/pages/library/library" /></view>
+        <view class="bottom-chrome">
+          <view class="chapter-control-row">
+            <button :disabled="chapterLoading || chapterIndex === 0" @click="previousChapter">上一章</button>
+            <view class="progress-control"><view class="progress-track"><view :style="{ width: `${progress}%` }" /></view><text>{{ progress }}%</text></view>
+            <button :disabled="chapterLoading || chapterIndex === book.chapters.length - 1" @click="nextChapter">下一章</button>
+          </view>
+          <view class="tool-control-row">
+            <button aria-label="打开目录" @click="toggleDirectory"><image src="/static/nav-icons/book-active.png" mode="aspectFit" /><text>目录</text></button>
+            <button aria-label="打开阅读设置" @click="toggleSettings"><view class="settings-icon"><view /></view><text>阅读设置</text></button>
+          </view>
+        </view>
       </view>
 
-      <view v-if="settingsOpen" class="tool-panel settings-panel">
-        <text class="setting-label">阅读背景</text>
-        <JellyTabs compact :model-value="settings.theme" :options="themeTabs" aria-label="选择阅读背景" @change="selectTheme" />
-        <view class="font-setting"><view><text class="setting-label">正文字号</text><text>{{ settings.fontSize }} px</text></view><view class="stepper"><button aria-label="缩小正文字号" :disabled="settings.fontSize <= 15" @click="changeFontSize(-1)"><view class="minus-icon" /></button><button aria-label="放大正文字号" :disabled="settings.fontSize >= 26" @click="changeFontSize(1)"><view class="plus-icon" /></button></view></view>
-        <text class="setting-label line-label">行间距</text>
-        <JellyTabs compact :model-value="String(settings.lineHeight)" :options="lineHeightTabs" aria-label="选择正文行距" @change="selectLineHeight" />
+      <view v-if="directoryOpen" class="sheet-layer" @click="closePanel">
+        <view class="sheet directory-sheet" @click.stop>
+          <view class="sheet-handle" />
+          <view class="sheet-heading"><view><text class="sheet-title">{{ book.title }}</text><text class="sheet-subtitle">{{ book.author }} · {{ book.chapters.length }} 章</text></view><button aria-label="关闭目录" @click="closePanel"><view class="close-icon" /></button></view>
+          <view class="directory-summary"><text>目录</text><text>已读 {{ readChapterIndexes.size }} 章</text></view>
+          <scroll-view class="directory-scroll scrollbar-hidden" scroll-y show-scrollbar="false">
+            <button v-for="entry in directoryChapters" :key="`${entry.index}-${entry.item.title}`" class="chapter-row" :class="{ read: readChapterIndexes.has(entry.index), current: entry.index === chapterIndex }" :aria-current="entry.index === chapterIndex ? 'page' : undefined" @click="openChapter(entry.index)">
+              <text>{{ entry.item.title }}</text><text>{{ readChapterIndexes.has(entry.index) ? (entry.index === chapterIndex ? '正在读' : '已读') : '未读' }}</text>
+            </button>
+          </scroll-view>
+          <view v-if="directoryPageCount > 1" class="directory-pagination"><button :disabled="directoryPage === 0" @click="changeDirectoryPage(-1)">上一页</button><text>{{ directoryPage + 1 }} / {{ directoryPageCount }}</text><button :disabled="directoryPage >= directoryPageCount - 1" @click="changeDirectoryPage(1)">下一页</button></view>
+        </view>
       </view>
 
-      <view class="chapter-heading"><text class="book-name">{{ book.title }}</text><text class="chapter-title">{{ chapter.title }}</text><view class="title-rule" /></view>
-      <view v-if="chapterLoading" class="reader-loading"><text>正在加载本章…</text></view>
-      <view v-else-if="chapterError" class="state-card chapter-state"><text class="state-title">本章暂时没打开</text><text>{{ chapterError }}</text><button @click="loadChapterContent(chapterIndex)">重新加载</button></view>
-      <view v-else class="reader-copy" :style="readingStyle"><text v-for="(paragraph,index) in chapterParagraphs" :key="index" class="reader-paragraph">{{ paragraph }}</text></view>
-
-      <view class="chapter-navigation">
-        <button :disabled="chapterLoading || chapterIndex === 0" @click="previousChapter"><view class="previous-arrow" /><text>上一章</text></button>
-        <button :disabled="chapterLoading || chapterIndex === book.chapters.length - 1" @click="nextChapter"><text>下一章</text><view class="next-arrow" /></button>
+      <view v-if="settingsOpen" class="sheet-layer" @click="closePanel">
+        <view class="sheet settings-sheet" @click.stop>
+          <view class="sheet-handle" />
+          <view class="sheet-heading"><text class="sheet-title">阅读设置</text><button aria-label="关闭阅读设置" @click="closePanel"><view class="close-icon" /></button></view>
+          <text class="setting-label">阅读背景</text>
+          <JellyTabs compact :model-value="settings.theme" :options="themeTabs" aria-label="选择阅读背景" @change="selectTheme" />
+          <view class="font-setting"><view><text class="setting-label">正文字号</text><text>{{ settings.fontSize }} px</text></view><view class="stepper"><button aria-label="缩小正文字号" :disabled="settings.fontSize <= 15" @click="changeFontSize(-1)"><view class="minus-icon" /></button><button aria-label="放大正文字号" :disabled="settings.fontSize >= 26" @click="changeFontSize(1)"><view class="plus-icon" /></button></view></view>
+          <text class="setting-label line-label">行间距</text>
+          <JellyTabs compact :model-value="String(settings.lineHeight)" :options="lineHeightTabs" aria-label="选择正文行距" @change="selectLineHeight" />
+        </view>
       </view>
-      <text class="local-note">{{ book.source === 'cloud' ? '云端正文按章加载，阅读进度保存在当前设备。' : '阅读内容与进度仅保存在当前设备。' }}</text>
     </template>
   </view>
 </template>
 
 <style scoped>
-.shell{--subpage-background:#faf8f2;max-width:640px;min-height:100vh;margin:auto;padding:0 24px calc(52px + env(safe-area-inset-bottom));background-color:var(--reader-background);background-image:var(--reader-texture,none);background-attachment:fixed;color:#3e382d;transition:background-color .2s}.theme-paper{--reader-background:#faf8f2;--subpage-background:#faf8f2;--panel-background:#fff}.theme-butter{--reader-background:#f8edc4;--subpage-background:#f8edc4;--panel-background:#fff9e9;--reader-texture:radial-gradient(circle at 13% 17%,rgba(171,126,28,.055) 0 1px,transparent 1.5px),radial-gradient(circle at 79% 41%,rgba(131,96,25,.04) 0 1px,transparent 1.4px)}.theme-white{--reader-background:#fff;--subpage-background:#fff;--panel-background:#faf8f2}.reader-loading{display:flex;align-items:center;justify-content:center;min-height:160px;color:#806f54}.reader-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#806f54;font-size:11px}.reader-meta text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-tools{display:flex;align-items:center;gap:9px;margin:13px 0 4px}.reader-tools button{display:flex;align-items:center;justify-content:center;width:auto;height:44px;min-height:44px;margin:0;padding:0 15px;border:1px solid rgba(111,96,65,.18);border-radius:13px;background:var(--panel-background);color:#625744;font-size:12px}.reader-tools button::after{border:0}.reader-tools button[aria-expanded="true"]{border-color:#a9842b;background:#494032;color:#fff9e9}.tool-panel{padding:17px;margin:13px 0 22px;border:1px solid rgba(111,96,65,.18);border-radius:20px;background:var(--panel-background);box-shadow:0 9px 24px rgba(73,64,50,.06)}.panel-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.panel-heading text:first-child{font-size:17px;font-weight:600}.panel-heading text:last-child{color:#8b806e;font-size:10px}.directory-panel>button{display:grid;grid-template-columns:minmax(0,1fr) 9px;align-items:center;gap:10px;width:100%;height:52px;min-height:52px;margin:0;padding:0 5px;border:0;border-bottom:1px solid rgba(111,96,65,.12);border-radius:0;background:transparent;color:#625744;text-align:left}.directory-panel>button:last-child{border-bottom:0}.directory-panel>button::after{border:0}.directory-panel>button.active{color:#8a6817;font-weight:600}.directory-panel>button text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chapter-arrow,.next-arrow,.previous-arrow{width:8px;height:8px;flex:0 0 8px;border-top:1.5px solid currentColor;border-right:1.5px solid currentColor;transform:rotate(45deg)}.settings-panel{display:flex;flex-direction:column;gap:10px}.setting-label{display:block;color:#786d5b;font-size:11px}.font-setting{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:10px;margin-top:4px;border-top:1px solid rgba(111,96,65,.12)}.font-setting>view:first-child>text:last-child{display:block;margin-top:4px;font-size:15px;font-weight:600}.stepper{display:flex;gap:8px}.stepper button{display:flex;width:44px;height:44px;min-height:44px;align-items:center;justify-content:center;margin:0;padding:0;border:1px solid rgba(111,96,65,.18);border-radius:13px;background:transparent;color:#494032}.stepper button::after{border:0}.minus-icon,.plus-icon{position:relative;width:15px;height:15px}.minus-icon::before,.plus-icon::before,.plus-icon::after{content:'';position:absolute;left:1px;top:7px;width:13px;height:1.5px;border-radius:2px;background:currentColor}.plus-icon::after{transform:rotate(90deg)}.line-label{padding-top:9px;border-top:1px solid rgba(111,96,65,.12)}
-.chapter-heading{padding-top:35px;text-align:left}.book-name{display:block;color:#8a7b61;font-size:12px;letter-spacing:.5px}.chapter-title{display:block;max-width:560px;margin-top:13px;font-size:31px;font-weight:700;line-height:1.38;letter-spacing:-.6px}.title-rule{width:42px;height:3px;margin:20px 0 0;border-radius:3px;background:#b68c2c}.reader-copy{padding:34px 3px 20px;color:#2f2a22;letter-spacing:.7px;word-break:break-word}.reader-paragraph{display:block;margin:0 0 1.25em;text-indent:2em;font:inherit}.reader-paragraph:last-child{margin-bottom:0}.chapter-navigation{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:23px;margin-top:25px;border-top:1px solid rgba(111,96,65,.16)}.chapter-navigation button{display:flex;height:48px;min-height:48px;align-items:center;justify-content:center;gap:9px;margin:0;border:1px solid rgba(111,96,65,.18);border-radius:14px;background:var(--panel-background);color:#494032;font-size:13px}.chapter-navigation button::after{border:0}.chapter-navigation button[disabled]{opacity:.42}.previous-arrow{transform:rotate(-135deg)}.local-note{display:block;margin-top:18px;color:#8b806e;font-size:10px;text-align:center}.state-card{display:flex;flex-direction:column;align-items:flex-start;padding:22px;border:1px solid #e7dfcf;border-radius:20px;background:#fff;color:#786d5b;line-height:1.7}.state-title{margin-bottom:5px;color:#494032;font-size:18px;font-weight:600}.state-card button{height:44px;min-height:44px;margin:17px 0 0;padding:0 15px;border:0;border-radius:13px;background:#494032;color:#fff9e9}.state-card button::after{border:0}
-.directory-pagination{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:13px}.directory-pagination button{display:flex;height:44px;min-height:44px;align-items:center;justify-content:center;margin:0;border:1px solid rgba(111,96,65,.18);border-radius:13px;background:transparent;color:#625744}.directory-pagination button::after{border:0}.directory-pagination button[disabled]{opacity:.4}
-@media(max-width:360px){.shell{padding-left:20px;padding-right:20px}.chapter-title{font-size:24px}.reader-meta{align-items:flex-start;flex-direction:column;gap:4px}.tool-panel{padding:15px}}
+.shell{--subpage-background:#faf8f2;max-width:640px;min-height:100vh;margin:auto;padding:0 24px calc(52px + env(safe-area-inset-bottom));box-sizing:border-box;background-color:var(--reader-background);background-image:var(--reader-texture,none);background-attachment:fixed;color:#3e382d;transition:background-color .2s}.theme-paper{--reader-background:#faf8f2;--subpage-background:#faf8f2;--panel-background:#fff}.theme-butter{--reader-background:#f8edc4;--subpage-background:#f8edc4;--panel-background:#fff9e9;--reader-texture:radial-gradient(circle at 13% 17%,rgba(171,126,28,.055) 0 1px,transparent 1.5px),radial-gradient(circle at 79% 41%,rgba(131,96,25,.04) 0 1px,transparent 1.4px)}.theme-white{--reader-background:#fff;--subpage-background:#fff;--panel-background:#faf8f2}.reading-surface{min-height:100vh;padding-top:calc(24px + env(safe-area-inset-top));box-sizing:border-box}.reader-loading{display:flex;align-items:center;justify-content:center;min-height:160px;color:#806f54}.reader-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#806f54;font-size:11px}.reader-meta text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chapter-heading{padding-top:35px;text-align:left}.book-name{display:block;color:#8a7b61;font-size:12px;letter-spacing:.5px}.chapter-title{display:block;max-width:560px;margin-top:13px;font-size:31px;font-weight:700;line-height:1.38;letter-spacing:-.6px}.title-rule{width:42px;height:3px;margin:20px 0 0;border-radius:3px;background:#b68c2c}.reader-copy{padding:34px 3px 20px;color:#2f2a22;letter-spacing:.7px;word-break:break-word}.reader-paragraph{display:block;margin:0 0 1.25em;text-indent:2em;font:inherit}.reader-paragraph:last-child{margin-bottom:0}.tap-hint{display:block;padding:24px 0;color:#988b75;font-size:10px;text-align:center}.state-card{display:flex;flex-direction:column;align-items:flex-start;padding:22px;border:1px solid #e7dfcf;border-radius:20px;background:#fff;color:#786d5b;line-height:1.7}.state-title{margin-bottom:5px;color:#494032;font-size:18px;font-weight:600}.state-card button{height:44px;min-height:44px;margin:17px 0 0;padding:0 15px;border:0;border-radius:13px;background:#494032;color:#fff9e9}.state-card button::after{border:0}
+.reader-chrome{position:fixed;z-index:40;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(41,35,27,.22),transparent 24%,transparent 66%,rgba(41,35,27,.22))}.top-chrome,.bottom-chrome{position:fixed;left:50%;width:min(100%,640px);box-sizing:border-box;transform:translateX(-50%);pointer-events:auto}.top-chrome{top:0;padding:0 24px;background:var(--reader-background);box-shadow:0 8px 24px rgba(73,64,50,.08)}.top-chrome :deep(.subpage-header){margin-bottom:0}.bottom-chrome{bottom:0;padding:12px 24px calc(12px + env(safe-area-inset-bottom));background:var(--reader-background);box-shadow:0 -10px 28px rgba(73,64,50,.1)}.chapter-control-row{display:grid;grid-template-columns:72px minmax(0,1fr) 72px;align-items:center;gap:10px}.chapter-control-row button{height:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:#494032;font-size:13px}.chapter-control-row button::after,.tool-control-row button::after{border:0}.chapter-control-row button[disabled]{opacity:.35}.progress-control{display:flex;align-items:center;gap:8px;color:#786d5b;font-size:10px}.progress-track{height:7px;flex:1;overflow:hidden;border-radius:9px;background:rgba(73,64,50,.12)}.progress-track view{height:100%;border-radius:inherit;background:#b68c2c}.tool-control-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:7px}.tool-control-row button{display:flex;height:48px;min-height:48px;align-items:center;justify-content:center;gap:8px;margin:0;border:0;border-radius:14px;background:rgba(255,255,255,.46);color:#494032;font-size:12px}.tool-control-row image{display:block;width:20px;height:20px}.settings-icon{position:relative;width:20px;height:20px;border:2px solid currentColor;border-radius:50%;box-sizing:border-box}.settings-icon>view{position:absolute;inset:5px;border:1.5px solid currentColor;border-radius:50%}
+.sheet-layer{position:fixed;z-index:60;inset:0;display:flex;align-items:flex-end;justify-content:center;padding-top:calc(44px + env(safe-area-inset-top));background:rgba(49,42,33,.28);box-sizing:border-box}.sheet{width:min(100%,640px);max-height:88vh;padding:0 24px calc(18px + env(safe-area-inset-bottom));overflow:hidden;border-radius:24px 24px 0 0;background:var(--panel-background);box-shadow:0 -12px 36px rgba(48,41,31,.18);box-sizing:border-box}.sheet-handle{width:44px;height:4px;margin:10px auto 9px;border-radius:5px;background:rgba(73,64,50,.18)}.sheet-heading{display:flex;min-height:58px;align-items:center;justify-content:space-between;gap:12px}.sheet-heading>view{min-width:0}.sheet-title{display:block;overflow:hidden;color:#3e382d;font-size:20px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}.sheet-subtitle{display:block;margin-top:4px;color:#8b806e;font-size:11px}.sheet-heading>button{display:flex;width:44px;height:44px;min-height:44px;align-items:center;justify-content:center;flex:0 0 44px;margin:0 -8px 0 0;border:0;background:transparent}.sheet-heading>button::after{border:0}.close-icon{position:relative;width:16px;height:16px}.close-icon::before,.close-icon::after{content:'';position:absolute;left:1px;top:7px;width:14px;height:1.5px;background:#786d5b;transform:rotate(45deg)}.close-icon::after{transform:rotate(-45deg)}.directory-summary{display:flex;align-items:center;justify-content:space-between;padding:9px 0 13px;border-bottom:1px solid rgba(111,96,65,.14)}.directory-summary text:first-child{font-size:17px;font-weight:600}.directory-summary text:last-child{color:#8b806e;font-size:11px}.directory-scroll{height:min(58vh,560px)}.chapter-row{display:flex;width:100%;height:58px;min-height:58px;align-items:center;justify-content:space-between;gap:12px;margin:0;padding:0;border:0;border-bottom:1px solid rgba(111,96,65,.1);border-radius:0;background:transparent;color:rgba(98,87,68,.42);text-align:left}.chapter-row::after{border:0}.chapter-row text:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chapter-row text:last-child{flex:0 0 auto;font-size:10px}.chapter-row.read{color:#766137}.chapter-row.current{color:#a36d00;font-weight:650}.directory-pagination{display:grid;grid-template-columns:72px 1fr 72px;align-items:center;gap:8px;padding-top:10px}.directory-pagination button{height:44px;min-height:44px;margin:0;border:0;border-radius:12px;background:rgba(73,64,50,.07);color:#625744;font-size:12px}.directory-pagination button::after{border:0}.directory-pagination button[disabled]{opacity:.35}.directory-pagination text{color:#8b806e;font-size:11px;text-align:center}
+.settings-sheet{padding-bottom:calc(28px + env(safe-area-inset-bottom))}.setting-label{display:block;margin:15px 0 9px;color:#786d5b;font-size:11px}.font-setting{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:17px;margin-top:17px;border-top:1px solid rgba(111,96,65,.12)}.font-setting .setting-label{margin:0}.font-setting>view:first-child>text:last-child{display:block;margin-top:4px;font-size:15px;font-weight:600}.stepper{display:flex;gap:8px}.stepper button{display:flex;width:44px;height:44px;min-height:44px;align-items:center;justify-content:center;margin:0;padding:0;border:1px solid rgba(111,96,65,.18);border-radius:13px;background:transparent;color:#494032}.stepper button::after{border:0}.minus-icon,.plus-icon{position:relative;width:15px;height:15px}.minus-icon::before,.plus-icon::before,.plus-icon::after{content:'';position:absolute;left:1px;top:7px;width:13px;height:1.5px;border-radius:2px;background:currentColor}.plus-icon::after{transform:rotate(90deg)}.line-label{padding-top:12px;border-top:1px solid rgba(111,96,65,.12)}
+@media(max-width:360px){.shell{padding-left:20px;padding-right:20px}.chapter-title{font-size:26px}.reader-meta{align-items:flex-start;flex-direction:column;gap:4px}.top-chrome,.bottom-chrome,.sheet{padding-left:20px;padding-right:20px}.chapter-control-row{grid-template-columns:62px minmax(0,1fr) 62px}}
 .shell{padding-left:calc(24px + env(safe-area-inset-left));padding-right:calc(24px + env(safe-area-inset-right))}@media(max-width:360px){.shell{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}}
 </style>

@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_QA_APP_LOGIN?: string
   readonly VITE_QA_MP_CREDENTIAL?: string
   readonly VITE_QA_READER_SAMPLE?: string
+  readonly VITE_APP_VERSION?: string
 }
 
 interface ImportMeta {

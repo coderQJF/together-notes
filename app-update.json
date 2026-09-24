@@ -1,5 +1,5 @@
 {
-  "nativeMinVersion": "0.2.8",
-  "releaseNotes": "云端小说改为按章加载，加入书架时不再强制下载整本正文。",
+  "nativeMinVersion": "0.3.0",
+  "releaseNotes": "完善小说已读章节迁移与沉浸阅读细节；原生 0.3.0 已支持备忘录多图和桌面轮播。",
   "mandatory": false
 }

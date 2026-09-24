@@ -33,6 +33,17 @@ test('home widget normalizes card text and supplies safe fallbacks', () => {
   assert.equal(result.title, '未命名小记')
   assert.equal(result.content, '第一行\n\n第二行')
   assert.equal(result.date, '最近更新')
+  assert.deepEqual(result.images, [])
+})
+
+test('home widget keeps up to ten image attachments for the native carousel', () => {
+  const attachments = Array.from({ length: 12 }, (_, index) => ({ id: `image-${index}`, name: `照片-${index}.jpg`, size: 100 }))
+  attachments.push({ id: 'document', name: '说明.txt', size: 100 })
+  const [result] = buildHomeWidgetNotes([note({ attachments })])
+
+  assert.equal(result.images.length, 10)
+  assert.equal(result.images[0].id, 'image-0')
+  assert.equal(result.images.some(item => item.id === 'document'), false)
 })
 
 test('home widget limits native cache size and text length', () => {

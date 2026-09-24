@@ -116,3 +116,23 @@ test('background native sync failures do not break the main data refresh', async
   assert.doesNotMatch(index, /'操作失败'/)
   assert.match(index, /showActionError/)
 })
+
+test('reader controls stay immersive and chapter read state is visible in the directory sheet', async () => {
+  const reader = await readFile('src/pages/reader/reader.vue', 'utf8')
+  const progress = await readFile('src/services/reader.ts', 'utf8')
+  assert.match(reader, /class="reading-surface" @click="toggleControls"/)
+  assert.match(reader, /v-if="controlsVisible" class="reader-chrome"/)
+  assert.match(reader, /class="sheet directory-sheet"/)
+  assert.match(reader, /readChapterIndexes\.has\(entry\.index\)/)
+  assert.match(progress, /readChapterIndexes/)
+})
+
+test('the profile shows the build version and release scripts separate native from hot updates', async () => {
+  const profile = await readFile('src/pages/us/us.vue', 'utf8')
+  const vite = await readFile('vite.config.ts', 'utf8')
+  const bump = await readFile('scripts/bump-app-version.mjs', 'utf8')
+  assert.match(profile, /v\{\{ appVersion \}\}/)
+  assert.match(vite, /VITE_APP_VERSION/)
+  assert.match(bump, /mode === 'native'/)
+  assert.match(bump, /update\.nativeMinVersion = version/)
+})

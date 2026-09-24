@@ -1,6 +1,6 @@
 {
   "name": "together-notes",
-  "version": "0.2.10",
+  "version": "0.3.1",
   "scripts": {
     "dev:h5": "uni",
     "build:h5": "uni build",
@@ -12,6 +12,8 @@
     "package:app-update": "node scripts/package-app-update.mjs",
     "prepare:android-beta": "node scripts/apply-android-beta-secrets.mjs",
     "package:android-beta": "node scripts/package-android-beta.mjs",
+    "version:native": "node scripts/bump-app-version.mjs native",
+    "version:hot": "node scripts/bump-app-version.mjs hot",
     "deploy:mp-weixin": "node scripts/upload-wechat.mjs",
     "preview:mp-weixin": "node scripts/preview-wechat.mjs",
     "qa:icons": "node scripts/generate-ui-icons.mjs",

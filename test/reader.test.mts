@@ -66,9 +66,13 @@ test('local reader storage creates books, saves progress, and removes content', 
     assert.deepEqual(storage.get('reader-library-v1'), [])
     const book = createReaderBook({ title: '测试书', text: '第一章 开始\n内容。\n第二章 继续\n更多内容。' })
     assert.equal(book.chapters.length, 2)
+    assert.deepEqual(getReaderBook(book.id)?.progress.readChapterIndexes, [0])
     saveReaderProgress(book.id, 1, 360)
     assert.deepEqual(getReaderBook(book.id)?.progress.chapterIndex, 1)
     assert.deepEqual(getReaderBook(book.id)?.progress.scrollTop, 360)
+    assert.deepEqual(getReaderBook(book.id)?.progress.readChapterIndexes, [0, 1])
+    saveReaderProgress(book.id, 0, 0)
+    assert.deepEqual(getReaderBook(book.id)?.progress.readChapterIndexes, [0, 1])
     removeReaderBook(book.id)
     assert.equal(getReaderBook(book.id), null)
   } finally {
