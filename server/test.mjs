@@ -1,4 +1,4 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import {createHmac} from 'node:crypto';import {mkdir,mkdtemp,writeFile,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';import {createApp} from './index.mjs';
+import {test} from 'node:test';import assert from 'node:assert/strict';import {createHmac} from 'node:crypto';import {mkdir,mkdtemp,writeFile,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';import {createApp,MAX_NOVEL_CONTENT_CHARACTERS} from './index.mjs';
 import {DatabaseSync} from 'node:sqlite';
 test('binding, private/shared access, attachments, due delivery',async()=>{
  const app=createApp({dbPath:':memory:',testAuth:true});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
@@ -85,6 +85,7 @@ test('operations API protects account data, manages VIP, and scopes novels to se
   const disabled=await call(`/operations/users/${account.user.id}/vip`,'PUT',{enabled:false},'operations-secret');assert.equal(disabled.vip,false);assert.equal((await call('/novels','GET',undefined,account.token)).status,403);
   const enabled=await call(`/operations/users/${account.user.id}/vip`,'PUT',{enabled:true,expires_at:new Date(Date.now()+86400000).toISOString()},'operations-secret');assert.equal(enabled.vip,true);assert.ok(enabled.vipExpiresAt);
   const uploaded=await call('/operations/novels','POST',{title:'测试小说',author:'作者',filename:'test.txt',content:'第一章\n\n这是正文。',audience:'selected',userIds:[account.user.id]},'operations-secret');assert.equal(uploaded.status,201);assert.equal(uploaded.character_count,10);assert.equal(uploaded.audience,'selected');assert.equal(uploaded.allowedUserCount,1);
+  const oversized=await call('/operations/novels','POST',{title:'超长小说',filename:'large.txt',content:'a'.repeat(MAX_NOVEL_CONTENT_CHARACTERS+1),audience:'all_vip'},'operations-secret');assert.equal(oversized.status,413);assert.equal(oversized.message,'单本内容不能超过 500 万字');
   const novels=await call('/novels','GET',undefined,account.token);assert.equal(novels.items.length,1);const novel=await call('/novels/'+uploaded.id,'GET',undefined,account.token);assert.equal(novel.content,'第一章\n\n这是正文。');
   assert.equal((await call('/novels','GET',undefined,other.token)).items.length,0);assert.equal((await call('/novels/'+uploaded.id,'GET',undefined,other.token)).status,404);
   assert.equal((await call('/operations/novels/'+uploaded.id,'DELETE',undefined,'operations-secret')).ok,true);assert.equal((await call('/novels/'+uploaded.id,'GET',undefined,account.token)).status,404);
