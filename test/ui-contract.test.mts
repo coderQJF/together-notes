@@ -56,6 +56,28 @@ test('reminder time uses the consistent two-column picker', async () => {
   assert.match(picker, /mode="multiSelector"/)
 })
 
+test('editor textareas keep long content inside their rounded frame', async () => {
+  const editor = await readFile('src/pages/editor/editor.vue', 'utf8')
+  assert.match(editor, /<textarea\s+class="content-input"/)
+  assert.match(editor, /\.form \.content-input\{[^}]*height:148px[^}]*max-height:148px/)
+  assert.match(editor, /\.form \.links-input\{[^}]*height:82px[^}]*max-height:82px/)
+  assert.match(editor, /\.form textarea\{[^}]*overflow-y:auto/)
+})
+
+test('privacy policy describes salted password digests without the missing particle', async () => {
+  const source = await readFile('src/pages/legal/legal.vue', 'utf8')
+  assert.match(source, /加盐后的密码摘要/)
+  assert.doesNotMatch(source, /加盐密码摘要/)
+})
+
+test('Android home widget guidance points Huawei users to the correct launcher entry', async () => {
+  const profile = await readFile('src/pages/us/us.vue', 'utf8')
+  const strings = await readFile('src/uni_modules/together-home-widget/utssdk/app-android/res/values/strings.xml', 'utf8')
+  assert.match(profile, /进入“窗口小工具”/)
+  assert.match(profile, /不会出现在 HarmonyOS 的“服务卡片”列表中/)
+  assert.match(strings, /小记桌面卡片/)
+})
+
 test('nickname editing uses the shared raster icon asset', async () => {
   const source = await readFile('src/pages/us/us.vue', 'utf8')
   assert.match(source, /nav-icons\/edit-active\.png/)

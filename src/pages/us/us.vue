@@ -152,8 +152,8 @@ function addHomeWidget() {
     return
   }
   uni.showModal({
-    title: '添加桌面服务卡片',
-    content: '请长按华为桌面空白处，进入“服务卡片”或“窗口小工具”，找到“小记服务卡片”后添加。',
+    title: '添加桌面小工具',
+    content: '请长按华为桌面空白处，进入“窗口小工具”，找到“小记桌面卡片”后添加。它不会出现在 HarmonyOS 的“服务卡片”列表中。',
     showCancel: false,
     confirmText: '知道了',
   })
@@ -277,8 +277,8 @@ onShow(load)
       <view class="account-card">
         <text class="account-title">账号与数据</text>
         <view class="home-widget-row">
-          <view><text class="home-widget-title">桌面服务卡片</text><text class="home-widget-help">把置顶小记放到华为桌面，长按卡片可更换内容。</text></view>
-          <button aria-label="添加桌面服务卡片" @click="addHomeWidget">添加</button>
+          <view><text class="home-widget-title">桌面小工具</text><text class="home-widget-help">把置顶小记放到华为 Android 桌面，长按卡片可更换内容。</text></view>
+          <button aria-label="添加桌面小工具" @click="addHomeWidget">添加</button>
         </view>
         <LegalLinks class="account-legal-links" @open="openLegal" />
         <template v-if="deletingAccount">

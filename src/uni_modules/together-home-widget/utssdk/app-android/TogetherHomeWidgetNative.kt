@@ -40,28 +40,30 @@ internal data class TogetherWidgetNote(
 )
 
 internal object TogetherHomeWidgetStore {
-    fun replaceNotes(context: Context, raw: String): Boolean = try {
-        if (raw.length > 1_000_000) return false
-        val source = JSONArray(raw)
-        val cleaned = JSONArray()
-        for (index in 0 until minOf(source.length(), MAX_NOTES)) {
-            val item = source.optJSONObject(index) ?: continue
-            val id = item.optString("id").trim().take(200)
-            if (id.isBlank()) continue
-            cleaned.put(JSONObject()
-                .put("id", id)
-                .put("title", item.optString("title").trim().ifBlank { "未命名小记" }.take(100))
-                .put("content", item.optString("content").trim().take(4000))
-                .put("date", item.optString("date").trim().ifBlank { "最近更新" }.take(30))
-                .put("pinned", item.optBoolean("pinned", false)))
+    fun replaceNotes(context: Context, raw: String): Boolean {
+        return try {
+            if (raw.length > 1_000_000) return false
+            val source = JSONArray(raw)
+            val cleaned = JSONArray()
+            for (index in 0 until minOf(source.length(), MAX_NOTES)) {
+                val item = source.optJSONObject(index) ?: continue
+                val id = item.optString("id").trim().take(200)
+                if (id.isBlank()) continue
+                cleaned.put(JSONObject()
+                    .put("id", id)
+                    .put("title", item.optString("title").trim().ifBlank { "未命名小记" }.take(100))
+                    .put("content", item.optString("content").trim().take(4000))
+                    .put("date", item.optString("date").trim().ifBlank { "最近更新" }.take(30))
+                    .put("pinned", item.optBoolean("pinned", false)))
+            }
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(NOTES_KEY, cleaned.toString())
+                .apply()
+            true
+        } catch (_: Exception) {
+            false
         }
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(NOTES_KEY, cleaned.toString())
-            .apply()
-        true
-    } catch (_: Exception) {
-        false
     }
 
     fun clearNotes(context: Context) {
@@ -129,7 +131,7 @@ internal object TogetherHomeWidgetRenderer {
         if (note == null) {
             views.setTextViewText(R.id.together_widget_title, "小记")
             views.setTextViewText(R.id.together_widget_body, "打开 App 同步小记后，长按卡片选择要展示的内容。")
-            views.setTextViewText(R.id.together_widget_date, "桌面服务卡片")
+            views.setTextViewText(R.id.together_widget_date, "桌面小工具")
             views.setViewVisibility(R.id.together_widget_pin, View.GONE)
             views.setContentDescription(android.R.id.background, "打开小记")
         } else {
@@ -194,15 +196,17 @@ object TogetherHomeWidgetNative {
     }
 
     @JvmStatic
-    fun requestPin(activity: Activity): Boolean = try {
-        if (!isPinSupported(activity)) return false
-        AppWidgetManager.getInstance(activity).requestPinAppWidget(
-            ComponentName(activity, TogetherNoteWidgetProvider::class.java),
-            null,
-            null,
-        )
-    } catch (_: Exception) {
-        false
+    fun requestPin(activity: Activity): Boolean {
+        return try {
+            if (!isPinSupported(activity)) return false
+            AppWidgetManager.getInstance(activity).requestPinAppWidget(
+                ComponentName(activity, TogetherNoteWidgetProvider::class.java),
+                null,
+                null,
+            )
+        } catch (_: Exception) {
+            false
+        }
     }
 
     @JvmStatic

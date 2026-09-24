@@ -1,8 +1,8 @@
 {
   "id": "together-home-widget",
-  "displayName": "小记桌面服务卡片",
+  "displayName": "小记桌面小工具",
   "version": "1.0.0",
-  "description": "在 Android 与华为桌面显示可选择的小记服务卡片",
+  "description": "在 Android 与华为桌面显示可选择的小记卡片",
   "engines": {
     "HBuilderX": "^4.81"
   },
