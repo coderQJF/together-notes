@@ -133,11 +133,29 @@ test('reader controls stay immersive and chapter read state is visible in the di
 
 test('Android home widget isolates text cards from its image carousel and keeps image payloads small', async () => {
   const native = await readFile('src/uni_modules/together-home-widget/utssdk/app-android/TogetherHomeWidgetNative.kt', 'utf8')
-  const provider = await readFile('src/uni_modules/together-home-widget/utssdk/app-android/res/xml/together_note_widget_info.xml', 'utf8')
+  const provider = await readFile('src/uni_modules/together-home-widget/utssdk/app-android/res/xml-v31/together_note_widget_info.xml', 'utf8')
   assert.match(native, /R\.layout\.together_note_widget_text/)
   assert.match(native, /if \(hasImages\) manager\.notifyAppWidgetViewDataChanged/)
   assert.match(native, /MAX_WIDGET_IMAGE_EDGE = 720/)
   assert.match(provider, /autoAdvanceViewId="@id\/together_widget_images"/)
+})
+
+test('notes can select desktop content from the App and attachments use the shared image gallery', async () => {
+  const detail = await readFile('src/pages/detail/detail.vue', 'utf8')
+  const header = await readFile('src/components/SubpageHeader.vue', 'utf8')
+  const gallery = await readFile('src/components/ImageAttachmentGallery.vue', 'utf8')
+  const widget = await readFile('src/uni_modules/together-home-widget/utssdk/app-android/TogetherHomeWidgetNative.kt', 'utf8')
+  const provider = await readFile('src/uni_modules/together-home-widget/utssdk/app-android/res/xml-v31/together_note_widget_info.xml', 'utf8')
+  assert.match(detail, /展示到桌面/)
+  assert.match(detail, /selectHomeWidgetNote/)
+  assert.match(detail, /<ImageAttachmentGallery/)
+  assert.match(header, /actionLabel/)
+  assert.match(gallery, /grid-template-columns:repeat\(3/)
+  assert.match(gallery, /height:66\.667vh/)
+  assert.match(gallery, /mode="aspectFit"/)
+  assert.match(widget, /together_widget_configure/)
+  assert.match(widget, /selectAll/)
+  assert.match(provider, /widgetFeatures="reconfigurable"/)
 })
 
 test('the profile shows the build version and release scripts separate native from hot updates', async () => {

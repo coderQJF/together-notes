@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 
-const props = withDefaults(defineProps<{ label?: string; fallback?: string }>(), {
+const props = withDefaults(defineProps<{ label?: string; fallback?: string; actionLabel?: string; actionDisabled?: boolean }>(), {
   label: '',
   fallback: '/pages/index/index',
+  actionLabel: '',
+  actionDisabled: false,
 })
+const emit = defineEmits<{ action: [] }>()
 
 const headerStyle = ref<Record<string, string>>({})
 let layoutTimer: ReturnType<typeof setTimeout> | undefined
@@ -76,7 +79,10 @@ function goBack() {
       <view class="back-icon" />
       <text>返回</text>
     </button>
-    <text v-if="label" class="page-mark">{{ label }}</text>
+    <view class="header-trailing">
+      <button v-if="actionLabel" class="header-action" :disabled="actionDisabled" @click.stop="emit('action')">{{ actionLabel }}</button>
+      <text v-if="label" class="page-mark">{{ label }}</text>
+    </view>
   </view>
 </template>
 
@@ -85,5 +91,8 @@ function goBack() {
 .back{display:inline-flex;align-items:center;gap:7px;width:auto;height:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:#786d5b;font-size:15px;line-height:1.4}
 .back::after{border:0}
 .back-icon{width:10px;height:10px;margin-left:3px;border-left:1.7px solid currentColor;border-bottom:1.7px solid currentColor;transform:rotate(45deg)}
+.header-trailing{display:flex;align-items:center;justify-content:flex-end;gap:6px;min-width:0}
+.header-action{display:inline-flex;align-items:center;justify-content:center;width:auto;height:44px;min-height:44px;margin:0;padding:0 8px;border:0;background:transparent;color:#786d5b;font-size:12px;line-height:1;white-space:nowrap}.header-action::after{border:0}.header-action[disabled]{opacity:.45}
 .page-mark{display:inline-flex;align-items:center;min-height:28px;padding:0 11px;border-radius:9px;background:#f7e7ad;color:#494032;font-size:12px;line-height:1;white-space:nowrap}
+@media(max-width:360px){.header-trailing{gap:2px}.header-action{padding-left:5px;padding-right:5px}.page-mark{padding-left:9px;padding-right:9px}}
 </style>

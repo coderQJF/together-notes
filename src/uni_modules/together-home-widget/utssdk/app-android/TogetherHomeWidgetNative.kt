@@ -35,6 +35,7 @@ import java.security.MessageDigest
 private const val PREFS_NAME = "together_home_widget"
 private const val NOTES_KEY = "notes_json"
 private const val SELECTION_PREFIX = "selection:"
+private const val DEFAULT_SELECTION_KEY = "selection:default"
 private const val EXTRA_ROUTE = "home_widget_route"
 private const val MAX_NOTES = 60
 private const val MAX_IMAGES_PER_NOTE = 10
@@ -132,15 +133,32 @@ internal object TogetherHomeWidgetStore {
     fun select(context: Context, appWidgetId: Int, noteId: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
+            .putString(DEFAULT_SELECTION_KEY, noteId)
             .putString(SELECTION_PREFIX + appWidgetId, noteId)
             .apply()
+    }
+
+    fun selectAll(context: Context, noteId: String): Boolean {
+        if (notes(context).none { it.id == noteId }) return false
+        val manager = AppWidgetManager.getInstance(context)
+        val provider = ComponentName(context, TogetherNoteWidgetProvider::class.java)
+        val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(DEFAULT_SELECTION_KEY, noteId)
+        manager.getAppWidgetIds(provider).forEach { editor.putString(SELECTION_PREFIX + it, noteId) }
+        editor.apply()
+        TogetherHomeWidgetRenderer.updateAll(context)
+        return true
     }
 
     fun selected(context: Context, appWidgetId: Int): TogetherWidgetNote? {
         val notes = notes(context)
         val selectedId = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(SELECTION_PREFIX + appWidgetId, "")
+        val defaultId = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(DEFAULT_SELECTION_KEY, "")
         return notes.firstOrNull { it.id == selectedId }
+            ?: notes.firstOrNull { it.id == defaultId }
             ?: notes.firstOrNull { it.pinned }
             ?: notes.firstOrNull()
     }
@@ -232,6 +250,7 @@ internal object TogetherHomeWidgetRenderer {
         launchPendingIntent(context, appWidgetId, note)?.let {
             views.setOnClickPendingIntent(android.R.id.background, it)
         }
+        views.setOnClickPendingIntent(R.id.together_widget_configure, configurePendingIntent(context, appWidgetId))
         manager.updateAppWidget(appWidgetId, views)
         if (hasImages) manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.together_widget_images)
     }
@@ -244,6 +263,20 @@ internal object TogetherHomeWidgetRenderer {
             intent.data = Uri.parse("together-notes://widget/note/${Uri.encode(note.id)}")
         } else {
             intent.data = Uri.parse("together-notes://widget/home")
+        }
+        return PendingIntent.getActivity(
+            context,
+            appWidgetId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun configurePendingIntent(context: Context, appWidgetId: Int): PendingIntent {
+        val intent = Intent(context, TogetherNoteWidgetConfigureActivity::class.java).apply {
+            action = AppWidgetManager.ACTION_APPWIDGET_CONFIGURE
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            data = Uri.parse("together-notes://widget/configure/$appWidgetId")
         }
         return PendingIntent.getActivity(
             context,
@@ -296,6 +329,9 @@ object TogetherHomeWidgetNative {
             false
         }
     }
+
+    @JvmStatic
+    fun selectNote(context: Context, noteId: String): Boolean = TogetherHomeWidgetStore.selectAll(context, noteId.trim().take(200))
 
     @JvmStatic
     fun consumeRoute(activity: Activity): String {

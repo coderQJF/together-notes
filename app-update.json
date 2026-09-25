@@ -1,5 +1,5 @@
 {
-  "nativeMinVersion": "0.4.0",
-  "releaseNotes": "修复华为桌面小工具加载和最新图片随记同步；小说目录改为每页十章，并新增左右滑动翻章、翻页动画与音效。",
+  "nativeMinVersion": "0.5.0",
+  "releaseNotes": "修复桌面小工具重新选择随记；新增详情页一键展示到桌面，以及三列图片缩略图和横向滑动大图预览。",
   "mandatory": false
 }

@@ -142,6 +142,26 @@ export async function attachmentBase64(file:Attachment):Promise<string>{
  if(response.statusCode!==200||!(response.data instanceof ArrayBuffer))throw new Error('图片下载失败或无权访问')
  return uni.arrayBufferToBase64(response.data)
 }
+export async function attachmentPreviewUrl(file:Attachment):Promise<string>{
+ const url=(import.meta.env.VITE_API_BASE||'/api')+'/files/'+encodeURIComponent(file.id)
+ // #ifdef H5
+ const response=await fetch(url,{headers:{Authorization:'Bearer '+uni.getStorageSync('session')}})
+ if(!response.ok)throw new Error('图片加载失败或无权访问')
+ const extension=file.name.split('.').pop()?.toLowerCase()
+ const mime=extension==='png'?'image/png':extension==='webp'?'image/webp':extension==='gif'?'image/gif':'image/jpeg'
+ return URL.createObjectURL(new Blob([await response.arrayBuffer()],{type:mime}))
+ // #endif
+ // #ifndef H5
+ const result=await new Promise<UniApp.DownloadSuccessData>((resolve,reject)=>uni.downloadFile({url,header:{Authorization:'Bearer '+uni.getStorageSync('session')},success:resolve,fail:()=>reject(new Error('图片加载失败'))}))
+ if(result.statusCode!==200)throw new Error('图片加载失败或无权访问')
+ return result.tempFilePath
+ // #endif
+}
+export function releaseAttachmentPreviewUrl(url:string){
+ // #ifdef H5
+ if(url.startsWith('blob:'))URL.revokeObjectURL(url)
+ // #endif
+}
 export async function downloadFile(file:Attachment){
  const url=(import.meta.env.VITE_API_BASE||'/api')+'/files/'+file.id;
  // #ifdef H5

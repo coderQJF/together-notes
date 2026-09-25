@@ -9,6 +9,7 @@ import {
   consumeHomeWidgetRoute as nativeConsumeHomeWidgetRoute,
   isHomeWidgetPinSupported as nativeIsHomeWidgetPinSupported,
   requestHomeWidgetPin as nativeRequestHomeWidgetPin,
+  selectHomeWidgetNote as nativeSelectHomeWidgetNote,
   syncHomeWidgetNotes as nativeSyncHomeWidgetNotes,
 } from '@/uni_modules/together-home-widget'
 // #endif
@@ -83,6 +84,15 @@ export function requestHomeWidgetPin() {
 export function isHomeWidgetPinSupported() {
   // #ifdef APP-PLUS
   return runNativeSafely(false, nativeIsHomeWidgetPinSupported)
+  // #endif
+  // #ifndef APP-PLUS
+  return false
+  // #endif
+}
+
+export function selectHomeWidgetNote(noteId: string) {
+  // #ifdef APP-PLUS
+  return runNativeSafely(false, () => nativeSelectHomeWidgetNote(noteId))
   // #endif
   // #ifndef APP-PLUS
   return false

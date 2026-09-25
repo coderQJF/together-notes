@@ -1,5 +1,6 @@
 export type HomeWidgetJsonAction = (notesJson: string) => boolean
 export type HomeWidgetBooleanAction = () => boolean
 export type HomeWidgetRouteAction = () => string
+export type HomeWidgetStringAction = (value: string) => boolean
 export type HomeWidgetImageLookupAction = (noteId: string, attachmentId: string) => string
 export type HomeWidgetImageCacheAction = (noteId: string, attachmentId: string, imageBase64: string) => string

@@ -3,7 +3,8 @@ import {
   HomeWidgetImageCacheAction,
   HomeWidgetImageLookupAction,
   HomeWidgetJsonAction,
-  HomeWidgetRouteAction
+  HomeWidgetRouteAction,
+  HomeWidgetStringAction
 } from '../interface.uts'
 
 export const syncHomeWidgetNotes : HomeWidgetJsonAction = function (notesJson : string) : boolean {
@@ -40,6 +41,12 @@ export const isHomeWidgetPinSupported : HomeWidgetBooleanAction = function () : 
   const context = UTSAndroid.getAppContext()
   if (context == null) return false
   return TogetherHomeWidgetNative.isPinSupported(context)
+}
+
+export const selectHomeWidgetNote : HomeWidgetStringAction = function (noteId : string) : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return TogetherHomeWidgetNative.selectNote(context, noteId)
 }
 
 export const consumeHomeWidgetRoute : HomeWidgetRouteAction = function () : string {

@@ -4,4 +4,5 @@ export function cacheHomeWidgetImage(noteId: string, attachmentId: string, image
 export function clearHomeWidgetNotes(): boolean
 export function requestHomeWidgetPin(): boolean
 export function isHomeWidgetPinSupported(): boolean
+export function selectHomeWidgetNote(noteId: string): boolean
 export function consumeHomeWidgetRoute(): string

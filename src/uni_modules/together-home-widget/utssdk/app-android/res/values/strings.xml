@@ -8,4 +8,5 @@
   <string name="together_widget_preview_date">9月12日</string>
   <string name="together_widget_pinned">置顶小记</string>
   <string name="together_widget_image">小记图片</string>
+  <string name="together_widget_configure">切换桌面小记</string>
 </resources>

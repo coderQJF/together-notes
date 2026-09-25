@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import WebSocket from 'ws'
@@ -57,6 +57,21 @@ async function apiRequest(path, method = 'GET', data, token = '') {
   })
   const body = await response.json()
   if (!response.ok) throw new Error(body.message || `QA API request failed: ${response.status}`)
+  return body
+}
+
+async function apiFileUpload(name, bytes, token) {
+  const response = await fetch(new URL('/api/files', baseUrl), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+      'X-File-Name': encodeURIComponent(name),
+    },
+    body: bytes,
+  })
+  const body = await response.json()
+  if (!response.ok) throw new Error(body.message || `QA file upload failed: ${response.status}`)
   return body
 }
 
@@ -136,11 +151,17 @@ if (!baseUrl) {
   baseUrl = `http://127.0.0.1:${address.port}/`
   const auth = await apiRequest('/api/auth/test', 'POST', { name: '我' })
   session = auth.token
+  const qaImageFiles = ['book-active.png', 'note-active.png', 'heart-active.png']
+  const attachments = []
+  for (const [index, filename] of qaImageFiles.entries()) {
+    attachments.push(await apiFileUpload(`示例图片-${index + 1}.png`, await readFile(resolve('src/static/nav-icons', filename)), session))
+  }
   const note = await apiRequest('/api/items', 'POST', {
     kind: 'note',
     title: '周末一起去看展',
     content: '把想看的展览和出发时间记在这里。',
     links: ['https://example.com/exhibition'],
+    attachments,
     scope: 'mine',
     pinned: true,
   }, session)
@@ -191,6 +212,7 @@ const screens = [
   { name: 'index-us-phone', path: '/pages/us/us', ready: 'Stock Platform 联动', click: '绑定', clicked: '中国大陆手机号' },
   { name: 'index-us-app-login', path: '/pages/us/us', ready: '在 Android App 登录', click: '设置', clicked: 'App 登录密码' },
   ...(itemId ? [{ name: 'detail-note', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '周末一起去看展' }] : []),
+  ...(itemId ? [{ name: 'detail-note-gallery', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '附件', preClickSelector: '.thumbnail' }] : []),
   { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },
   { name: 'editor-reminder', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间' },
   { name: 'sports-provider-error', path: '/pages/sports/sports', ready: '赛事数据获取失败' },

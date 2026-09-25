@@ -109,6 +109,35 @@ async function verifyNativeCapabilities(decodedDirectory) {
   }
   await access(resolve(decodedDirectory, 'res/xml/together_note_widget_info.xml'))
   await access(resolve(decodedDirectory, 'res/layout/together_note_widget.xml'))
+  await access(resolve(decodedDirectory, 'res/layout/together_note_widget_text.xml'))
+  const resourceRoot = resolve(decodedDirectory, 'res')
+  const drawableDirectories = (await readdir(resourceRoot, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory() && entry.name.startsWith('drawable'))
+    .map(entry => resolve(resourceRoot, entry.name))
+  let settingsDrawableFound = false
+  for (const directory of drawableDirectories) {
+    try { await access(resolve(directory, 'together_widget_settings.xml')); settingsDrawableFound = true; break }
+    catch {}
+  }
+  if (!settingsDrawableFound) throw new Error('APK 缺少桌面小工具设置图标')
+  const xmlDirectories = (await readdir(resourceRoot, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory() && entry.name.startsWith('xml'))
+    .map(entry => resolve(resourceRoot, entry.name))
+  let reconfigurable = false
+  for (const directory of xmlDirectories) {
+    try {
+      const widgetInfo = await readFile(resolve(directory, 'together_note_widget_info.xml'), 'utf8')
+      const featureValue = widgetInfo.match(/widgetFeatures="([^"]+)"/)?.[1] || ''
+      const numericValue = featureValue.match(/0x[0-9a-f]+|\d+/i)?.[0] || ''
+      const numericFeatures = numericValue ? Number(numericValue) : Number.NaN
+      if (/(?:^|\W)reconfigurable(?:$|\W)/.test(featureValue)
+        || (Number.isFinite(numericFeatures) && (numericFeatures & 1) === 1)) {
+        reconfigurable = true
+        break
+      }
+    } catch {}
+  }
+  if (!reconfigurable) throw new Error('APK 缺少 Android 12+ 桌面小工具重新配置声明')
   console.log('已验证 APK 包含 Android 桌面小工具与进程退出后本地提醒能力。')
 }
 

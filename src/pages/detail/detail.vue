@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onShareAppMessage, onShow, onUnload } from '@dcloudio/uni-app'
+import ImageAttachmentGallery from '../../components/ImageAttachmentGallery.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import { downloadFile, request, type Item, type User } from '../../services/api'
-import { syncHomeWidgetNotes } from '../../services/home-widget'
+import { selectHomeWidgetNote, syncHomeWidgetNotes } from '../../services/home-widget'
 import { cancelLocalReminder } from '../../services/local-reminders'
 import { formatClock, formatCompactDateTime, formatDayHeading } from '../../utils/date'
 import { openExternalUrl, publicShareUrl, shareText } from '../../utils/platform'
@@ -18,6 +19,10 @@ const pending = ref('')
 const shareToken = ref('')
 const sharePreparing = ref(false)
 const shareError = ref('')
+const appWidgetAvailable = ref(false)
+// #ifdef APP-PLUS
+appWidgetAvailable.value = true
+// #endif
 let itemId = ''
 let sharedRoute = false
 let firstShow = true
@@ -26,6 +31,11 @@ let active = true
 const sharedPreview = computed(() => item.value?.scope === 'link')
 const scopeLabel = computed(() => sharedPreview.value ? '好友分享' : item.value?.scope === 'shared' ? '我们俩' : '仅自己')
 const repeatLabel = computed(() => ({ none: '单次', daily: '每天', weekly: '每周' } as Record<string, string>)[item.value?.repeat || 'none'])
+const imageAttachments = computed(() => (item.value?.attachments || []).filter(attachment => /\.(?:png|jpe?g|webp|gif)$/i.test(attachment.name)))
+const otherAttachments = computed(() => (item.value?.attachments || []).filter(attachment => !/\.(?:png|jpe?g|webp|gif)$/i.test(attachment.name)))
+const widgetActionLabel = computed(() => appWidgetAvailable.value && !sharedPreview.value && item.value?.kind === 'note'
+  ? pending.value === 'widget' ? '展示中…' : '展示到桌面'
+  : '')
 
 async function load() {
   if ((!itemId && !shareToken.value) || pending.value === 'delete') return
@@ -128,6 +138,21 @@ async function openAttachment(attachment: NonNullable<Item['attachments']>[numbe
   }
 }
 
+async function showOnDesktop() {
+  if (!item.value?.id || pending.value || item.value.kind !== 'note') return
+  pending.value = 'widget'
+  try {
+    const latestItems = await request<Item[]>('/items')
+    const synced = await syncHomeWidgetNotes(latestItems)
+    if (!synced || !selectHomeWidgetNote(item.value.id)) throw new Error('桌面小工具暂时不可用')
+    uni.showToast({ title: '已展示到桌面', icon: 'success' })
+  } catch (reason) {
+    uni.showToast({ title: reason instanceof Error ? reason.message : '设置失败', icon: 'none' })
+  } finally {
+    if (active) pending.value = ''
+  }
+}
+
 onLoad(options => {
   shareToken.value = typeof options?.share === 'string' ? options.share.trim().toLowerCase() : ''
   sharedRoute = Boolean(shareToken.value)
@@ -160,7 +185,7 @@ onUnload(() => { active = false })
 
 <template>
   <view class="shell">
-    <SubpageHeader label="详情" />
+    <SubpageHeader label="详情" :action-label="widgetActionLabel" :action-disabled="Boolean(pending)" @action="showOnDesktop" />
 
     <view v-if="loading" class="state">
       <view class="loading-dot" />
@@ -209,7 +234,8 @@ onUnload(() => { active = false })
 
       <view v-if="item.attachments?.length" class="section">
         <text class="section-label">附件</text>
-        <button v-for="attachment in item.attachments" :key="attachment.id" class="resource" @click="openAttachment(attachment)">
+        <ImageAttachmentGallery v-if="imageAttachments.length" :attachments="imageAttachments" />
+        <button v-for="attachment in otherAttachments" :key="attachment.id" class="resource" @click="openAttachment(attachment)">
           <view class="resource-mark"><image class="resource-icon" src="/static/nav-icons/attachment-active.png" mode="aspectFit" /></view>
           <view class="resource-copy">
             <text class="resource-title">{{ attachment.name }}</text>
