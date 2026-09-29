@@ -220,7 +220,15 @@ internal object TogetherHomeWidgetRenderer {
         val hasImages = note?.images?.isNotEmpty() == true
         val layoutId = if (hasImages) R.layout.together_note_widget else R.layout.together_note_widget_text
         val views = RemoteViews(context.packageName, layoutId)
-        if (note == null) {
+        if (hasImages) {
+            val imageNote = note!!
+            val imageIntent = Intent(context, TogetherWidgetImageService::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                data = Uri.parse("together-notes://widget/images/$appWidgetId/${imageNote.id.hashCode()}")
+            }
+            views.setRemoteAdapter(R.id.together_widget_images, imageIntent)
+            views.setContentDescription(android.R.id.background, "${imageNote.title}，打开小记详情")
+        } else if (note == null) {
             views.setTextViewText(R.id.together_widget_title, "小记")
             views.setTextViewText(R.id.together_widget_body, "打开 App 同步小记后，长按卡片选择要展示的内容。")
             views.setTextViewText(R.id.together_widget_date, "桌面小工具")
@@ -233,24 +241,20 @@ internal object TogetherHomeWidgetRenderer {
             views.setViewVisibility(R.id.together_widget_pin, if (note.pinned) View.VISIBLE else View.GONE)
             views.setContentDescription(android.R.id.background, "${note.title}，打开小记详情")
         }
-        if (hasImages) {
-            val imageIntent = Intent(context, TogetherWidgetImageService::class.java).apply {
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                data = Uri.parse("together-notes://widget/images/$appWidgetId/${note?.id.orEmpty().hashCode()}")
-            }
-            views.setRemoteAdapter(R.id.together_widget_images, imageIntent)
+        if (!hasImages) {
+            val options = manager.getAppWidgetOptions(appWidgetId)
+            val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110)
+            views.setInt(R.id.together_widget_body, "setMaxLines", when {
+                minHeight < 100 -> 2
+                minHeight < 145 -> 4
+                else -> 7
+            })
+            views.setOnClickPendingIntent(R.id.together_widget_configure, configurePendingIntent(context, appWidgetId))
         }
-        val options = manager.getAppWidgetOptions(appWidgetId)
-        val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110)
-        views.setInt(R.id.together_widget_body, "setMaxLines", when {
-            minHeight < 100 -> 2
-            minHeight < 145 -> 4
-            else -> 7
-        })
         launchPendingIntent(context, appWidgetId, note)?.let {
             views.setOnClickPendingIntent(android.R.id.background, it)
+            if (hasImages) views.setPendingIntentTemplate(R.id.together_widget_images, it)
         }
-        views.setOnClickPendingIntent(R.id.together_widget_configure, configurePendingIntent(context, appWidgetId))
         manager.updateAppWidget(appWidgetId, views)
         if (hasImages) manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.together_widget_images)
     }
@@ -363,6 +367,7 @@ private class TogetherWidgetImageFactory(
         val bitmap = TogetherHomeWidgetStore.image(context, key) ?: return null
         return RemoteViews(context.packageName, R.layout.together_widget_image).apply {
             setImageViewBitmap(R.id.together_widget_image, bitmap)
+            setOnClickFillInIntent(R.id.together_widget_image, Intent())
         }
     }
     override fun getLoadingView(): RemoteViews? = null

@@ -9,3 +9,4 @@ export type ScheduleLocalReminder = (
 
 export type ReminderIdAction = (id: string) => boolean
 export type ReminderBooleanAction = () => boolean
+export type ReminderRouteAction = () => string

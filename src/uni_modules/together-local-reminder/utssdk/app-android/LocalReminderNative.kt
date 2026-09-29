@@ -23,6 +23,7 @@ private const val RECORD_PREFIX = "reminder:"
 private const val CHANNEL_ID = "together_reminders"
 private const val CHANNEL_NAME = "小记提醒"
 private const val EXTRA_ID = "reminder_id"
+private const val EXTRA_ROUTE = "local_reminder_route"
 private const val DAY_MS = 24L * 60L * 60L * 1000L
 
 private data class ReminderRecord(
@@ -157,6 +158,13 @@ object LocalReminderNative {
         }
     }
 
+    @JvmStatic
+    fun consumeRoute(activity: Activity): String {
+        val route = activity.intent?.getStringExtra(EXTRA_ROUTE).orEmpty().take(500)
+        if (route.isNotBlank()) activity.intent?.removeExtra(EXTRA_ROUTE)
+        return route
+    }
+
     internal fun rescheduleAll(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val ids = HashSet(prefs.getStringSet(INDEX_KEY, emptySet()) ?: emptySet())
@@ -251,7 +259,7 @@ object LocalReminderNative {
         }
         val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("local_reminder_route", record.route)
+            putExtra(EXTRA_ROUTE, record.route)
             putExtra(EXTRA_ID, record.id)
         }
         val contentIntent = launchIntent?.let {

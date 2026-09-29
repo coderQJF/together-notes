@@ -5,3 +5,4 @@ export function hasLocalNotificationPermission(): boolean
 export function requestLocalNotificationPermission(): boolean
 export function canScheduleExactLocalReminders(): boolean
 export function openExactLocalReminderSettings(): boolean
+export function consumeLocalReminderRoute(): string

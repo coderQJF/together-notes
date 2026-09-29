@@ -54,6 +54,9 @@ async function load() {
     if (itemResult.status === 'rejected') throw itemResult.reason
     item.value = itemResult.value
     user.value = userResult.status === 'fulfilled' ? userResult.value : null
+    if (item.value.kind === 'reminder' && item.value.id) {
+      await request('/notifications/read', 'POST', { itemId: item.value.id }).catch(() => {})
+    }
     prepareShare()
   } catch (e) {
     error.value = e instanceof Error ? e.message : '内容加载失败'

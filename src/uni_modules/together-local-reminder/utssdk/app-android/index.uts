@@ -1,7 +1,8 @@
 import {
   ScheduleLocalReminder,
   ReminderIdAction,
-  ReminderBooleanAction
+  ReminderBooleanAction,
+  ReminderRouteAction
 } from '../interface.uts'
 
 export const scheduleLocalReminder : ScheduleLocalReminder = function (
@@ -51,4 +52,10 @@ export const openExactLocalReminderSettings : ReminderBooleanAction = function (
   const activity = UTSAndroid.getUniActivity()
   if (activity == null) return false
   return LocalReminderNative.openExactAlarmSettings(activity)
+}
+
+export const consumeLocalReminderRoute : ReminderRouteAction = function () : string {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) return ''
+  return LocalReminderNative.consumeRoute(activity)
 }

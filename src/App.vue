@@ -1,8 +1,9 @@
 <script lang="ts">
 import { consumeHomeWidgetRoute } from './services/home-widget'
 import { checkForAppResourceUpdate } from './services/app-update'
+import { consumeLocalReminderRoute } from './services/local-reminders'
 
-let widgetRouteTimer: ReturnType<typeof setTimeout> | undefined
+let nativeRouteTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   onLaunch() {
@@ -10,13 +11,13 @@ export default {
   },
   onShow() {
     if (!uni.getStorageSync('session')) return
-    const route = consumeHomeWidgetRoute()
+    const route = consumeLocalReminderRoute() || consumeHomeWidgetRoute()
     if (!/^\/pages\/detail\/detail\?id=[^\s]+$/.test(route)) return
-    clearTimeout(widgetRouteTimer)
-    widgetRouteTimer = setTimeout(() => uni.navigateTo({ url: route }), 180)
+    clearTimeout(nativeRouteTimer)
+    nativeRouteTimer = setTimeout(() => uni.navigateTo({ url: route }), 180)
   },
   onHide() {
-    clearTimeout(widgetRouteTimer)
+    clearTimeout(nativeRouteTimer)
   },
 }
 </script>

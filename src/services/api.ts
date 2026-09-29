@@ -5,7 +5,7 @@ export interface CloudNovelChapterSummary {chapterIndex:number;title:string;char
 export interface CloudNovelCatalog {id:string;title:string;author:string;chapterCount:number;chapters:CloudNovelChapterSummary[];createdAt:string;updatedAt:string}
 export interface CloudNovelChapter extends CloudNovelChapterSummary {content:string}
 export interface Item {id?:string;owner?:string;kind:'note'|'reminder';title:string;content:string;scope:'mine'|'shared';pinned?:boolean;attachments?:Attachment[];links:string[];sourceKey?:string;nextAt?:string;repeat?:string;recipient?:string;advance?:number;done?:boolean;updatedAt?:string}
-export interface Message {id:string;title:string;due:string;seen:number}
+export interface Message {id:string;title:string;due:string;seen:number;itemId?:string|null}
 
 export class ApiError extends Error {
   status: number

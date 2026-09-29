@@ -8,6 +8,7 @@ import {
   cancelAllLocalReminders as nativeCancelAll,
   cancelLocalReminder as nativeCancel,
   canScheduleExactLocalReminders,
+  consumeLocalReminderRoute as nativeConsumeLocalReminderRoute,
   hasLocalNotificationPermission,
   openExactLocalReminderSettings,
   requestLocalNotificationPermission,
@@ -103,5 +104,14 @@ export function requestLocalReminderPermissions() {
   // #endif
   // #ifndef APP-PLUS
   return { notification: false, exact: false }
+  // #endif
+}
+
+export function consumeLocalReminderRoute() {
+  // #ifdef APP-PLUS
+  return runNativeSafely('', nativeConsumeLocalReminderRoute)
+  // #endif
+  // #ifndef APP-PLUS
+  return ''
   // #endif
 }
