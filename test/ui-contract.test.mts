@@ -175,9 +175,26 @@ test('reminder messages open their detail and become read from the detail page',
   const native = await readFile('src/uni_modules/together-local-reminder/utssdk/app-android/LocalReminderNative.kt', 'utf8')
   assert.doesNotMatch(inbox, /request\('\/notifications\/read'/)
   assert.match(inbox, /pages\/detail\/detail\?id=/)
-  assert.match(detail, /request\('\/notifications\/read', 'POST', \{ itemId: item\.value\.id \}\)/)
+  assert.match(inbox, /const cachedMessages = readHomeSnapshot/)
+  assert.match(inbox, /loading\.value = !loaded/)
+  assert.match(detail, /void request\('\/notifications\/read', 'POST', \{ itemId: item\.value\.id \}\)/)
   assert.match(app, /consumeLocalReminderRoute\(\) \|\| consumeHomeWidgetRoute\(\)/)
   assert.match(native, /fun consumeRoute\(activity: Activity\): String/)
+})
+
+test('the home feed restores its account-scoped snapshot before refreshing in the background', async () => {
+  const home = await readFile('src/pages/index/index.vue', 'utf8')
+  const api = await readFile('src/services/api.ts', 'utf8')
+  assert.match(home, /restoreHomeSnapshot\(\);try/)
+  assert.match(home, /if\(!refreshing\)refreshing=performRefresh\(\)/)
+  assert.match(api, /cached\.session!==session/)
+  assert.match(api, /saveHomeSnapshot/)
+})
+
+test('the reminder editor explains the WeChat authorization boundary in the App', async () => {
+  const editor = await readFile('src/pages/editor/editor.vue', 'utf8')
+  assert.match(editor, /微信授权只能在小程序的提醒编辑页完成/)
+  assert.match(editor, /wechatStatusRequest = request<\{ configured: boolean; templateId: string \| null \}>\('\/wechat\/subscription\/status'\)/)
 })
 
 test('the profile shows the build version and release scripts separate native from hot updates', async () => {

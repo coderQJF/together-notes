@@ -6,6 +6,27 @@ export interface CloudNovelCatalog {id:string;title:string;author:string;chapter
 export interface CloudNovelChapter extends CloudNovelChapterSummary {content:string}
 export interface Item {id?:string;owner?:string;kind:'note'|'reminder';title:string;content:string;scope:'mine'|'shared';pinned?:boolean;attachments?:Attachment[];links:string[];sourceKey?:string;nextAt?:string;repeat?:string;recipient?:string;advance?:number;done?:boolean;updatedAt?:string}
 export interface Message {id:string;title:string;due:string;seen:number;itemId?:string|null}
+export interface HomeSnapshot {user:User;items:Item[];messages:Message[];savedAt:number}
+
+const HOME_SNAPSHOT_KEY='home-snapshot-v1'
+
+export function readHomeSnapshot(session:string):HomeSnapshot|null{
+ if(!session)return null
+ try{
+  const cached=uni.getStorageSync(HOME_SNAPSHOT_KEY) as {session?:string;snapshot?:HomeSnapshot}|null
+  if(!cached||cached.session!==session||!cached.snapshot?.user||!Array.isArray(cached.snapshot.items)||!Array.isArray(cached.snapshot.messages))return null
+  return cached.snapshot
+ }catch{return null}
+}
+
+export function saveHomeSnapshot(session:string,snapshot:Omit<HomeSnapshot,'savedAt'>){
+ if(!session)return
+ try{uni.setStorageSync(HOME_SNAPSHOT_KEY,{session,snapshot:{...snapshot,savedAt:Date.now()}})}catch{}
+}
+
+export function clearHomeSnapshot(){
+ try{uni.removeStorageSync(HOME_SNAPSHOT_KEY)}catch{}
+}
 
 export class ApiError extends Error {
   status: number
@@ -40,7 +61,7 @@ export const request = <T>(path: string, method: 'GET' | 'POST' | 'PUT' | 'DELET
       resolve(response.data as T)
       return
     }
-    if (response.statusCode === 401) uni.removeStorageSync('session')
+    if (response.statusCode === 401) { uni.removeStorageSync('session'); clearHomeSnapshot() }
     const body = response.data as { message?: string; code?: string; error?: { message?: string; code?: string } } | undefined
     reject(new ApiError(body?.error?.message || body?.message || '请求失败', response.statusCode, body?.error?.code || body?.code || `HTTP_${response.statusCode}`))
   },
@@ -53,7 +74,7 @@ export const request = <T>(path: string, method: 'GET' | 'POST' | 'PUT' | 'DELET
     ))
   },
 }))
-function rememberSession(result:{token:string;user:User}){uni.setStorageSync('session',result.token);return result.user}
+function rememberSession(result:{token:string;user:User}){if(uni.getStorageSync('session')!==result.token)clearHomeSnapshot();uni.setStorageSync('session',result.token);return result.user}
 export async function login(){let result:{token:string;user:User};
  // #ifdef MP-WEIXIN
  const code=await new Promise<string>((resolve,reject)=>uni.login({provider:'weixin',success:r=>resolve(r.code),fail:()=>reject(new Error('微信登录失败'))}));result=await request('/auth/wechat','POST',{code});

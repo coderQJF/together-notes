@@ -4,7 +4,7 @@ import {onLoad,onShow,onHide} from '@dcloudio/uni-app';
 import JellyTabs from '../../components/JellyTabs.vue';
 import LegalLinks from '../../components/LegalLinks.vue';
 import StatusIcon from '../../components/StatusIcon.vue';
-import {request,login,loginWithApp,registerWithApp,type User,type Item,type Message} from '../../services/api';
+import {request,login,loginWithApp,registerWithApp,readHomeSnapshot,saveHomeSnapshot,clearHomeSnapshot,type User,type Item,type Message} from '../../services/api';
 import {formatDateTime,formatDayHeading} from '../../utils/date';
 import {errorMessage} from '../../utils/errors';
 import {openExternalUrl} from '../../utils/platform';
@@ -47,12 +47,14 @@ const aiCanSearch=computed(()=>Boolean(aiQuery.value.trim()&&!aiSearching.value)
 const aiStrategyHint=computed(()=>aiStrategies.find(item=>item.key===aiStrategy.value)?.hint||'');
 const aiWebSearchEnabled=computed(()=>Boolean(aiStatus.value?.configured&&(aiStatus.value?.webSearchEnabled??aiStatus.value?.webSearch)));
 const aiOnlineIssue=computed(()=>aiResult.value?.mode==='empty'&&Boolean(aiResult.value.fallbackCode)&&!['AI_UNCONFIGURED','AI_WEB_SEARCH_DISABLED'].includes(aiResult.value.fallbackCode||''));
-let timer:ReturnType<typeof setInterval>|undefined;
+let timer:ReturnType<typeof setInterval>|undefined,refreshing:Promise<void>|undefined;
 function showInlineError(e:unknown){error.value=errorMessage(e,'暂时无法加载，请稍后重试')}
 function showActionError(e:unknown){uni.showToast({title:errorMessage(e,'操作没有完成，请稍后重试'),icon:'none'})}
 function toUiError(e:unknown,fallback='请求失败'):UiError{const value=e as {code?:string};return{message:errorMessage(e,fallback),code:value?.code}}
 async function act(key:string,fn:()=>Promise<void>){if(pending[key])return;pending[key]=true;error.value='';try{await fn()}catch(e){showActionError(e)}finally{pending[key]=false}}
-async function refresh(){if(!uni.getStorageSync('session')){user.value=null;items.value=[];messages.value=[];clearHomeWidgetNotes();error.value='';return}try{const [u,i,m]=await Promise.all([request<User>('/me'),request<Item[]>('/items'),request<Message[]>('/notifications')]);user.value=u;items.value=i;messages.value=m;error.value='';syncLocalReminders(i,u);syncStockSystemNotifications(i,m);syncHomeWidgetNotes(i)}catch(e){if(!uni.getStorageSync('session')){user.value=null;items.value=[];messages.value=[];clearHomeWidgetNotes();error.value='';return}throw e}}
+async function performRefresh(){const session=String(uni.getStorageSync('session')||'');if(!session){user.value=null;items.value=[];messages.value=[];clearHomeSnapshot();clearHomeWidgetNotes();error.value='';return}try{const [u,i,m]=await Promise.all([request<User>('/me'),request<Item[]>('/items'),request<Message[]>('/notifications')]);user.value=u;items.value=i;messages.value=m;saveHomeSnapshot(session,{user:u,items:i,messages:m});error.value='';syncLocalReminders(i,u);syncStockSystemNotifications(i,m);syncHomeWidgetNotes(i)}catch(e){if(!uni.getStorageSync('session')){user.value=null;items.value=[];messages.value=[];clearHomeSnapshot();clearHomeWidgetNotes();error.value='';return}throw e}}
+function refresh(){if(!refreshing)refreshing=performRefresh().finally(()=>{refreshing=undefined});return refreshing}
+function restoreHomeSnapshot(){const session=String(uni.getStorageSync('session')||''),snapshot=readHomeSnapshot(session);if(!snapshot)return false;user.value=snapshot.user;items.value=snapshot.items;messages.value=snapshot.messages;ready.value=true;return true}
 async function signIn(){await act('login',async()=>{if(!agree.value)throw new Error('请先确认数据使用说明');user.value=await login();await refresh()})}
 async function loadAppAuthStatus(){try{appAuthStatus.value=await request<AppAuthStatus>('/auth/app/status')}catch{appAuthStatus.value={registrationEnabled:false}}}
 async function submitAppAuth(){await act('login',async()=>{if(!agree.value)throw new Error('请先阅读并同意用户协议与隐私政策');const username=authUsername.value.trim(),password=authPassword.value;if(!username||!password)throw new Error('请填写账号和密码');if(authMode.value==='register'){if(!appAuthStatus.value?.registrationEnabled)throw new Error('App 内测注册尚未开放');if(!authNickname.value.trim())throw new Error('请填写昵称');if(!authBetaCode.value.trim())throw new Error('请填写内测口令')}user.value=authMode.value==='register'?await registerWithApp(username,password,authNickname.value.trim(),authBetaCode.value.trim()):await loginWithApp(username,password);authPassword.value='';authBetaCode.value='';await refresh()})}
@@ -77,7 +79,7 @@ function openLibrary(){uni.navigateTo({url:'/pages/library/library'})}
 function format(v?:string){return formatDateTime(v)}
 function inbox(){uni.navigateTo({url:'/pages/inbox/inbox'})}
 function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refresh().catch(()=>{})},30000)}
- onLoad(async()=>{try{
+ onLoad(async()=>{restoreHomeSnapshot();try{
  if(showAppAuth&&!uni.getStorageSync('session'))await loadAppAuthStatus();
  await refresh()}catch(e){showInlineError(e)}finally{ready.value=true}});onShow(()=>{today.value=formatDayHeading();start();if(ready.value)refresh().then(()=>{if(page.value==='search')void loadAiStatus()}).catch(showInlineError)});onHide(()=>clearInterval(timer));onUnmounted(()=>clearInterval(timer));
 </script>

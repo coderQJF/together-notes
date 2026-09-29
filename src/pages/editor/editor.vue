@@ -55,6 +55,10 @@ function syncDateFields() {
 async function load(options?: Record<string, string | undefined>) {
   loading.value = true
   error.value = ''
+  let wechatStatusRequest: Promise<{ configured: boolean; templateId: string | null }> | null = null
+  // #ifdef MP-WEIXIN
+  wechatStatusRequest = request<{ configured: boolean; templateId: string | null }>('/wechat/subscription/status').catch(() => ({ configured: false, templateId: null }))
+  // #endif
   try {
     const id = options?.id ? decodeURIComponent(options.id) : ''
     if (id) {
@@ -73,7 +77,7 @@ async function load(options?: Record<string, string | undefined>) {
     linkText.value = (draft.value.links || []).join('\n')
     syncDateFields()
     // #ifdef MP-WEIXIN
-    try { wechatStatus.value = await request('/wechat/subscription/status') } catch { wechatStatus.value = { configured: false, templateId: null } }
+    if (wechatStatusRequest) wechatStatus.value = await wechatStatusRequest
     // #endif
   } catch (e) {
     error.value = e instanceof Error ? e.message : '内容加载失败'
@@ -271,7 +275,7 @@ onUnload(() => { active = false })
         <text class="muted small hint">站内提醒始终保留；微信服务通知需要你单次授权。</text>
         <!-- #endif -->
         <!-- #ifdef H5 --><text class="muted small hint">当前提供站内消息，关闭页面后不会弹出系统通知。</text><!-- #endif -->
-        <!-- #ifdef APP-PLUS --><text class="muted small hint">提醒会同步到本机系统；允许通知权限后，划掉 App 仍会按时弹出。对方在你离线期间新建的提醒，会在下次打开 App 后同步。</text><!-- #endif -->
+        <!-- #ifdef APP-PLUS --><text class="muted small hint">提醒会同步到本机系统；允许通知权限后，划掉 App 仍会按时弹出。微信通知没有取消，但微信授权只能在小程序的提醒编辑页完成，App 不能代替微信弹出授权。</text><!-- #endif -->
         <!-- #ifdef MP-WEIXIN -->
         <view v-if="wechatStatus.configured" class="setting wechat-setting">
           <view class="setting-copy">

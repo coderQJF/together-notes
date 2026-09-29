@@ -2,6 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from './index.mjs';
 
+test('health reports whether WeChat reminders are configured without exposing credentials', async () => {
+  const app = createApp({ dbPath: ':memory:', wxAppId: 'wx-test', wxSecret: 'secret', wxReminderTemplateId: 'template-reminder' });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  try {
+    const { port } = app.server.address();
+    const result = await fetch(`http://127.0.0.1:${port}/api/health`).then(response => response.json());
+    assert.deepEqual(result, { ok: true, wechatRemindersConfigured: true });
+  } finally {
+    await new Promise(resolve => app.server.close(resolve));
+    app.db.close();
+  }
+});
+
 test('an accepted reminder subscription sends the configured WeChat template and keeps the in-app notification', async () => {
   const requests = [];
   const fetchImpl = async (input, init = {}) => {

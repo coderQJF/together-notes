@@ -2,21 +2,24 @@
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
-import { request, type Message } from '../../services/api'
+import { readHomeSnapshot, request, type Message } from '../../services/api'
 import { formatListDateTime } from '../../utils/date'
 
-const messages = ref<Message[]>([])
-const loading = ref(true)
+const cachedMessages = readHomeSnapshot(String(uni.getStorageSync('session') || ''))?.messages
+const messages = ref<Message[]>(cachedMessages || [])
+const loading = ref(!cachedMessages)
 const error = ref('')
+let loaded = Boolean(cachedMessages)
 
 async function load() {
-  loading.value = true
+  loading.value = !loaded
   error.value = ''
   try {
     messages.value = await request<Message[]>('/notifications')
   } catch (e) {
     error.value = e instanceof Error ? e.message : '消息加载失败'
   } finally {
+    loaded = true
     loading.value = false
   }
 }
@@ -40,7 +43,7 @@ onShow(load)
     <text class="subtitle">你们想记住的小事，都在这里。</text>
 
     <view v-if="loading" class="state">正在查看消息…</view>
-    <view v-else-if="error" class="state error-state">
+    <view v-else-if="error && !messages.length" class="state error-state">
       <text>{{ error }}</text>
       <button @click="load">重新加载</button>
     </view>

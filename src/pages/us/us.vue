@@ -4,7 +4,7 @@ import { onShow } from '@dcloudio/uni-app'
 import LegalLinks from '../../components/LegalLinks.vue'
 import PhoneBindingCard from '../../components/PhoneBindingCard.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
-import { request, type User } from '../../services/api'
+import { clearHomeSnapshot, request, type User } from '../../services/api'
 import { clearHomeWidgetNotes, isHomeWidgetPinSupported, requestHomeWidgetPin } from '../../services/home-widget'
 import { clearLocalReminders } from '../../services/local-reminders'
 
@@ -136,6 +136,7 @@ async function logout() {
     // 本地会话仍需清除，避免失效 token 把用户困在当前页。
   } finally {
     uni.removeStorageSync('session')
+    clearHomeSnapshot()
     clearLocalReminders()
     clearHomeWidgetNotes()
     pending.value = false
@@ -189,6 +190,7 @@ async function deleteAccount() {
   try {
     await request('/me', 'DELETE', { password: deletePassword.value })
     uni.removeStorageSync('session')
+    clearHomeSnapshot()
     clearLocalReminders()
     clearHomeWidgetNotes()
     uni.showToast({ title: '账号已注销', icon: 'success' })
