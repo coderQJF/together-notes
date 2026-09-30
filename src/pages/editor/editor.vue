@@ -273,7 +273,7 @@ onUnload(() => { active = false })
           </view>
         </picker>
         <!-- #ifdef MP-WEIXIN -->
-        <text v-if="wechatStatus.configured" class="muted small hint">{{ canSubscribeSelf ? '保存时会同时为你申请本次微信服务通知，不需要另开开关；微信仍会显示一次官方授权确认。' : '当前提醒对象不包含你，微信通知需由接收者保存时确认。' }}{{ canSubscribeSelf && draft.recipient === 'both' ? '另一位接收者也需要自己保存确认。' : '' }}{{ canSubscribeSelf && draft.repeat !== 'none' ? '重复提醒的后续周期需要再次保存授权。' : '' }}</text>
+        <text v-if="wechatStatus.configured" class="muted small hint">{{ canSubscribeSelf ? '保存时会同时为你申请一次微信服务通知，不需要另开开关。' : '当前提醒对象不包含你，微信通知需由接收者保存时确认。' }}{{ canSubscribeSelf && draft.recipient === 'both' ? '“我们俩”会分别使用双方尚未消费的授权，谁创建提醒都一样。' : '' }}{{ canSubscribeSelf && draft.repeat !== 'none' ? '重复提醒的后续周期需要新的授权。' : '' }}</text>
         <text v-else class="muted small hint">站内提醒始终保留；微信服务通知暂时不可用。</text>
         <!-- #endif -->
         <!-- #ifdef H5 --><text class="muted small hint">当前提供站内消息，关闭页面后不会弹出系统通知。</text><!-- #endif -->

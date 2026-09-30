@@ -196,6 +196,7 @@ test('the reminder editor requests WeChat authorization from save without a sepa
   assert.match(editor, /if \(wechatAuthorizationRequested\) wechatSubscribe = await requestWechatReminderAuthorization\(\)/)
   assert.doesNotMatch(editor, /@change="wechatChange"/)
   assert.match(editor, /不需要另开开关/)
+  assert.match(editor, /“我们俩”会分别使用双方尚未消费的授权/)
   assert.match(editor, /无需另开设置按钮/)
   assert.match(editor, /wechatStatusRequest = request<\{ configured: boolean; templateId: string \| null \}>\('\/wechat\/subscription\/status'\)/)
 })
