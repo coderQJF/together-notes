@@ -191,9 +191,12 @@ test('the home feed restores its account-scoped snapshot before refreshing in th
   assert.match(api, /saveHomeSnapshot/)
 })
 
-test('the reminder editor explains the WeChat authorization boundary in the App', async () => {
+test('the reminder editor requests WeChat authorization from save without a separate switch', async () => {
   const editor = await readFile('src/pages/editor/editor.vue', 'utf8')
-  assert.match(editor, /微信授权只能在小程序的提醒编辑页完成/)
+  assert.match(editor, /if \(wechatAuthorizationRequested\) wechatSubscribe = await requestWechatReminderAuthorization\(\)/)
+  assert.doesNotMatch(editor, /@change="wechatChange"/)
+  assert.match(editor, /不需要另开开关/)
+  assert.match(editor, /无需另开设置按钮/)
   assert.match(editor, /wechatStatusRequest = request<\{ configured: boolean; templateId: string \| null \}>\('\/wechat\/subscription\/status'\)/)
 })
 
