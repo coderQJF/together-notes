@@ -10,3 +10,4 @@ export type ScheduleLocalReminder = (
 export type ReminderIdAction = (id: string) => boolean
 export type ReminderBooleanAction = () => boolean
 export type ReminderRouteAction = () => string
+export type ConfigureReminderSync = (apiBase: string, sessionToken: string) => boolean

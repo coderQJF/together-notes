@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { onLoad, onShareAppMessage, onShow, onUnload } from '@dcloudio/uni-app'
 import ImageAttachmentGallery from '../../components/ImageAttachmentGallery.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
+import StructuredNoteContent from '../../components/StructuredNoteContent.vue'
 import { downloadFile, request, type Item, type User } from '../../services/api'
 import { selectHomeWidgetNote, syncHomeWidgetNotes } from '../../services/home-widget'
 import { cancelLocalReminder } from '../../services/local-reminders'
@@ -29,6 +30,7 @@ let firstShow = true
 let active = true
 
 const sharedPreview = computed(() => item.value?.scope === 'link')
+const structuredNote = computed(() => item.value?.kind === 'note' && item.value.noteFormat === 'paper')
 const scopeLabel = computed(() => sharedPreview.value ? '好友分享' : item.value?.scope === 'shared' ? '我们俩' : '仅自己')
 const repeatLabel = computed(() => ({ none: '单次', daily: '每天', weekly: '每周' } as Record<string, string>)[item.value?.repeat || 'none'])
 const imageAttachments = computed(() => (item.value?.attachments || []).filter(attachment => /\.(?:png|jpe?g|webp|gif)$/i.test(attachment.name)))
@@ -212,7 +214,8 @@ onUnload(() => { active = false })
       </view>
 
       <text class="headline">{{ item.title }}</text>
-      <text class="body-text">{{ item.content || '暂无正文' }}</text>
+      <StructuredNoteContent v-if="structuredNote" :item="item" />
+      <text v-else class="body-text">{{ item.content || '暂无正文' }}</text>
 
       <view v-if="sharedPreview" class="share-notice">
         <text class="share-notice-title">来自好友分享</text>
@@ -235,7 +238,7 @@ onUnload(() => { active = false })
         </view>
       </view>
 
-      <view v-if="item.attachments?.length" class="section">
+      <view v-if="!structuredNote && item.attachments?.length" class="section">
         <text class="section-label">附件</text>
         <ImageAttachmentGallery v-if="imageAttachments.length" :attachments="imageAttachments" />
         <button v-for="attachment in otherAttachments" :key="attachment.id" class="resource" @click="openAttachment(attachment)">
@@ -248,7 +251,7 @@ onUnload(() => { active = false })
         </button>
       </view>
 
-      <view v-if="item.links.length" class="section">
+      <view v-if="!structuredNote && item.links.length" class="section">
         <text class="section-label">链接</text>
         <button v-for="link in item.links" :key="link" class="resource" @click="openExternalUrl(link)">
           <view class="resource-mark"><image class="resource-icon" src="/static/nav-icons/link-active.png" mode="aspectFit" /></view>

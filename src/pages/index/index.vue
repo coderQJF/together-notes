@@ -8,7 +8,7 @@ import {request,login,loginWithApp,registerWithApp,readHomeSnapshot,saveHomeSnap
 import {formatDateTime,formatDayHeading} from '../../utils/date';
 import {errorMessage} from '../../utils/errors';
 import {openExternalUrl} from '../../utils/platform';
-import {syncLocalReminders,syncStockSystemNotifications} from '../../services/local-reminders';
+import {configureBackgroundReminderSync,syncLocalReminders,syncStockSystemNotifications} from '../../services/local-reminders';
 import {clearHomeWidgetNotes,syncHomeWidgetNotes} from '../../services/home-widget';
 type AiScope='all'|'notes'|'sports'|'news';
 type AiStrategy='smart'|'local'|'online';
@@ -52,7 +52,7 @@ function showInlineError(e:unknown){error.value=errorMessage(e,'暂时无法加�
 function showActionError(e:unknown){uni.showToast({title:errorMessage(e,'操作没有完成，请稍后重试'),icon:'none'})}
 function toUiError(e:unknown,fallback='请求失败'):UiError{const value=e as {code?:string};return{message:errorMessage(e,fallback),code:value?.code}}
 async function act(key:string,fn:()=>Promise<void>){if(pending[key])return;pending[key]=true;error.value='';try{await fn()}catch(e){showActionError(e)}finally{pending[key]=false}}
-async function performRefresh(){const session=String(uni.getStorageSync('session')||'');if(!session){user.value=null;items.value=[];messages.value=[];clearHomeSnapshot();clearHomeWidgetNotes();error.value='';return}try{const [u,i,m]=await Promise.all([request<User>('/me'),request<Item[]>('/items'),request<Message[]>('/notifications')]);user.value=u;items.value=i;messages.value=m;saveHomeSnapshot(session,{user:u,items:i,messages:m});error.value='';syncLocalReminders(i,u);syncStockSystemNotifications(i,m);syncHomeWidgetNotes(i)}catch(e){if(!uni.getStorageSync('session')){user.value=null;items.value=[];messages.value=[];clearHomeSnapshot();clearHomeWidgetNotes();error.value='';return}throw e}}
+async function performRefresh(){const session=String(uni.getStorageSync('session')||'');if(!session){user.value=null;items.value=[];messages.value=[];clearHomeSnapshot();clearHomeWidgetNotes();configureBackgroundReminderSync();error.value='';return}try{const [u,i,m]=await Promise.all([request<User>('/me'),request<Item[]>('/items'),request<Message[]>('/notifications')]);user.value=u;items.value=i;messages.value=m;saveHomeSnapshot(session,{user:u,items:i,messages:m});error.value='';syncLocalReminders(i,u);syncStockSystemNotifications(i,m);configureBackgroundReminderSync();syncHomeWidgetNotes(i)}catch(e){if(!uni.getStorageSync('session')){user.value=null;items.value=[];messages.value=[];clearHomeSnapshot();clearHomeWidgetNotes();configureBackgroundReminderSync();error.value='';return}throw e}}
 function refresh(){if(!refreshing)refreshing=performRefresh().finally(()=>{refreshing=undefined});return refreshing}
 function restoreHomeSnapshot(){const session=String(uni.getStorageSync('session')||''),snapshot=readHomeSnapshot(session);if(!snapshot)return false;user.value=snapshot.user;items.value=snapshot.items;messages.value=snapshot.messages;ready.value=true;return true}
 async function signIn(){await act('login',async()=>{if(!agree.value)throw new Error('请先确认数据使用说明');user.value=await login();await refresh()})}

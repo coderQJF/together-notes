@@ -15,6 +15,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.HashSet
 
 private const val PREFS_NAME = "together_local_reminders"
@@ -25,6 +27,10 @@ private const val CHANNEL_NAME = "小记提醒"
 private const val EXTRA_ID = "reminder_id"
 private const val EXTRA_ROUTE = "local_reminder_route"
 private const val DAY_MS = 24L * 60L * 60L * 1000L
+private const val SYNC_INTERVAL_MS = 15L * 60L * 1000L
+private const val SYNC_API_KEY = "sync_api_base"
+private const val SYNC_TOKEN_KEY = "sync_session_token"
+private const val SYNC_ACTION = "together_reminder_sync"
 
 private data class ReminderRecord(
     val id: String,
@@ -74,6 +80,35 @@ private data class ReminderRecord(
 }
 
 object LocalReminderNative {
+    @JvmStatic
+    fun configureSync(context: Context, apiBase: String, sessionToken: String): Boolean {
+        return try {
+            val base = apiBase.trim().trimEnd('/')
+            val token = sessionToken.trim()
+            if ((!base.startsWith("https://") && !base.startsWith("http://")) || token.isBlank()) false
+            else {
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val changed = prefs.getString(SYNC_API_KEY, "") != base || prefs.getString(SYNC_TOKEN_KEY, "") != token
+                prefs.edit().putString(SYNC_API_KEY, base).putString(SYNC_TOKEN_KEY, token).apply()
+                scheduleSync(context, if (changed) 5_000L else SYNC_INTERVAL_MS)
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    @JvmStatic
+    fun disableSync(context: Context): Boolean = try {
+        val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        manager.cancel(syncPendingIntent(context))
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .remove(SYNC_API_KEY).remove(SYNC_TOKEN_KEY).apply()
+        true
+    } catch (_: Exception) {
+        false
+    }
+
     @JvmStatic
     fun schedule(
         context: Context,
@@ -183,6 +218,46 @@ object LocalReminderNative {
                 scheduleRecord(context, record)
             }
         }
+        scheduleSync(context, 10_000L)
+    }
+
+    internal fun syncFromServer(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val base = prefs.getString(SYNC_API_KEY, "").orEmpty()
+        val token = prefs.getString(SYNC_TOKEN_KEY, "").orEmpty()
+        if (base.isBlank() || token.isBlank()) return
+        var connection: HttpURLConnection? = null
+        try {
+            connection = URL("$base/reminders/sync").openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 10_000
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Accept", "application/json")
+            val status = connection.responseCode
+            if (status == 401) { disableSync(context); return }
+            if (status !in 200..299) return
+            val payload = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val reminders = JSONObject(payload).optJSONArray("reminders") ?: return
+            val existingIds = HashSet(prefs.getStringSet(INDEX_KEY, emptySet()) ?: emptySet())
+            existingIds.filterNot { it.startsWith("stock-message:") }.forEach { id ->
+                cancelAlarm(context, id)
+                removeRecord(context, id)
+            }
+            for (index in 0 until reminders.length()) {
+                val record = ReminderRecord.fromJson(reminders.optJSONObject(index)?.toString())?.nextAfter(System.currentTimeMillis()) ?: continue
+                saveRecord(context, record)
+                scheduleRecord(context, record)
+            }
+        } catch (_: Exception) {
+            // Keep the last successfully synced alarms when the device is offline.
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    internal fun scheduleNextSync(context: Context) {
+        scheduleSync(context, SYNC_INTERVAL_MS)
     }
 
     internal fun handleAlarm(context: Context, id: String) {
@@ -228,6 +303,20 @@ object LocalReminderNative {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+    }
+
+    private fun scheduleSync(context: Context, delay: Long) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getString(SYNC_API_KEY, "").isNullOrBlank() || prefs.getString(SYNC_TOKEN_KEY, "").isNullOrBlank()) return
+        val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val at = System.currentTimeMillis() + delay.coerceAtLeast(2_000L)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, syncPendingIntent(context))
+        else manager.set(AlarmManager.RTC_WAKEUP, at, syncPendingIntent(context))
+    }
+
+    private fun syncPendingIntent(context: Context): PendingIntent {
+        val intent = Intent(context, ReminderSyncReceiver::class.java).setAction("${context.packageName}.$SYNC_ACTION")
+        return PendingIntent.getBroadcast(context, 42032, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
     private fun saveRecord(context: Context, record: ReminderRecord) {
@@ -292,6 +381,20 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getStringExtra(EXTRA_ID)?.trim().orEmpty()
         if (id.isNotBlank()) LocalReminderNative.handleAlarm(context.applicationContext, id)
+    }
+}
+
+class ReminderSyncReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val pending = goAsync()
+        Thread {
+            try {
+                LocalReminderNative.syncFromServer(context.applicationContext)
+            } finally {
+                LocalReminderNative.scheduleNextSync(context.applicationContext)
+                pending.finish()
+            }
+        }.start()
     }
 }
 

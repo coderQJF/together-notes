@@ -102,6 +102,7 @@ async function verifyNativeCapabilities(decodedDirectory) {
     'uts.sdk.modules.togetherHomeWidget.TogetherNoteWidgetProvider',
     'android.appwidget.action.APPWIDGET_UPDATE',
     'uts.sdk.modules.togetherLocalReminder.ReminderAlarmReceiver',
+    'uts.sdk.modules.togetherLocalReminder.ReminderSyncReceiver',
     'uts.sdk.modules.togetherLocalReminder.ReminderBootReceiver',
   ]
   for (const entry of expectedManifestEntries) {

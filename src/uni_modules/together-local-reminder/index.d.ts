@@ -6,3 +6,5 @@ export function requestLocalNotificationPermission(): boolean
 export function canScheduleExactLocalReminders(): boolean
 export function openExactLocalReminderSettings(): boolean
 export function consumeLocalReminderRoute(): string
+export function configureReminderSync(apiBase: string, sessionToken: string): boolean
+export function disableReminderSync(): boolean

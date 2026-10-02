@@ -1,14 +1,29 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { attachmentPreviewUrl, releaseAttachmentPreviewUrl, type Attachment } from '../services/api'
 
-const props = defineProps<{ attachments: Attachment[] }>()
+const props = withDefaults(defineProps<{ attachments: Attachment[]; inline?: boolean }>(), { inline: false })
 const images = computed(() => props.attachments.filter(item => /\.(?:png|jpe?g|webp|gif)$/i.test(item.name)))
 const sources = ref<Record<string, string>>({})
 const failed = ref<Record<string, boolean>>({})
 const previewOpen = ref(false)
 const activeIndex = ref(0)
+const previewPanelStyle = ref<Record<string, string>>({})
 let loadGeneration = 0
+
+function syncPreviewInsets() {
+  // Android WebViews do not consistently expose env(safe-area-inset-top), so
+  // the native status-bar height is the authoritative top inset in the App.
+  // #ifdef APP-PLUS
+  try {
+    const info = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync()
+    const statusBarHeight = Math.max(0, Number(info.statusBarHeight) || 0)
+    previewPanelStyle.value = { paddingTop: `${statusBarHeight + 8}px` }
+  } catch {
+    previewPanelStyle.value = { paddingTop: 'calc(var(--status-bar-height, 0px) + 8px)' }
+  }
+  // #endif
+}
 
 function releaseSources() {
   Object.values(sources.value).forEach(releaseAttachmentPreviewUrl)
@@ -35,6 +50,7 @@ function openPreview(index: number) {
   if (!attachment || !sources.value[attachment.id]) return
   activeIndex.value = index
   previewOpen.value = true
+  nextTick(syncPreviewInsets)
 }
 
 function closePreview() {
@@ -46,6 +62,7 @@ function previewChange(event: any) {
 }
 
 watch(() => images.value.map(item => `${item.id}:${item.name}`).join('|'), loadSources, { immediate: true })
+onMounted(syncPreviewInsets)
 onUnmounted(() => {
   loadGeneration += 1
   releaseSources()
@@ -53,7 +70,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <view v-if="images.length" class="image-gallery">
+  <view v-if="images.length" class="image-gallery" :class="{ inline }">
     <button v-for="(attachment, index) in images" :key="attachment.id" class="thumbnail" :disabled="!sources[attachment.id]" :aria-label="`预览图片 ${index + 1}：${attachment.name}`" @click="openPreview(index)">
       <image v-if="sources[attachment.id]" :src="sources[attachment.id]" mode="aspectFill" />
       <view v-else class="thumbnail-placeholder">
@@ -65,7 +82,7 @@ onUnmounted(() => {
   </view>
 
   <view v-if="previewOpen" class="preview-layer" @click="closePreview">
-    <view class="preview-panel" @click.stop>
+    <view class="preview-panel" :style="previewPanelStyle" @click.stop>
       <view class="preview-header">
         <view class="preview-copy"><text>{{ images[activeIndex]?.name }}</text><text>{{ activeIndex + 1 }} / {{ images.length }}</text></view>
         <button aria-label="关闭图片预览" @click="closePreview"><view class="close-icon" /></button>
@@ -80,6 +97,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.image-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.thumbnail{position:relative;width:100%;height:auto;aspect-ratio:1;margin:0;padding:0;overflow:hidden;border:1px solid #ece5d6;border-radius:14px;background:#f3eee4;color:#494032}.thumbnail::after{border:0}.thumbnail[disabled]{opacity:1}.thumbnail image{display:block;width:100%;height:100%}.thumbnail-placeholder{display:flex;width:100%;height:100%;align-items:center;justify-content:center;color:#8b806e;font-size:10px}.loading-ring{width:18px;height:18px;border:2px solid #decf9c;border-right-color:#786d5b;border-radius:50%;animation:spin .8s linear infinite}.thumbnail-name{position:absolute;right:0;bottom:0;left:0;padding:15px 8px 7px;overflow:hidden;background:linear-gradient(transparent,rgba(40,34,26,.68));color:#fff;font-size:10px;line-height:1.25;text-align:left;text-overflow:ellipsis;white-space:nowrap}.preview-layer{position:fixed;z-index:90;inset:0;display:flex;align-items:stretch;justify-content:center;background:#11100e}.preview-panel{width:100%;height:100vh;min-height:100vh;padding:env(safe-area-inset-top) calc(18px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));overflow:hidden;background:#11100e;box-sizing:border-box}.preview-header{display:flex;height:58px;align-items:center;justify-content:space-between;gap:12px}.preview-copy{min-width:0}.preview-copy>text:first-child{display:block;overflow:hidden;color:#fff8e9;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.preview-copy>text:last-child{display:block;margin-top:3px;color:#b9ad99;font-size:10px}.preview-header button{display:flex;width:44px;height:44px;min-height:44px;align-items:center;justify-content:center;flex:0 0 44px;margin:0 -8px 0 0;border:0;background:transparent}.preview-header button::after{border:0}.close-icon{position:relative;width:18px;height:18px}.close-icon::before,.close-icon::after{content:'';position:absolute;left:1px;top:8px;width:16px;height:1.5px;border-radius:2px;background:#fff8e9;transform:rotate(45deg)}.close-icon::after{transform:rotate(-45deg)}.preview-swiper{width:100%;height:calc(100% - 58px)}.preview-slide{display:flex;align-items:center;justify-content:center}.preview-image{width:100%;height:100%}@keyframes spin{to{transform:rotate(360deg)}}
+.image-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.image-gallery.inline{grid-template-columns:minmax(0,1fr)}.image-gallery.inline .thumbnail{max-height:420px;aspect-ratio:4/3}.image-gallery.inline .thumbnail image{object-fit:contain}.thumbnail{position:relative;width:100%;height:auto;aspect-ratio:1;margin:0;padding:0;overflow:hidden;border:1px solid #ece5d6;border-radius:14px;background:#f3eee4;color:#494032}.thumbnail::after{border:0}.thumbnail[disabled]{opacity:1}.thumbnail image{display:block;width:100%;height:100%}.thumbnail-placeholder{display:flex;width:100%;height:100%;align-items:center;justify-content:center;color:#8b806e;font-size:10px}.loading-ring{width:18px;height:18px;border:2px solid #decf9c;border-right-color:#786d5b;border-radius:50%;animation:spin .8s linear infinite}.thumbnail-name{position:absolute;right:0;bottom:0;left:0;padding:15px 8px 7px;overflow:hidden;background:linear-gradient(transparent,rgba(40,34,26,.68));color:#fff;font-size:10px;line-height:1.25;text-align:left;text-overflow:ellipsis;white-space:nowrap}.preview-layer{position:fixed;z-index:90;inset:0;display:flex;align-items:stretch;justify-content:center;overflow:hidden;background:#11100e}.preview-panel{width:100%;height:100%;min-height:0;padding:calc(8px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));overflow:hidden;background:#11100e;box-sizing:border-box}.preview-header{display:flex;height:58px;align-items:center;justify-content:space-between;gap:12px}.preview-copy{min-width:0}.preview-copy>text:first-child{display:block;overflow:hidden;color:#fff8e9;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.preview-copy>text:last-child{display:block;margin-top:3px;color:#b9ad99;font-size:10px}.preview-header button{display:flex;width:44px;height:44px;min-height:44px;align-items:center;justify-content:center;flex:0 0 44px;margin:0 -8px 0 0;border:0;background:transparent}.preview-header button::after{border:0}.close-icon{position:relative;width:18px;height:18px}.close-icon::before,.close-icon::after{content:'';position:absolute;left:1px;top:8px;width:16px;height:1.5px;border-radius:2px;background:#fff8e9;transform:rotate(45deg)}.close-icon::after{transform:rotate(-45deg)}.preview-swiper{width:100%;height:calc(100% - 58px)}.preview-slide{display:flex;align-items:center;justify-content:center}.preview-image{width:100%;height:100%}@keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:360px){.image-gallery{gap:6px}.thumbnail{border-radius:12px}.preview-panel{padding-right:calc(14px + env(safe-area-inset-right));padding-left:calc(14px + env(safe-area-inset-left))}}
 </style>

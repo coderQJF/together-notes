@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
+import StructuredNoteEditor from '../../components/StructuredNoteEditor.vue'
 import TimePickerField from '../../components/TimePickerField.vue'
 import { attachImages, request, type Item, type User } from '../../services/api'
 import { syncHomeWidgetNotes } from '../../services/home-widget'
@@ -14,6 +15,8 @@ const empty = (kind: 'note' | 'reminder'): Item => ({
   content: '',
   links: [],
   attachments: [],
+  noteFormat: 'classic',
+  blocks: [],
   scope: 'mine',
   repeat: 'none',
   recipient: 'me',
@@ -31,6 +34,7 @@ const pending = ref('')
 const error = ref('')
 const editingExisting = ref(false)
 const wechatStatus = ref<{ configured: boolean; templateId: string | null }>({ configured: false, templateId: null })
+const formatPickerOpen = ref(false)
 let active = true
 let closing = false
 
@@ -44,6 +48,34 @@ const canSubscribeSelf = computed(() => {
   if (draft.value.recipient === 'both') return true
   return isGuestEditor.value ? draft.value.recipient === 'partner' : draft.value.recipient === 'me'
 })
+const headerActionLabel = computed(() => draft.value.kind === 'note' ? '格式' : '')
+
+function noteBlockId() { return `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }
+function materializePaper() {
+  const blocks = draft.value.blocks || []
+  const lines = blocks.flatMap((block, index) => {
+    if (block.type === 'paragraph') return [block.style?.list === 'ordered' ? `${index + 1}. ${block.text || ''}` : block.style?.list === 'bullet' ? `• ${block.text || ''}` : block.text || '']
+    if (block.type === 'todo') return [`${block.checked ? '[已完成]' : '[待办]'} ${block.text || ''}`]
+    if (block.type === 'link') return [block.text || block.url || '']
+    return []
+  }).map(value => value.trim()).filter(Boolean)
+  draft.value.content = lines.join('\n')
+  draft.value.links = blocks.filter(block => block.type === 'link').map(block => String(block.url || '').trim()).filter(Boolean)
+}
+
+function selectNoteFormat(format: 'classic' | 'paper') {
+  formatPickerOpen.value = false
+  if (draft.value.noteFormat === format) return
+  if (format === 'paper') {
+    const blocks = [...(draft.value.blocks || [])]
+    if (!blocks.length && draft.value.content.trim()) blocks.push({ id: noteBlockId(), type: 'paragraph', text: draft.value.content, style: { align: 'left', list: 'none', color: '#3e382d' } })
+    for (const attachment of draft.value.attachments || []) if (!blocks.some(block => block.attachmentId === attachment.id)) blocks.push({ id: noteBlockId(), type: 'image', attachmentId: attachment.id })
+    for (const link of draft.value.links || []) if (!blocks.some(block => block.type === 'link' && block.url === link)) blocks.push({ id: noteBlockId(), type: 'link', text: '', url: link })
+    draft.value.blocks = blocks
+  } else materializePaper()
+  draft.value.noteFormat = format
+  if (format === 'classic') linkText.value = (draft.value.links || []).join('\n')
+}
 
 function syncDateFields() {
   const source = draft.value.nextAt ? new Date(draft.value.nextAt) : new Date(Date.now() + 3600000)
@@ -137,7 +169,8 @@ async function save() {
     uni.showToast({ title: '请填写标题', icon: 'none' })
     return
   }
-  const links = linkText.value.split('\n').map(value => value.trim()).filter(Boolean)
+  if (draft.value.kind === 'note' && draft.value.noteFormat === 'paper') materializePaper()
+  const links = draft.value.kind === 'note' && draft.value.noteFormat === 'paper' ? (draft.value.links || []) : linkText.value.split('\n').map(value => value.trim()).filter(Boolean)
   if (links.some(value => !/^https?:\/\//i.test(value))) {
     uni.showToast({ title: '链接需以 http:// 或 https:// 开头', icon: 'none' })
     return
@@ -192,7 +225,7 @@ onUnload(() => { active = false })
 
 <template>
   <view class="shell">
-    <SubpageHeader :label="pageLabel" />
+    <SubpageHeader :label="pageLabel" :action-label="headerActionLabel" @action="formatPickerOpen=true" />
 
     <view v-if="loading" class="state">正在准备…</view>
     <view v-else-if="error" class="state">
@@ -206,26 +239,33 @@ onUnload(() => { active = false })
       <text class="label">标题</text>
       <input v-model="draft.title" maxlength="100" placeholder="想记下什么？" />
 
-      <text class="label">内容</text>
-      <textarea class="content-input" v-model="draft.content" maxlength="50000" placeholder="文字、清单，或者想对她说的话…" disable-default-padding />
+      <template v-if="draft.kind !== 'note' || draft.noteFormat !== 'paper'">
+        <text class="label">内容</text>
+        <textarea class="content-input" v-model="draft.content" maxlength="50000" placeholder="文字、清单，或者想对她说的话…" disable-default-padding />
 
-      <text class="label">链接（每行一个）</text>
-      <textarea class="links-input" v-model="linkText" placeholder="https://…" disable-default-padding />
+        <text class="label">链接（每行一个）</text>
+        <textarea class="links-input" v-model="linkText" placeholder="https://…" disable-default-padding />
 
-      <text class="label">图片</text>
-      <view v-for="(attachment, index) in draft.attachments" :key="attachment.id" class="setting">
-        <view class="setting-copy">
-          <text class="setting-title">{{ attachment.name }}</text>
-          <text class="muted small">{{ Math.max(1, Math.round(attachment.size / 1024)) }} KB</text>
+        <text class="label">图片</text>
+        <view v-for="(attachment, index) in draft.attachments" :key="attachment.id" class="setting">
+          <view class="setting-copy">
+            <text class="setting-title">{{ attachment.name }}</text>
+            <text class="muted small">{{ Math.max(1, Math.round(attachment.size / 1024)) }} KB</text>
+          </view>
+          <button class="remove-file" @click="draft.attachments?.splice(index, 1)">移除</button>
         </view>
-        <button class="remove-file" @click="draft.attachments?.splice(index, 1)">移除</button>
-      </view>
-      <button class="attachment-button" :disabled="Boolean(pending)" @click="addAttachment">
-        <view v-if="pending === 'attachment'" class="spinner" />
-        <view v-else class="mini-plus" />
-        <text>{{ pending === 'attachment' ? '上传中…' : '选择图片（可多选）' }}</text>
-      </button>
-      <text class="muted small hint">单张最大 12MB，最多 10 张；桌面小组件会自动轮播所选小记的图片。</text>
+        <button class="attachment-button" :disabled="Boolean(pending)" @click="addAttachment">
+          <view v-if="pending === 'attachment'" class="spinner" />
+          <view v-else class="mini-plus" />
+          <text>{{ pending === 'attachment' ? '上传中…' : '选择图片（可多选）' }}</text>
+        </button>
+        <text class="muted small hint">单张最大 12MB，最多 10 张；桌面小组件会自动轮播所选小记的图片。</text>
+      </template>
+      <template v-else>
+        <text class="label paper-label">灵感纸内容</text>
+        <StructuredNoteEditor :blocks="draft.blocks || []" :attachments="draft.attachments || []" @update:blocks="draft.blocks=$event" @update:attachments="draft.attachments=$event" />
+        <text class="muted small hint">内容会按当前顺序保存；图片与手写也会同步到桌面小组件。</text>
+      </template>
 
       <text class="label">可见范围</text>
       <view v-if="isGuestEditor" class="picker readonly">
@@ -293,13 +333,22 @@ onUnload(() => { active = false })
         <text>{{ pending === 'save' ? '保存中…' : '保存' }}</text>
       </button>
     </view>
+
+    <view v-if="formatPickerOpen" class="format-picker-layer" @click="formatPickerOpen=false" @touchmove.stop.prevent>
+      <view class="format-picker" @click.stop>
+        <view class="format-picker-heading"><view><text>备忘录格式</text><text>随时切换，已有内容会保留</text></view><button aria-label="关闭格式选择" @click="formatPickerOpen=false"><view class="close-icon" /></button></view>
+        <button :class="{selected:draft.noteFormat!=='paper'}" @click="selectNoteFormat('classic')"><view><text>经典备忘</text><text>系统默认 · 标题、正文、图片和链接</text></view><view class="selection-dot" /></button>
+        <button :class="{selected:draft.noteFormat==='paper'}" @click="selectNoteFormat('paper')"><view><text>灵感纸</text><text>手写、待办、格式段落、图片和链接自由组合</text></view><view class="selection-dot" /></button>
+      </view>
+    </view>
   </view>
 </template>
 
 <style scoped>
 .shell{max-width:640px;min-height:100vh;margin:auto;padding:0 24px calc(42px + env(safe-area-inset-bottom));background:#faf8f2;color:#3e382d}.state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:50vh;text-align:center;color:#786d5b}.state-title{font-size:20px;font-weight:600;color:#3e382d}.muted{color:#786d5b}.small{font-size:11px}.headline{display:block;margin:2px 0 8px;font-size:31px;font-weight:600;line-height:1.35;letter-spacing:-.6px}.label{display:block;margin:22px 0 9px;color:#786d5b;font-size:13px}.form input,.form textarea,.picker{width:100%;border:1px solid #ece5d6;border-radius:14px;background:#fff;color:#3e382d}.form input{height:50px;padding:0 14px}.form textarea{display:block;padding:14px;line-height:1.65;overflow-y:auto}.form .content-input{height:148px;min-height:148px;max-height:148px}.form .links-input{height:82px;min-height:82px;max-height:82px}.picker{display:flex;align-items:center;justify-content:space-between;min-height:50px;padding:0 14px;overflow-wrap:anywhere}.readonly{background:#f4f0e7}.chevron-down{width:8px;height:8px;flex:0 0 8px;margin:-4px 3px 0 12px;border-right:1.5px solid #786d5b;border-bottom:1.5px solid #786d5b;transform:rotate(45deg)}
 .date-row{display:flex;gap:12px}.date-row>picker,.date-row>.time-picker{min-width:0;flex:1}.setting{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:62px;padding:12px 0;border-bottom:1px solid #ece5d6}.setting-copy{min-width:0;flex:1}.setting-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hint{display:block;margin-top:9px;line-height:1.6}.remove-file{width:auto;min-width:56px;height:44px;min-height:44px;margin:0;padding:0 10px;border:0;background:transparent;color:#ae4b3b;font-size:12px}.remove-file::after{border:0}.attachment-button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:48px;margin-top:12px;border:1px solid #ece5d6;border-radius:14px;background:#fff;color:#494032}.attachment-button::after{border:0}.mini-plus{position:relative;width:14px;height:14px}.mini-plus::before,.mini-plus::after{content:'';position:absolute;left:1px;top:6px;width:12px;height:1.5px;border-radius:2px;background:#494032}.mini-plus::after{transform:rotate(90deg)}.pin-setting{margin-top:20px}.pin-setting .small{display:block;margin-top:5px}
-.primary{display:flex;align-items:center;justify-content:center;width:100%;height:50px;margin:28px 0 10px;border:0;border-radius:15px;background:#494032;color:#fff9e9;font-size:15px}.primary::after{border:0}.spinner{width:16px;height:16px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.paper-label{margin-bottom:12px}.primary{display:flex;align-items:center;justify-content:center;width:100%;height:50px;margin:28px 0 10px;border:0;border-radius:15px;background:#494032;color:#fff9e9;font-size:15px}.primary::after{border:0}.spinner{width:16px;height:16px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.format-picker-layer{position:fixed;z-index:80;inset:0;display:flex;align-items:flex-end;justify-content:center;background:rgba(49,42,33,.28)}.format-picker{width:min(100%,640px);padding:12px 20px calc(22px + env(safe-area-inset-bottom));border-radius:24px 24px 0 0;background:#faf8f2;box-sizing:border-box}.format-picker-heading{display:flex;min-height:62px;align-items:center;justify-content:space-between}.format-picker-heading>view>text{display:block}.format-picker-heading>view>text:first-child{font-size:18px;font-weight:650}.format-picker-heading>view>text:last-child{margin-top:4px;color:#8b806e;font-size:10px}.format-picker-heading>button{display:flex;width:44px;height:44px;align-items:center;justify-content:center;margin:0 -8px 0 0;border:0;background:transparent}.format-picker-heading>button::after{border:0}.close-icon{position:relative;width:16px;height:16px}.close-icon::before,.close-icon::after{content:'';position:absolute;left:1px;top:7px;width:14px;border-top:1.5px solid #786d5b;transform:rotate(45deg)}.close-icon::after{transform:rotate(-45deg)}.format-picker>button{display:flex;width:100%;min-height:72px;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 0;padding:13px 15px;border:1px solid #e8e0d2;border-radius:17px;background:#fff;color:#494032;text-align:left}.format-picker>button::after{border:0}.format-picker>button>view:first-child{min-width:0}.format-picker>button text{display:block}.format-picker>button text:first-child{font-size:14px;font-weight:600}.format-picker>button text:last-child{margin-top:5px;color:#8b806e;font-size:10px;line-height:1.5}.selection-dot{width:18px;height:18px;flex:0 0 18px;border:1.5px solid #b9ad99;border-radius:50%;box-sizing:border-box}.format-picker>button.selected{border-color:#d9bd70;background:#fff9e8}.format-picker>button.selected .selection-dot{border:5px solid #b28b35}
 @media(max-width:360px){.shell{padding-left:20px;padding-right:20px}.headline{font-size:29px}.date-row{gap:8px}}
 .shell{padding-left:calc(24px + env(safe-area-inset-left));padding-right:calc(24px + env(safe-area-inset-right))}
 @media(max-width:360px){.shell{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}}

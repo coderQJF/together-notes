@@ -4,7 +4,9 @@ export interface CloudNovelSummary {id:string;title:string;author:string;charact
 export interface CloudNovelChapterSummary {chapterIndex:number;title:string;characterCount:number}
 export interface CloudNovelCatalog {id:string;title:string;author:string;chapterCount:number;chapters:CloudNovelChapterSummary[];createdAt:string;updatedAt:string}
 export interface CloudNovelChapter extends CloudNovelChapterSummary {content:string}
-export interface Item {id?:string;owner?:string;kind:'note'|'reminder';title:string;content:string;scope:'mine'|'shared';pinned?:boolean;attachments?:Attachment[];links:string[];sourceKey?:string;nextAt?:string;repeat?:string;recipient?:string;advance?:number;done?:boolean;updatedAt?:string}
+export interface NoteBlockStyle {bold?:boolean;italic?:boolean;underline?:boolean;align?:'left'|'center'|'right';list?:'none'|'ordered'|'bullet';color?:string}
+export interface NoteBlock {id:string;type:'paragraph'|'todo'|'image'|'drawing'|'link';text?:string;checked?:boolean;attachmentId?:string;url?:string;style?:NoteBlockStyle}
+export interface Item {id?:string;owner?:string;kind:'note'|'reminder';title:string;content:string;scope:'mine'|'shared';pinned?:boolean;attachments?:Attachment[];links:string[];noteFormat?:'classic'|'paper';blocks?:NoteBlock[];sourceKey?:string;nextAt?:string;repeat?:string;recipient?:string;advance?:number;done?:boolean;updatedAt?:string}
 export interface Message {id:string;title:string;due:string;seen:number;itemId?:string|null}
 export interface HomeSnapshot {user:User;items:Item[];messages:Message[];savedAt:number}
 
@@ -41,6 +43,7 @@ export class ApiError extends Error {
 }
 
 const apiBase = () => String(import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')
+export const reminderSyncApiBase = () => apiBase()
 
 export function apiAssetUrl(value?: string | null) {
   if (!value || /^https?:\/\//i.test(value)) return value || ''
@@ -136,6 +139,10 @@ async function uploadAttachment(file:any,index:number):Promise<Attachment>{
  if(bytes.byteLength>12*1024*1024)throw new Error('单张图片不能超过 12MB');
  return new Promise((resolve,reject)=>uni.request({url:(import.meta.env.VITE_API_BASE||'/api')+'/files',method:'POST',data:bytes,header:{Authorization:'Bearer '+uni.getStorageSync('session'),'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(name)},success:r=>r.statusCode===200?resolve(r.data as Attachment):reject(new Error((r.data as any).message||'上传失败')),fail:()=>reject(new Error('上传失败'))}));
  // #endif
+}
+
+export function uploadImagePath(path:string,name=`手写-${Date.now()}.png`):Promise<Attachment>{
+ return uploadAttachment({path,tempFilePath:path,name},0)
 }
 
 export async function attachImages(count=10):Promise<Attachment[]>{

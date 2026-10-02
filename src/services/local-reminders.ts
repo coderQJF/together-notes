@@ -1,4 +1,4 @@
-import type { Item, Message, User } from './api'
+import { reminderSyncApiBase, type Item, type Message, type User } from './api'
 import { localReminderPlan, stockSystemNotificationPlans } from './local-reminder-rules'
 
 const STOCK_SYSTEM_NOTIFICATION_IDS_KEY = 'stock-system-notification-ids'
@@ -8,7 +8,9 @@ import {
   cancelAllLocalReminders as nativeCancelAll,
   cancelLocalReminder as nativeCancel,
   canScheduleExactLocalReminders,
+  configureReminderSync as nativeConfigureSync,
   consumeLocalReminderRoute as nativeConsumeLocalReminderRoute,
+  disableReminderSync as nativeDisableSync,
   hasLocalNotificationPermission,
   openExactLocalReminderSettings,
   requestLocalNotificationPermission,
@@ -50,6 +52,17 @@ export function syncLocalReminders(items: Item[], user: User) {
   // #endif
 }
 
+export function configureBackgroundReminderSync() {
+  // #ifdef APP-PLUS
+  const session = String(uni.getStorageSync('session') || '')
+  if (!session) return runNativeSafely(false, nativeDisableSync)
+  return runNativeSafely(false, () => nativeConfigureSync(reminderSyncApiBase(), session))
+  // #endif
+  // #ifndef APP-PLUS
+  return false
+  // #endif
+}
+
 export function syncStockSystemNotifications(items: Item[], messages: Message[]) {
   // #ifdef APP-PLUS
   return runNativeSafely(0, () => {
@@ -87,7 +100,11 @@ export function cancelLocalReminder(id?: string) {
 
 export function clearLocalReminders() {
   // #ifdef APP-PLUS
-  return runNativeSafely(false, nativeCancelAll)
+  return runNativeSafely(false, () => {
+    const cancelled = nativeCancelAll()
+    nativeDisableSync()
+    return cancelled
+  })
   // #endif
   // #ifndef APP-PLUS
   return false

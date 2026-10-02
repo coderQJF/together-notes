@@ -10,6 +10,7 @@ let baseUrl = process.env.PREVIEW_URL || ''
 const outputDir = resolve(process.env.CAPTURE_DIR || 'artifacts/mobile-audit')
 let session = process.env.QA_SESSION || ''
 let itemId = process.env.QA_ITEM_ID || ''
+let paperId = process.env.QA_PAPER_ID || ''
 const widths = (process.env.CAPTURE_WIDTHS || '320,375,390,430').split(',').map(Number).filter(Boolean)
 const remotePort = Number(process.env.CDP_PORT || 9231)
 const sportsCompetition = process.env.QA_SPORTS_COMPETITION || ''
@@ -166,6 +167,16 @@ if (!baseUrl) {
     pinned: true,
   }, session)
   itemId = note.id
+  const paper = await apiRequest('/api/items', 'POST', {
+    kind: 'note', title: '旅行灵感纸', content: '出发前清单\n带上相机', links: ['https://example.com/trip'], attachments: [attachments[0]], scope: 'mine', pinned: false, noteFormat: 'paper',
+    blocks: [
+      { id: 'qa-p1', type: 'paragraph', text: '出发前清单', style: { bold: true, align: 'left', list: 'none', color: '#b04432' } },
+      { id: 'qa-t1', type: 'todo', text: '带上相机', checked: false },
+      { id: 'qa-i1', type: 'image', attachmentId: attachments[0].id },
+      { id: 'qa-l1', type: 'link', text: '旅行资料', url: 'https://example.com/trip' },
+    ],
+  }, session)
+  paperId = paper.id
   await apiRequest('/api/items', 'POST', {
     kind: 'reminder',
     title: '别忘了给花浇水',
@@ -213,7 +224,10 @@ const screens = [
   { name: 'index-us-app-login', path: '/pages/us/us', ready: '在 Android App 登录', click: '设置', clicked: 'App 登录密码' },
   ...(itemId ? [{ name: 'detail-note', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '周末一起去看展' }] : []),
   ...(itemId ? [{ name: 'detail-note-gallery', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '附件', preClickSelector: '.thumbnail' }] : []),
+  ...(paperId ? [{ name: 'detail-note-paper', path: `/pages/detail/detail?id=${encodeURIComponent(paperId)}`, ready: '旅行灵感纸' }] : []),
   { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },
+  ...(paperId ? [{ name: 'editor-note-paper', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸内容' }] : []),
+  { name: 'editor-note-format', path: '/pages/editor/editor?kind=note', ready: '标题', click: '格式', clicked: '备忘录格式' },
   { name: 'editor-reminder', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间' },
   { name: 'sports-provider-error', path: '/pages/sports/sports', ready: '赛事数据获取失败' },
   { name: 'match-provider-error', path: '/pages/match-detail/match-detail?id=unavailable', ready: '无法显示这场比赛' },

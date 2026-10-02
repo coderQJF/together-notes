@@ -1,5 +1,5 @@
 {
-  "nativeMinVersion": "0.6.0",
-  "releaseNotes": "修复双人微信提醒：共同提醒会分别使用双方尚未消费的一次性授权，提醒由谁创建都能按各自授权接收。",
+  "nativeMinVersion": "0.7.0",
+  "releaseNotes": "新增 Android 双人提醒后台同步与灵感纸备忘录；修复小说目录分页居中、弹层滚动穿透和全屏图片顶部遮挡。共同提醒继续分别使用双方尚未消费的微信一次性授权。",
   "mandatory": false
 }

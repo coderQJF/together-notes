@@ -128,7 +128,7 @@ test('reader controls stay immersive and chapter read state is visible in the di
   assert.doesNotMatch(reader, /<StatusIcon/)
   assert.match(reader, /class="current-label">正在读/)
   assert.match(reader, /\.chapter-row\.read\{color:#625744\}/)
-  assert.match(reader, /\.directory-scroll\{height:auto;min-height:0;flex:1\}/)
+  assert.match(reader, /\.directory-scroll\{height:auto;min-height:0;flex:1[^}]*\}/)
   assert.match(reader, /@touchstart="onReadingTouchStart" @touchend="onReadingTouchEnd"/)
   assert.match(reader, /playPageTurnSound/)
   assert.match(progress, /readChapterIndexes/)
@@ -161,7 +161,8 @@ test('notes can select desktop content from the App and attachments use the shar
   assert.match(detail, /<ImageAttachmentGallery/)
   assert.match(header, /actionLabel/)
   assert.match(gallery, /grid-template-columns:repeat\(3/)
-  assert.match(gallery, /height:100vh/)
+  assert.match(gallery, /height:100%;min-height:0/)
+  assert.match(gallery, /statusBarHeight \+ 8/)
   assert.match(gallery, /mode="aspectFit"/)
   assert.match(widget, /together_widget_configure/)
   assert.match(widget, /selectAll/)
@@ -199,6 +200,37 @@ test('the reminder editor requests WeChat authorization from save without a sepa
   assert.match(editor, /“我们俩”会分别使用双方尚未消费的授权/)
   assert.match(editor, /无需另开设置按钮/)
   assert.match(editor, /wechatStatusRequest = request<\{ configured: boolean; templateId: string \| null \}>\('\/wechat\/subscription\/status'\)/)
+})
+
+test('paper notes expose the five requested tools and persist structured content', async () => {
+  const editor = await readFile('src/pages/editor/editor.vue', 'utf8')
+  const structured = await readFile('src/components/StructuredNoteEditor.vue', 'utf8')
+  const detail = await readFile('src/pages/detail/detail.vue', 'utf8')
+  const server = await readFile('server/index.mjs', 'utf8')
+  assert.match(editor, /action-label="headerActionLabel"/)
+  assert.match(editor, /灵感纸/)
+  for (const label of ['手写', '待办', '段落', '图片', '链接']) assert.match(structured, new RegExp(`label: '${label}'`))
+  assert.match(structured, /<HandwritingPad/)
+  assert.match(detail, /<StructuredNoteContent/)
+  assert.match(server, /sanitizeNoteBlocks/)
+})
+
+test('reader sheets lock the page and pagination labels are optically centered', async () => {
+  const reader = await readFile('src/pages/reader/reader.vue', 'utf8')
+  assert.match(reader, /<page-meta :page-style="panelPageStyle"/)
+  assert.match(reader, /@touchmove\.stop\.prevent/)
+  assert.match(reader, /\.directory-pagination button\{[^}]*display:flex[^}]*align-items:center[^}]*justify-content:center[^}]*padding:0/)
+})
+
+test('Android periodically syncs reminders targeted to either partner', async () => {
+  const home = await readFile('src/pages/index/index.vue', 'utf8')
+  const native = await readFile('src/uni_modules/together-local-reminder/utssdk/app-android/LocalReminderNative.kt', 'utf8')
+  const server = await readFile('server/index.mjs', 'utf8')
+  assert.match(home, /configureBackgroundReminderSync\(\)/)
+  assert.match(native, /SYNC_INTERVAL_MS = 15L \* 60L \* 1000L/)
+  assert.match(native, /class ReminderSyncReceiver/)
+  assert.match(server, /path==='\/reminders\/sync'/)
+  assert.match(server, /reminderUsers\(item,data\)\.some/)
 })
 
 test('the profile shows the build version and release scripts separate native from hot updates', async () => {
