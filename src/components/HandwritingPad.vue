@@ -1,7 +1,31 @@
 <script lang="ts">
-export default {
+import { defineComponent, nextTick } from 'vue'
+
+interface DrawingPoint { x: number; y: number }
+interface AppDrawingPayload { strokes: DrawingPoint[][]; width: number; height: number }
+
+export default defineComponent({
+  emits: ['close', 'save'],
+  data() {
+    return {
+      canvasId: 'note-handwriting-pad',
+      context: null as UniApp.CanvasContext | null,
+      drawing: false,
+      renderTimer: undefined as number | undefined,
+      canvasRect: { left: 0, top: 0, width: 600, height: 900 },
+      canvasSize: { width: 600, height: 900 },
+      strokes: [] as DrawingPoint[][],
+      appCommandToken: 0,
+      appDrawingCommand: { type: 'init', token: 0 },
+    }
+  },
+  mounted() {
+    // #ifndef APP-PLUS
+    nextTick(() => setTimeout(() => this.prepareCanvas(), 30))
+    // #endif
+  },
   methods: {
-    receiveAppDrawing(payload: { strokes: Array<Array<{ x: number; y: number }>>; width: number; height: number } | null) {
+    receiveAppDrawing(payload: AppDrawingPayload | null) {
       // #ifdef APP-PLUS
       if (!payload?.strokes?.length) {
         uni.showToast({ title: '请先写点内容', icon: 'none' })
@@ -42,162 +66,121 @@ export default {
       }, this as any))
       // #endif
     },
+    renderCanvas(done?: () => void) {
+      if (!this.context) return
+      this.context.clearRect(0, 0, this.canvasRect.width, this.canvasRect.height)
+      this.context.setFillStyle('#ffffff')
+      this.context.fillRect(0, 0, this.canvasRect.width, this.canvasRect.height)
+      this.context.setStrokeStyle('#28241e')
+      this.context.setLineWidth(2.4)
+      this.context.setLineCap('round')
+      this.context.setLineJoin('round')
+      for (const stroke of this.strokes) {
+        if (!stroke.length) continue
+        this.context.beginPath()
+        this.context.moveTo(stroke[0].x, stroke[0].y)
+        if (stroke.length === 1) this.context.lineTo(stroke[0].x + 0.01, stroke[0].y + 0.01)
+        else for (const point of stroke.slice(1)) this.context.lineTo(point.x, point.y)
+        this.context.stroke()
+      }
+      this.context.draw(false, done)
+    },
+    queueRender() {
+      if (this.renderTimer) return
+      this.renderTimer = setTimeout(() => {
+        this.renderTimer = undefined
+        this.renderCanvas()
+      }, 12)
+    },
+    resetCanvas() {
+      this.strokes = []
+      if (this.renderTimer !== undefined) clearTimeout(this.renderTimer)
+      this.renderTimer = undefined
+      this.renderCanvas()
+    },
+    point(event: any): DrawingPoint {
+      const touch = event.touches?.[0] || event.changedTouches?.[0]
+      if (touch?.clientX != null && touch?.clientY != null) {
+        return { x: Number(touch.clientX) - this.canvasRect.left, y: Number(touch.clientY) - this.canvasRect.top }
+      }
+      if (touch?.x != null && touch?.y != null) return { x: Number(touch.x), y: Number(touch.y) }
+      const x = touch?.pageX ?? event.offsetX ?? event.clientX ?? event.pageX ?? 0
+      const y = touch?.pageY ?? event.offsetY ?? event.clientY ?? event.pageY ?? 0
+      if (event.offsetX != null && event.offsetY != null && !touch) return { x: Number(x), y: Number(y) }
+      return { x: Number(x) - this.canvasRect.left, y: Number(y) - this.canvasRect.top }
+    },
+    start(event: any) {
+      this.drawing = true
+      this.strokes.push([this.point(event)])
+      this.queueRender()
+    },
+    move(event: any) {
+      if (!this.drawing) return
+      this.strokes[this.strokes.length - 1]?.push(this.point(event))
+      this.queueRender()
+    },
+    end(event?: any) {
+      if (this.drawing && event?.changedTouches?.length) this.strokes[this.strokes.length - 1]?.push(this.point(event))
+      this.drawing = false
+      this.queueRender()
+    },
+    issueAppCommand(type: 'clear' | 'save') {
+      this.appDrawingCommand = { type, token: ++this.appCommandToken }
+    },
+    clearCanvas() {
+      let handledInApp = false
+      // #ifdef APP-PLUS
+      this.issueAppCommand('clear')
+      handledInApp = true
+      // #endif
+      if (handledInApp) return
+      this.resetCanvas()
+    },
+    save() {
+      let handledInApp = false
+      // #ifdef APP-PLUS
+      this.issueAppCommand('save')
+      handledInApp = true
+      // #endif
+      if (handledInApp) return
+      if (!this.strokes.length) {
+        uni.showToast({ title: '请先写点内容', icon: 'none' })
+        return
+      }
+      if (this.renderTimer !== undefined) clearTimeout(this.renderTimer)
+      this.renderTimer = undefined
+      this.renderCanvas(() => uni.canvasToTempFilePath({
+        canvasId: this.canvasId,
+        fileType: 'png',
+        quality: 1,
+        success: result => this.$emit('save', result.tempFilePath),
+        fail: () => uni.showToast({ title: '手写内容导出失败', icon: 'none' }),
+      }, this as any))
+    },
+    prepareCanvas() {
+      this.context = uni.createCanvasContext(this.canvasId, this as any)
+      uni.createSelectorQuery().in(this as any).select('.pad-canvas').boundingClientRect(rect => {
+        const measured = rect as UniApp.NodeInfo
+        this.canvasRect = {
+          left: Number(measured?.left || 0),
+          top: Number(measured?.top || 0),
+          width: Math.max(1, Number(measured?.width || 600)),
+          height: Math.max(1, Number(measured?.height || 900)),
+        }
+        this.canvasSize = { width: Math.round(this.canvasRect.width), height: Math.round(this.canvasRect.height) }
+        nextTick(() => this.renderCanvas())
+      }).exec()
+    },
   },
-}
-</script>
-
-<script setup lang="ts">
-import { getCurrentInstance, nextTick, onMounted, ref } from 'vue'
-
-const emit = defineEmits<{ close: []; save: [path: string] }>()
-const canvasId = 'note-handwriting-pad'
-const instance = getCurrentInstance()
-let context: UniApp.CanvasContext | null = null
-let drawing = false
-let renderTimer: number | undefined
-let canvasRect = { left: 0, top: 0, width: 600, height: 900 }
-let strokes: Array<Array<{ x: number; y: number }>> = []
-let appCommandToken = 0
-const appDrawingCommand = ref({ type: 'init', token: appCommandToken })
-const canvasSize = ref({ width: 600, height: 900 })
-
-function renderCanvas(done?: () => void) {
-  if (!context) return
-  context.clearRect(0, 0, canvasRect.width, canvasRect.height)
-  context.setFillStyle('#ffffff')
-  context.fillRect(0, 0, canvasRect.width, canvasRect.height)
-  context.setStrokeStyle('#28241e')
-  context.setLineWidth(2.4)
-  context.setLineCap('round')
-  context.setLineJoin('round')
-  for (const stroke of strokes) {
-    if (!stroke.length) continue
-    context.beginPath()
-    context.moveTo(stroke[0].x, stroke[0].y)
-    if (stroke.length === 1) context.lineTo(stroke[0].x + 0.01, stroke[0].y + 0.01)
-    else for (const point of stroke.slice(1)) context.lineTo(point.x, point.y)
-    context.stroke()
-  }
-  context.draw(false, done)
-}
-
-function queueRender() {
-  if (renderTimer) return
-  renderTimer = setTimeout(() => {
-    renderTimer = undefined
-    renderCanvas()
-  }, 12)
-}
-
-function resetCanvas() {
-  strokes = []
-  if (renderTimer !== undefined) clearTimeout(renderTimer)
-  renderTimer = undefined
-  renderCanvas()
-}
-
-function point(event: any) {
-  const touch = event.touches?.[0] || event.changedTouches?.[0]
-  if (touch?.clientX != null && touch?.clientY != null) {
-    return { x: Number(touch.clientX) - canvasRect.left, y: Number(touch.clientY) - canvasRect.top }
-  }
-  if (touch?.x != null && touch?.y != null) return { x: Number(touch.x), y: Number(touch.y) }
-  const x = touch?.clientX ?? touch?.pageX ?? event.offsetX ?? event.clientX ?? event.pageX ?? 0
-  const y = touch?.clientY ?? touch?.pageY ?? event.offsetY ?? event.clientY ?? event.pageY ?? 0
-  if (event.offsetX != null && event.offsetY != null && !touch) return { x: Number(x), y: Number(y) }
-  return { x: Number(x) - canvasRect.left, y: Number(y) - canvasRect.top }
-}
-
-function start(event: any) {
-  drawing = true
-  strokes.push([point(event)])
-  queueRender()
-}
-
-function move(event: any) {
-  if (!drawing) return
-  strokes[strokes.length - 1]?.push(point(event))
-  queueRender()
-}
-
-function end(event?: any) {
-  if (drawing && event?.changedTouches?.length) strokes[strokes.length - 1]?.push(point(event))
-  drawing = false
-  queueRender()
-}
-
-function issueAppCommand(type: 'clear' | 'save') {
-  appDrawingCommand.value = { type, token: ++appCommandToken }
-}
-
-function clearCanvas() {
-  let handledInApp = false
-  // #ifdef APP-PLUS
-  issueAppCommand('clear')
-  handledInApp = true
-  // #endif
-  if (handledInApp) return
-  resetCanvas()
-}
-
-function save() {
-  let handledInApp = false
-  // #ifdef APP-PLUS
-  issueAppCommand('save')
-  handledInApp = true
-  // #endif
-  if (handledInApp) return
-  if (!strokes.length) {
-    uni.showToast({ title: '请先写点内容', icon: 'none' })
-    return
-  }
-  if (renderTimer !== undefined) clearTimeout(renderTimer)
-  renderTimer = undefined
-  renderCanvas(() => uni.canvasToTempFilePath({
-      canvasId,
-      fileType: 'png',
-      quality: 1,
-      success: result => emit('save', result.tempFilePath),
-      fail: () => uni.showToast({ title: '手写内容导出失败', icon: 'none' }),
-    }, instance?.proxy as any))
-}
-
-function prepareCanvas() {
-  context = uni.createCanvasContext(canvasId, instance?.proxy as any)
-  uni.createSelectorQuery().in(instance?.proxy as any).select('.pad-canvas').boundingClientRect(rect => {
-    const measured = rect as UniApp.NodeInfo
-    canvasRect = {
-      left: Number(measured?.left || 0),
-      top: Number(measured?.top || 0),
-      width: Math.max(1, Number(measured?.width || 600)),
-      height: Math.max(1, Number(measured?.height || 900)),
-    }
-    canvasSize.value = { width: Math.round(canvasRect.width), height: Math.round(canvasRect.height) }
-    nextTick(() => renderCanvas())
-  }).exec()
-}
-
-onMounted(() => {
-  // #ifndef APP-PLUS
-  nextTick(() => setTimeout(prepareCanvas, 30))
-  // #endif
 })
 </script>
 
 <template>
   <view class="pad-layer" @touchmove.stop>
     <view class="pad-panel" @touchmove.stop>
-      <view class="pad-header"><button @click="emit('close')">取消</button><text>手写</text><button class="save" @click="save">插入</button></view>
+      <view class="pad-header"><button @click="$emit('close')">取消</button><text>手写</text><button class="save" @click="save">插入</button></view>
       <!-- #ifdef APP-PLUS -->
-      <view
-        class="pad-canvas app-pad-canvas"
-        :drawing-command="appDrawingCommand"
-        :change:drawing-command="handwritingRenderer.onCommandChanged"
-        @touchstart="handwritingRenderer.onTouchStart"
-        @touchmove="handwritingRenderer.onTouchMove"
-        @touchend="handwritingRenderer.onTouchEnd"
-        @touchcancel="handwritingRenderer.onTouchEnd"
-      />
+      <view class="pad-canvas app-pad-canvas" :drawing-command="appDrawingCommand" :change:drawing-command="handwritingRenderer.onCommandChanged" />
       <canvas canvas-id="note-handwriting-app-export" id="note-handwriting-app-export" class="app-export-canvas" width="600" height="900" />
       <!-- #endif -->
       <!-- #ifndef APP-PLUS -->
@@ -225,10 +208,22 @@ export default {
       cssHeight: 0,
     }
   },
+  mounted() {
+    this.$nextTick(() => this.mountCanvas())
+  },
   methods: {
     resolveHost(candidate) {
       if (candidate && candidate.classList && candidate.classList.contains('app-pad-canvas')) return candidate
       return this.$el && this.$el.querySelector ? this.$el.querySelector('.app-pad-canvas') : null
+    },
+    mountCanvas() {
+      const host = this.resolveHost()
+      if (!host || !this.ensureCanvas(host) || host.__handwritingBound) return
+      host.__handwritingBound = true
+      host.addEventListener('touchstart', event => this.onTouchStart(event), { passive: false })
+      host.addEventListener('touchmove', event => this.onTouchMove(event), { passive: false })
+      host.addEventListener('touchend', event => this.onTouchEnd(event), { passive: false })
+      host.addEventListener('touchcancel', event => this.onTouchEnd(event), { passive: false })
     },
     ensureCanvas(candidate) {
       const host = this.resolveHost(candidate)
@@ -293,7 +288,7 @@ export default {
     },
     onTouchMove(event) {
       this.blockPageGesture(event)
-      if (!this.drawing || !this.context) return
+      if (!this.drawing || !this.context || !this.currentStroke) return
       const point = this.eventPoint(event)
       this.context.lineTo(point.x, point.y)
       this.context.stroke()
@@ -329,6 +324,7 @@ export default {
     },
     onCommandChanged(command) {
       if (!command || !this.ensureCanvas()) return
+      this.mountCanvas()
       if (command.type === 'clear') this.clearCanvas()
       if (command.type === 'save') {
         const payload = this.hasDrawing ? { strokes: this.strokes, width: this.cssWidth, height: this.cssHeight } : null

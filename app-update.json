@@ -1,5 +1,5 @@
 {
   "nativeMinVersion": "0.7.0",
-  "releaseNotes": "修复 Android App 灵感纸无法手写的问题；待办完成圆圈缩小并统一为黄色圆、深色勾和灰色删除线。",
+  "releaseNotes": "修复 Android App 灵感纸手写轨迹不显示的问题；灵感纸默认提供空白正文输入，并可自动识别买入、支出、收入和赢取金额，汇总支出、收入与净额。",
   "mandatory": false
 }

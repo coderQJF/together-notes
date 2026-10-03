@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Item, NoteBlock } from '../services/api'
+import { summarizeLedgerBlocks } from '../services/note-ledger'
 import { openExternalUrl } from '../utils/platform'
 import ImageAttachmentGallery from './ImageAttachmentGallery.vue'
+import LedgerSummary from './LedgerSummary.vue'
 import StatusIcon from './StatusIcon.vue'
 
 const props = withDefaults(defineProps<{ item: Omit<Item, 'scope'> & { scope?: Item['scope'] | 'link' }; interactive?: boolean }>(), { interactive: false })
 const emit = defineEmits<{ 'toggle-todo': [id: string] }>()
 const blocks = computed(() => props.item.blocks || [])
+const ledgerSummary = computed(() => summarizeLedgerBlocks(blocks.value))
 function attachment(block: NoteBlock) { return (props.item.attachments || []).find(item => item.id === block.attachmentId) }
 function paragraphStyle(block: NoteBlock) { return { fontWeight: block.style?.bold ? '700' : '400', fontStyle: block.style?.italic ? 'italic' : 'normal', textDecoration: block.style?.underline ? 'underline' : 'none', textAlign: block.style?.align || 'left', color: block.style?.color || '#3e382d' } }
 function paragraphPrefix(block: NoteBlock, index: number) { return block.style?.list === 'ordered' ? `${index + 1}. ` : block.style?.list === 'bullet' ? '• ' : '' }
@@ -15,6 +18,7 @@ function paragraphPrefix(block: NoteBlock, index: number) { return block.style?.
 
 <template>
   <view class="structured-note">
+    <LedgerSummary v-if="ledgerSummary" :summary="ledgerSummary" />
     <template v-if="blocks.length">
       <view v-for="(block, index) in blocks" :key="block.id" class="content-block" :class="`content-${block.type}`">
         <text v-if="block.type === 'paragraph'" class="paragraph" :style="paragraphStyle(block)">{{ paragraphPrefix(block,index) }}{{ block.text }}</text>

@@ -168,9 +168,9 @@ if (!baseUrl) {
   }, session)
   itemId = note.id
   const paper = await apiRequest('/api/items', 'POST', {
-    kind: 'note', title: '旅行灵感纸', content: '出发前清单\n带上相机', links: ['https://example.com/trip'], attachments: [attachments[0]], scope: 'mine', pinned: false, noteFormat: 'paper',
+    kind: 'note', title: '旅行灵感纸', content: '出发前清单\n买120+80 赢50\n带上相机', links: ['https://example.com/trip'], attachments: [attachments[0]], scope: 'mine', pinned: false, noteFormat: 'paper',
     blocks: [
-      { id: 'qa-p1', type: 'paragraph', text: '出发前清单', style: { bold: true, align: 'left', list: 'none', color: '#b04432' } },
+      { id: 'qa-p1', type: 'paragraph', text: '出发前清单\n买120+80 赢50', style: { bold: true, align: 'left', list: 'none', color: '#b04432' } },
       { id: 'qa-t1', type: 'todo', text: '带上相机', checked: false },
       { id: 'qa-i1', type: 'image', attachmentId: attachments[0].id },
       { id: 'qa-l1', type: 'link', text: '旅行资料', url: 'https://example.com/trip' },

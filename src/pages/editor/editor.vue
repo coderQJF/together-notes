@@ -63,7 +63,7 @@ function selectNoteFormat(format: 'classic' | 'paper') {
   if (draft.value.noteFormat === format) return
   if (format === 'paper') {
     const blocks = [...(draft.value.blocks || [])]
-    if (!blocks.length && draft.value.content.trim()) blocks.push({ id: noteBlockId(), type: 'paragraph', text: draft.value.content, style: { align: 'left', list: 'none', color: '#3e382d' } })
+    if (!blocks.some(block => block.type === 'paragraph')) blocks.unshift({ id: noteBlockId(), type: 'paragraph', text: draft.value.content, style: { align: 'left', list: 'none', color: '#3e382d' } })
     for (const attachment of draft.value.attachments || []) if (!blocks.some(block => block.attachmentId === attachment.id)) blocks.push({ id: noteBlockId(), type: 'image', attachmentId: attachment.id })
     for (const link of draft.value.links || []) if (!blocks.some(block => block.type === 'link' && block.url === link)) blocks.push({ id: noteBlockId(), type: 'link', text: '', url: link })
     draft.value.blocks = blocks
