@@ -16,7 +16,7 @@ withDefaults(defineProps<{ checked?: boolean; label?: string; size?: 'default' |
 .status-icon{position:relative;width:20px;height:20px;flex:0 0 20px;border:1.8px solid #a4873e;border-radius:50%;box-sizing:border-box}
 .status-icon.checked{background:#f7e7ad}
 .check-mark{position:absolute;left:50%;top:48%;width:5px;height:9px;border-right:1.8px solid #494032;border-bottom:1.8px solid #494032;transform:translate(-50%,-50%) rotate(45deg);transform-origin:center}
-.status-icon.large{width:28px;height:28px;flex-basis:28px;border-width:2px;border-color:#9c9487}
+.status-icon.large{width:26px;height:26px;flex-basis:26px;border-width:2px;border-color:#9c9487}
 .status-icon.large.checked{border-color:#b8953d;background:#f7e7ad}
-.status-icon.large .check-mark{width:7px;height:12px;border-right-width:2px;border-bottom-width:2px}
+.status-icon.large .check-mark{width:6px;height:10px;border-right-width:2px;border-bottom-width:2px}
 </style>

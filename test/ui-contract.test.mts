@@ -217,6 +217,7 @@ test('paper notes expose the five requested tools and persist structured content
 
 test('paper note handwriting and todo rows remain directly interactive on mobile', async () => {
   const handwriting = await readFile('src/components/HandwritingPad.vue', 'utf8')
+  const statusIcon = await readFile('src/components/StatusIcon.vue', 'utf8')
   const editor = await readFile('src/components/StructuredNoteEditor.vue', 'utf8')
   const content = await readFile('src/components/StructuredNoteContent.vue', 'utf8')
   const detail = await readFile('src/pages/detail/detail.vue', 'utf8')
@@ -224,7 +225,14 @@ test('paper note handwriting and todo rows remain directly interactive on mobile
   assert.match(handwriting, /boundingClientRect/)
   assert.match(handwriting, /strokes\.push/)
   assert.match(handwriting, /@touchstart\.stop\.prevent="start"/)
+  assert.match(handwriting, /lang="renderjs"/)
+  assert.match(handwriting, /class="pad-canvas app-pad-canvas"/)
+  assert.match(handwriting, /this\.canvas\.getContext\('2d'\)/)
+  assert.match(handwriting, /callMethod\('receiveAppDrawing', payload\)/)
+  assert.match(handwriting, /canvas-id="note-handwriting-app-export"/)
   assert.doesNotMatch(handwriting, /class="pad-layer" @touchmove\.stop\.prevent/)
+  assert.match(statusIcon, /\.status-icon\.large\{width:26px;height:26px;flex-basis:26px/)
+  assert.match(statusIcon, /\.status-icon\.large\.checked\{border-color:#b8953d;background:#f7e7ad\}/)
   assert.match(editor, /<StatusIcon :checked="Boolean\(block\.checked\)" size="large"/)
   assert.match(editor, /class="todo-row"[^>]*@click="toggleTodo\(block\.id\)"/)
   assert.doesNotMatch(editor, /<StatusIcon :done=/)

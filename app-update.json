@@ -1,5 +1,5 @@
 {
   "nativeMinVersion": "0.7.0",
-  "releaseNotes": "修复灵感纸手写无法落笔的问题；待办改为大圆圈清单样式，并支持在编辑页和详情页直接勾选、实时保存。",
+  "releaseNotes": "修复 Android App 灵感纸无法手写的问题；待办完成圆圈缩小并统一为黄色圆、深色勾和灰色删除线。",
   "mandatory": false
 }
