@@ -36,6 +36,16 @@
       "path": "pages/reader/reader",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "小说阅读", "disableScroll": false }
     },
+    // #ifdef APP-PLUS
+    {
+      "path": "pages/games/games",
+      "style": { "navigationStyle": "custom", "navigationBarTitleText": "游戏" }
+    },
+    {
+      "path": "pages/game-player/game-player",
+      "style": { "navigationBarTitleText": "游戏", "backgroundColor": "#111111" }
+    },
+    // #endif
     {
       "path": "pages/pair/pair",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "我们俩" }

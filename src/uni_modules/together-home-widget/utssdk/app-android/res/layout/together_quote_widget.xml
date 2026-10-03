@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@android:id/background"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/together_widget_background"
+  android:clipToOutline="true"
+  android:orientation="vertical"
+  android:outlineProvider="background"
+  android:padding="18dp">
+
+  <TextView
+    android:id="@+id/together_quote_title"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fontFamily="sans-serif-medium"
+    android:includeFontPadding="false"
+    android:maxLines="1"
+    android:text="@string/together_quote_title"
+    android:textColor="#3E382D"
+    android:textSize="20sp"
+    android:textStyle="bold" />
+
+  <TextView
+    android:id="@+id/together_quote_body"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_marginTop="7dp"
+    android:layout_weight="1"
+    android:ellipsize="end"
+    android:fontFamily="sans"
+    android:includeFontPadding="false"
+    android:lineSpacingExtra="3dp"
+    android:maxLines="5"
+    android:text="@string/together_quote_preview_body"
+    android:textColor="#4F4638"
+    android:textSize="16sp" />
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="7dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <TextView
+      android:id="@+id/together_quote_author"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:fontFamily="sans"
+      android:includeFontPadding="false"
+      android:maxLines="1"
+      android:text="@string/together_quote_preview_author"
+      android:textColor="#786D5B"
+      android:textSize="13sp" />
+
+    <ImageView
+      android:id="@+id/together_quote_configure"
+      android:layout_width="44dp"
+      android:layout_height="44dp"
+      android:layout_marginEnd="-11dp"
+      android:contentDescription="@string/together_widget_configure"
+      android:padding="11dp"
+      android:src="@drawable/together_widget_settings" />
+  </LinearLayout>
+</LinearLayout>

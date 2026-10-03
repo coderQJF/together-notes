@@ -1,5 +1,5 @@
 {
-  "nativeMinVersion": "0.7.0",
-  "releaseNotes": "修复 Android App 灵感纸手写轨迹不显示的问题；灵感纸默认提供空白正文输入，并可自动识别买入、支出、收入和赢取金额，汇总支出、收入与净额。",
+  "nativeMinVersion": "0.8.0",
+  "releaseNotes": "修复 Android App 灵感纸手写轨迹不显示的问题；新增“句读”桌面卡片，每半小时自动更换经典名言；新增 App 专属游戏模块，提供口袋妖怪漆黑的魅影 4.5 和数独入口。",
   "mandatory": false
 }

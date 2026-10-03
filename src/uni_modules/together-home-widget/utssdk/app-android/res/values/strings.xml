@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="together_widget_name">小记桌面卡片</string>
-  <string name="together_widget_description">把一条小记放到桌面，点击即可打开详情</string>
+  <string name="together_widget_description">在桌面展示小记，或每半小时读一句经典</string>
   <string name="together_widget_choose_note">选择卡片内容</string>
   <string name="together_widget_preview_title">世界杯</string>
   <string name="together_widget_preview_body">6-12：买42 赢0\n6-13：买120 赢264\n6-14：买160 赢0</string>
   <string name="together_widget_preview_date">9月12日</string>
   <string name="together_widget_pinned">置顶小记</string>
   <string name="together_widget_image">小记图片</string>
-  <string name="together_widget_configure">切换桌面小记</string>
+  <string name="together_widget_configure">切换桌面卡片</string>
+  <string name="together_quote_title">句读</string>
+  <string name="together_quote_preview_body">“知之者不如好之者，好之者不如乐之者。”</string>
+  <string name="together_quote_preview_author">— 孔子</string>
 </resources>

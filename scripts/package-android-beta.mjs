@@ -111,6 +111,7 @@ async function verifyNativeCapabilities(decodedDirectory) {
   await access(resolve(decodedDirectory, 'res/xml/together_note_widget_info.xml'))
   await access(resolve(decodedDirectory, 'res/layout/together_note_widget.xml'))
   await access(resolve(decodedDirectory, 'res/layout/together_note_widget_text.xml'))
+  await access(resolve(decodedDirectory, 'res/layout/together_quote_widget.xml'))
   const resourceRoot = resolve(decodedDirectory, 'res')
   const drawableDirectories = (await readdir(resourceRoot, { withFileTypes: true }))
     .filter(entry => entry.isDirectory() && entry.name.startsWith('drawable'))
@@ -125,6 +126,7 @@ async function verifyNativeCapabilities(decodedDirectory) {
     .filter(entry => entry.isDirectory() && entry.name.startsWith('xml'))
     .map(entry => resolve(resourceRoot, entry.name))
   let reconfigurable = false
+  let thirtyMinuteQuoteRefresh = false
   for (const directory of xmlDirectories) {
     try {
       const widgetInfo = await readFile(resolve(directory, 'together_note_widget_info.xml'), 'utf8')
@@ -134,12 +136,15 @@ async function verifyNativeCapabilities(decodedDirectory) {
       if (/(?:^|\W)reconfigurable(?:$|\W)/.test(featureValue)
         || (Number.isFinite(numericFeatures) && (numericFeatures & 1) === 1)) {
         reconfigurable = true
-        break
       }
+      const refreshValue = widgetInfo.match(/updatePeriodMillis="([^"]+)"/)?.[1] || ''
+      const numericRefresh = refreshValue.match(/0x[0-9a-f]+|\d+/i)?.[0] || ''
+      if (numericRefresh && Number(numericRefresh) === 1_800_000) thirtyMinuteQuoteRefresh = true
     } catch {}
   }
   if (!reconfigurable) throw new Error('APK 缺少 Android 12+ 桌面小工具重新配置声明')
-  console.log('已验证 APK 包含 Android 桌面小工具与进程退出后本地提醒能力。')
+  if (!thirtyMinuteQuoteRefresh) throw new Error('APK 桌面小工具缺少 30 分钟句读刷新配置')
+  console.log('已验证 APK 包含小记/句读桌面小工具与进程退出后本地提醒能力。')
 }
 
 async function latestRawApk() {

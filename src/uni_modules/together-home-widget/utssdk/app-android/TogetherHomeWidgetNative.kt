@@ -36,6 +36,7 @@ private const val PREFS_NAME = "together_home_widget"
 private const val NOTES_KEY = "notes_json"
 private const val SELECTION_PREFIX = "selection:"
 private const val DEFAULT_SELECTION_KEY = "selection:default"
+private const val QUOTE_SELECTION_ID = "__together_quote__"
 private const val EXTRA_ROUTE = "home_widget_route"
 private const val MAX_NOTES = 60
 private const val MAX_IMAGES_PER_NOTE = 10
@@ -138,6 +139,17 @@ internal object TogetherHomeWidgetStore {
             .apply()
     }
 
+    fun selectQuote(context: Context, appWidgetId: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(SELECTION_PREFIX + appWidgetId, QUOTE_SELECTION_ID)
+            .apply()
+    }
+
+    fun isQuoteSelected(context: Context, appWidgetId: Int): Boolean {
+        return selectionId(context, appWidgetId) == QUOTE_SELECTION_ID
+    }
+
     fun selectAll(context: Context, noteId: String): Boolean {
         if (notes(context).none { it.id == noteId }) return false
         val manager = AppWidgetManager.getInstance(context)
@@ -145,7 +157,9 @@ internal object TogetherHomeWidgetStore {
         val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(DEFAULT_SELECTION_KEY, noteId)
-        manager.getAppWidgetIds(provider).forEach { editor.putString(SELECTION_PREFIX + it, noteId) }
+        manager.getAppWidgetIds(provider).forEach {
+            if (!isQuoteSelected(context, it)) editor.putString(SELECTION_PREFIX + it, noteId)
+        }
         editor.apply()
         TogetherHomeWidgetRenderer.updateAll(context)
         return true
@@ -153,14 +167,20 @@ internal object TogetherHomeWidgetStore {
 
     fun selected(context: Context, appWidgetId: Int): TogetherWidgetNote? {
         val notes = notes(context)
-        val selectedId = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(SELECTION_PREFIX + appWidgetId, "")
+        val selectedId = selectionId(context, appWidgetId)
+        if (selectedId == QUOTE_SELECTION_ID) return null
         val defaultId = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(DEFAULT_SELECTION_KEY, "")
         return notes.firstOrNull { it.id == selectedId }
             ?: notes.firstOrNull { it.id == defaultId }
             ?: notes.firstOrNull { it.pinned }
             ?: notes.firstOrNull()
+    }
+
+    private fun selectionId(context: Context, appWidgetId: Int): String {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(SELECTION_PREFIX + appWidgetId, "")
+            .orEmpty()
     }
 
     fun removeSelections(context: Context, appWidgetIds: IntArray) {
@@ -216,6 +236,10 @@ internal object TogetherHomeWidgetRenderer {
     }
 
     fun update(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
+        if (TogetherHomeWidgetStore.isQuoteSelected(context, appWidgetId)) {
+            TogetherQuoteWidgetRenderer.update(context, manager, appWidgetId)
+            return
+        }
         val note = TogetherHomeWidgetStore.selected(context, appWidgetId)
         val hasImages = note?.images?.isNotEmpty() == true
         val layoutId = if (hasImages) R.layout.together_note_widget else R.layout.together_note_widget_text
@@ -382,6 +406,11 @@ private class TogetherWidgetImageFactory(
 }
 
 class TogetherNoteWidgetProvider : AppWidgetProvider() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (TogetherQuoteWidgetRenderer.handleRefresh(context, intent)) return
+        super.onReceive(context, intent)
+    }
+
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         appWidgetIds.forEach { TogetherHomeWidgetRenderer.update(context, manager, it) }
     }
@@ -429,7 +458,7 @@ class TogetherNoteWidgetConfigureActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
         })
         root.addView(TextView(this).apply {
-            text = "卡片内容只缓存在这台设备。以后长按桌面卡片，可再次进入这里更换。"
+            text = "卡片设置只保存在这台设备。以后长按桌面卡片，可再次进入这里更换。"
             setTextColor(Color.parseColor("#786D5B"))
             textSize = 14f
             setLineSpacing(0f, 1.45f)
@@ -439,16 +468,56 @@ class TogetherNoteWidgetConfigureActivity : Activity() {
         })
 
         val notes = TogetherHomeWidgetStore.notes(this)
-        if (notes.isEmpty()) {
-            root.addView(emptyState(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-            return root
-        }
         val scroll = ScrollView(this)
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        list.addView(quoteCard())
         notes.forEach { note -> list.addView(noteCard(note)) }
+        if (notes.isEmpty()) list.addView(emptyState())
         scroll.addView(list, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
+    }
+
+    private fun quoteCard(): View {
+        val preview = TogetherQuoteRotation.current(appWidgetId)
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            minimumHeight = dp(92)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = roundedBackground("#FFF8E1", "#D8BD68", 18f)
+            isClickable = true
+            isFocusable = true
+            contentDescription = "选择句读桌面卡片，每半小时更换一句"
+            setOnClickListener {
+                TogetherHomeWidgetStore.selectQuote(this@TogetherNoteWidgetConfigureActivity, appWidgetId)
+                TogetherQuoteWidgetRenderer.update(
+                    this@TogetherNoteWidgetConfigureActivity,
+                    AppWidgetManager.getInstance(this@TogetherNoteWidgetConfigureActivity),
+                    appWidgetId,
+                )
+                finishWithWidget()
+            }
+            addView(TextView(this@TogetherNoteWidgetConfigureActivity).apply {
+                text = "句读 · 每半小时更新"
+                setTextColor(Color.parseColor("#3E382D"))
+                textSize = 17f
+                typeface = Typeface.DEFAULT_BOLD
+                maxLines = 1
+            })
+            addView(TextView(this@TogetherNoteWidgetConfigureActivity).apply {
+                text = "“${preview.text}”  — ${preview.author}"
+                setTextColor(Color.parseColor("#786D5B"))
+                textSize = 13f
+                maxLines = 2
+                setLineSpacing(0f, 1.35f)
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(5)
+            })
+        }.also {
+            it.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = dp(10)
+            }
+        }
     }
 
     private fun noteCard(note: TogetherWidgetNote): View {
@@ -497,6 +566,7 @@ class TogetherNoteWidgetConfigureActivity : Activity() {
 
     private fun emptyState(): View {
         return LinearLayout(this).apply {
+            minimumHeight = dp(260)
             gravity = Gravity.CENTER
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@TogetherNoteWidgetConfigureActivity).apply {

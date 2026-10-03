@@ -4,6 +4,9 @@ import {onLoad,onShow,onHide} from '@dcloudio/uni-app';
 import JellyTabs from '../../components/JellyTabs.vue';
 import LegalLinks from '../../components/LegalLinks.vue';
 import StatusIcon from '../../components/StatusIcon.vue';
+// #ifdef APP-PLUS
+import GameMark from '../../features/games/components/GameMark.vue';
+// #endif
 import {request,login,loginWithApp,registerWithApp,readHomeSnapshot,saveHomeSnapshot,clearHomeSnapshot,type User,type Item,type Message} from '../../services/api';
 import {formatDateTime,formatDayHeading} from '../../utils/date';
 import {errorMessage} from '../../utils/errors';
@@ -76,6 +79,9 @@ function selectReminderCategory(value:string){if(value==='待办'){category.valu
 async function toggle(i:Item){await act('toggle:'+i.id,async()=>{await request('/items/'+i.id,'PUT',{...i,done:!i.done});await refresh()})}
 function openUs(){uni.navigateTo({url:'/pages/us/us'})}
 function openLibrary(){uni.navigateTo({url:'/pages/library/library'})}
+// #ifdef APP-PLUS
+function openGames(){uni.navigateTo({url:'/pages/games/games'})}
+// #endif
 function format(v?:string){return formatDateTime(v)}
 function inbox(){uni.navigateTo({url:'/pages/inbox/inbox'})}
 function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refresh().catch(()=>{})},30000)}
@@ -85,7 +91,7 @@ function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refre
 </script>
 <template>
 <view class="shell" :class="{ 'feed-shell': Boolean(user) && ['notes','reminders'].includes(page) }">
- <view class="header"><view class="brand-lockup"><button v-if="user" class="profile-trigger" hover-class="profile-pressed" :aria-label="user.partner?`进入我们的小空间，已与${user.partner.nickname}绑定`:'进入我们的小空间'" @click="openUs"><text class="profile-face">{{user.nickname.slice(0,1)}}</text></button><view class="wordmark"><text class="brand">小记</text><text class="brand-sub">TOGETHER</text></view></view><!-- #ifndef MP-WEIXIN --><button v-if="user?.vip" class="library-trigger" hover-class="library-pressed" aria-label="打开本地书架" @click="openLibrary"><image src="/static/nav-icons/book-active.png" mode="aspectFit"/><text>阅读</text></button><!-- #endif --></view>
+ <view class="header"><view class="brand-lockup"><button v-if="user" class="profile-trigger" hover-class="profile-pressed" :aria-label="user.partner?`进入我们的小空间，已与${user.partner.nickname}绑定`:'进入我们的小空间'" @click="openUs"><text class="profile-face">{{user.nickname.slice(0,1)}}</text></button><view class="wordmark"><text class="brand">小记</text><text class="brand-sub">TOGETHER</text></view></view><!-- #ifndef MP-WEIXIN --><view v-if="user" class="header-tools"><button v-if="user.vip" class="library-trigger" hover-class="header-tool-pressed" aria-label="打开本地书架" @click="openLibrary"><image src="/static/nav-icons/book-active.png" mode="aspectFit"/><text>阅读</text></button><!-- #ifdef APP-PLUS --><button class="game-trigger" hover-class="header-tool-pressed" aria-label="打开游戏" @click="openGames"><GameMark compact/><text>游戏</text></button><!-- #endif --></view><!-- #endif --></view>
  <view v-if="!ready" class="empty">正在打开小记…</view>
   <view v-else-if="!user" class="login">
    <view class="login-card">
@@ -183,7 +189,8 @@ function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value)refre
 @media(max-width:375px){.shell{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}.floating{width:calc(100% - 40px - env(safe-area-inset-left) - env(safe-area-inset-right))}.scope-scroll{width:calc(100% + 40px);margin-left:-20px;margin-right:-20px}.scope-row{padding:0 20px}}
 @media(max-width:340px){.brand-lockup{gap:4px}.brand-sub{margin-left:5px;font-size:9px;letter-spacing:1.3px}.dock button{gap:3px;padding:0 2px}.nav-label{font-size:12px}.citation-card{padding-left:11px;padding-right:11px}}
 @media(max-height:640px){.shell:not(.feed-shell) .floating{position:relative;left:auto;bottom:auto;width:100%;margin-top:20px;transform:none}.shell:not(.feed-shell) .floating::before{display:none}}
-.header{justify-content:space-between}.library-trigger{display:flex;align-items:center;justify-content:center;gap:6px;width:auto;height:44px;min-height:44px;flex:0 0 auto;margin:0;padding:0 10px;border:1px solid #e7dfcf;border-radius:14px;background:#fff;color:#625744;font-size:12px;line-height:1}.library-trigger::after{border:0}.library-trigger image{display:block;width:18px;height:18px}.library-pressed{transform:scale(.97);opacity:.86}
+.header{justify-content:space-between}.header-tools{display:flex;align-items:center;justify-content:flex-end;gap:6px;min-width:0}.library-trigger,.game-trigger{display:flex;align-items:center;justify-content:center;gap:5px;width:auto;height:44px;min-height:44px;flex:0 0 auto;margin:0;padding:0 8px;border:1px solid #e7dfcf;border-radius:14px;background:#fff;color:#625744;font-size:12px;line-height:1}.library-trigger::after,.game-trigger::after{border:0}.library-trigger image{display:block;width:18px;height:18px}.header-tool-pressed{transform:scale(.97);opacity:.86}
+@media(max-width:340px){.header .brand-sub{display:none}.header-tools{gap:3px}.library-trigger,.game-trigger{gap:3px;padding:0 6px}}
 /* #ifdef APP-PLUS */
 .shell{padding-top:calc(12px + var(--status-bar-height))}
 /* #endif */
