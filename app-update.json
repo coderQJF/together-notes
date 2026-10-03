@@ -1,5 +1,5 @@
 {
   "nativeMinVersion": "0.8.0",
-  "releaseNotes": "修复 Android App 灵感纸手写轨迹不显示的问题；新增“句读”桌面卡片，每半小时自动更换经典名言；新增 App 专属游戏模块，提供口袋妖怪漆黑的魅影 4.5 和数独入口。",
+  "releaseNotes": "修复 Android 灵感纸手写轨迹不可见、画布比例与顶部安全区问题，并优化长图全屏预览；GBA 模拟器和触控界面改为随 App 本地运行，合法 ROM 首次导入后可离线直开。",
   "mandatory": false
 }

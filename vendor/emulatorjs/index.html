@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; connect-src 'self' blob: data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob: data:; font-src 'self' data:; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>本机 GBA</title>
+    <style>
+      html,body,#game{width:100%;height:100%;margin:0;overflow:hidden;background:#080808}
+      body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#fff}
+      #boot-state{position:fixed;inset:0;z-index:5;display:flex;box-sizing:border-box;align-items:center;justify-content:center;padding:24px;background:#080808;color:rgba(255,255,255,.72);font-size:15px;text-align:center}
+      #boot-state[hidden]{display:none}
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <div id="boot-state" role="status">正在读取本机游戏…</div>
+    <script>
+      (function () {
+        var state = document.getElementById('boot-state')
+        var loadRequested = false
+        var runtimeTerminal = false
+        var runtimeBridgeToken = ''
+        var runtimeBridgeOwnerId = ''
+        var pendingBridgePayload = null
+        var bridgeRetryTimer = 0
+        var bootTimer = 0
+        var gameObjectUrl = ''
+
+        function safeMessage(message) {
+          return String(message || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 180)
+        }
+
+        function bridgeTarget() {
+          try {
+            if (!window.plus || !plus.webview) return null
+            if (runtimeBridgeOwnerId) {
+              var owner = plus.webview.getWebviewById(runtimeBridgeOwnerId)
+              if (owner) return owner
+            }
+            return plus.webview.currentWebview().opener()
+          } catch (error) {
+            return null
+          }
+        }
+
+        function dispatchBridgePayload(attempt) {
+          if (!pendingBridgePayload) return
+          var target = bridgeTarget()
+          if (target) {
+            try {
+              var serialized = JSON.stringify(pendingBridgePayload)
+                .replace(/\u2028/g, '\\u2028')
+                .replace(/\u2029/g, '\\u2029')
+              target.evalJS('window.__togetherNotesGameRuntimeBridge && window.__togetherNotesGameRuntimeBridge(' + serialized + ')')
+            } catch (error) {}
+          }
+          clearTimeout(bridgeRetryTimer)
+          bridgeRetryTimer = setTimeout(function () { dispatchBridgePayload(attempt + 1) }, 100)
+        }
+
+        function emitRuntimeEvent(type, message) {
+          if (runtimeTerminal) return
+          runtimeTerminal = true
+          clearTimeout(bootTimer)
+          pendingBridgePayload = {
+            token: runtimeBridgeToken,
+            type: type,
+            message: safeMessage(message)
+          }
+          dispatchBridgePayload(0)
+        }
+
+        window.__setTogetherNotesGameBridgeOwner = function (ownerId) {
+          runtimeBridgeOwnerId = String(ownerId || '')
+          if (pendingBridgePayload) dispatchBridgePayload(0)
+        }
+
+        window.__ackTogetherNotesGameRuntimeBridge = function (token) {
+          if (!pendingBridgePayload || String(token || '') !== pendingBridgePayload.token) return
+          pendingBridgePayload = null
+          clearTimeout(bridgeRetryTimer)
+        }
+
+        function fail(message) {
+          if (runtimeTerminal) return
+          var copy = safeMessage(message) || '本机模拟器启动失败，请返回后重新导入游戏文件'
+          state.hidden = false
+          state.textContent = copy
+          emitRuntimeEvent('boot-error', copy)
+        }
+
+        function requestIsLocal(input) {
+          var raw = typeof input === 'string' ? input : (input && input.url) || ''
+          try {
+            var url = new URL(raw, window.location.href)
+            if (url.protocol === 'blob:' || url.protocol === 'data:') return true
+            if (url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'ws:' || url.protocol === 'wss:') return false
+            return url.protocol === window.location.protocol && url.host === window.location.host
+          } catch (error) {
+            return false
+          }
+        }
+
+        function disableExternalNetwork() {
+          var nativeFetch = window.fetch && window.fetch.bind(window)
+          if (nativeFetch) {
+            window.fetch = function (input, options) {
+              if (!requestIsLocal(input)) return Promise.reject(new Error('External network is disabled for the local GBA runtime'))
+              return nativeFetch(input, options)
+            }
+          }
+
+          var blockedRequests = new WeakSet()
+          var nativeOpen = XMLHttpRequest.prototype.open
+          var nativeSend = XMLHttpRequest.prototype.send
+          XMLHttpRequest.prototype.open = function (method, url) {
+            var args = Array.prototype.slice.call(arguments)
+            if (!requestIsLocal(url)) {
+              blockedRequests.add(this)
+              args[1] = 'data:,'
+            }
+            return nativeOpen.apply(this, args)
+          }
+          XMLHttpRequest.prototype.send = function () {
+            if (blockedRequests.has(this)) {
+              var request = this
+              setTimeout(function () {
+                if (typeof request.onerror === 'function') request.onerror(new Event('error'))
+              }, 0)
+              return
+            }
+            return nativeSend.apply(this, arguments)
+          }
+        }
+
+        function stableNumericId(value) {
+          var hash = 2166136261
+          var text = String(value || '')
+          for (var index = 0; index < text.length; index += 1) {
+            hash ^= text.charCodeAt(index)
+            hash = Math.imul(hash, 16777619)
+          }
+          return hash >>> 0
+        }
+
+        function loadEmulator(blob, fileName, gameName, gameIdentity) {
+          if (loadRequested) return
+          loadRequested = true
+          window.EJS_player = '#game'
+          window.EJS_core = 'gba'
+          window.EJS_gameUrl = URL.createObjectURL(blob)
+          gameObjectUrl = window.EJS_gameUrl
+          window.EJS_gameName = gameName || fileName || '本机 GBA'
+          window.EJS_gameID = stableNumericId(gameIdentity || ((fileName || 'gba') + '-' + (blob.size || 0)))
+          window.EJS_pathtodata = './data/'
+          window.EJS_paths = {
+            'emulator.min.js': './data/emulator.min.js',
+            'emulator.min.css': './data/emulator.min.css',
+            'zh-CN': './data/localization/zh-CN.json',
+            'mgba-wasm.data': './data/cores/mgba-wasm.data',
+            'mgba-legacy-wasm.data': './data/cores/mgba-legacy-wasm.data'
+          }
+          window.EJS_DEBUG_XX = false
+          window.EJS_EXPERIMENTAL_NETPLAY = false
+          window.EJS_netplayServer = ''
+          window.EJS_language = 'zh-CN'
+          window.EJS_disableAutoLang = true
+          window.EJS_startOnLoaded = true
+          window.EJS_fullscreenOnLoaded = false
+          window.EJS_threads = false
+          window.EJS_color = '#f7e7ad'
+          window.EJS_volume = 0.65
+          window.EJS_CacheLimit = 64 * 1024 * 1024
+          window.EJS_ready = function () {
+            var emulator = window.EJS_emulator
+            if (!emulator || emulator.__togetherNotesErrorBridge) return
+            emulator.__togetherNotesErrorBridge = true
+            var originalStartGameError = emulator.startGameError
+            emulator.startGameError = function (message) {
+              fail(message)
+              return originalStartGameError.apply(emulator, arguments)
+            }
+          }
+          window.EJS_onGameStart = function () {
+            state.hidden = true
+            emitRuntimeEvent('game-start', '')
+          }
+
+          var loader = document.createElement('script')
+          loader.src = './data/loader.js'
+          loader.onerror = function () { fail('本机模拟器资源不完整，请更新 App 后重试') }
+          document.body.appendChild(loader)
+
+          bootTimer = setTimeout(function () {
+            fail('本机模拟器启动超时，请返回后重新加载')
+          }, 55000)
+        }
+
+        function plusFileToBlob(file, localUrl) {
+          if (file instanceof Blob) return Promise.resolve(file)
+          return fetch(localUrl).then(function (response) {
+            return response.blob()
+          }).then(function (blob) {
+            if (!blob.size) throw new Error('empty local file response')
+            return blob
+          }).catch(function () {
+            return new Promise(function (resolve, reject) {
+              var reader = new plus.io.FileReader()
+              reader.onerror = function () { reject(new Error('无法读取本机 GBA 文件')) }
+              reader.onloadend = function (event) {
+                try {
+                  var dataUrl = String(event.target.result || '')
+                  var encoded = dataUrl.slice(dataUrl.indexOf(',') + 1)
+                  var binary = atob(encoded)
+                  var bytes = new Uint8Array(binary.length)
+                  for (var index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+                  resolve(new Blob([bytes], { type: 'application/octet-stream' }))
+                } catch (error) { reject(error) }
+              }
+              reader.readAsDataURL(file)
+            })
+          })
+        }
+
+        function boot() {
+          try {
+            if (!window.plus || !plus.webview || !plus.io) {
+              fail('当前环境无法访问本机游戏文件')
+              return
+            }
+            var current = plus.webview.currentWebview()
+            runtimeBridgeToken = String(current.runtimeBridgeToken || '')
+            runtimeBridgeOwnerId = String(current.runtimeBridgeOwnerId || '')
+            var localUrl = String(current.romLocalUrl || '')
+            var gameName = String(current.romName || '')
+            var gameIdentity = String(current.romGameIdentity || '')
+            if (!localUrl) {
+              fail('尚未导入 GBA 游戏文件')
+              return
+            }
+            plus.io.resolveLocalFileSystemURL(localUrl, function (entry) {
+              entry.file(function (file) {
+                if (!file || !file.size) {
+                  fail('本机 GBA 文件为空，请返回后重新导入')
+                  return
+                }
+                plusFileToBlob(file, localUrl).then(function (blob) {
+                  loadEmulator(blob, file.name, gameName, gameIdentity)
+                }, function () { fail('无法读取本机 GBA 文件，请返回后重新导入') })
+              }, function () { fail('无法读取本机 GBA 文件，请返回后重新导入') })
+            }, function () { fail('本机 GBA 文件已不存在，请返回后重新导入') })
+          } catch (error) {
+            fail(error && error.message ? error.message : '')
+          }
+        }
+
+        if (window.plus) boot()
+        else document.addEventListener('plusready', boot, { once: true })
+        disableExternalNetwork()
+        var emulatorErrorObserver = new MutationObserver(function () {
+          if (runtimeTerminal) return
+          var error = document.querySelector('.ejs_error_text')
+          if (error) fail(error.textContent || '')
+        })
+        emulatorErrorObserver.observe(document.getElementById('game'), {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          characterData: true
+        })
+        window.addEventListener('error', function (event) {
+          if (!runtimeTerminal) fail(event.message || '')
+        })
+        window.addEventListener('unhandledrejection', function (event) {
+          if (!runtimeTerminal) fail(event.reason && event.reason.message ? event.reason.message : '')
+        })
+        window.addEventListener('unload', function () {
+          clearTimeout(bootTimer)
+          clearTimeout(bridgeRetryTimer)
+          emulatorErrorObserver.disconnect()
+          if (gameObjectUrl) URL.revokeObjectURL(gameObjectUrl)
+        })
+      })()
+    </script>
+  </body>
+</html>

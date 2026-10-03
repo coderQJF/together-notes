@@ -28,6 +28,11 @@ export default defineComponent({
       appInputMode: 'pending' as 'pending' | 'renderjs' | 'fallback',
       appRendererTimer: null as any,
       appFallbackTimer: null as any,
+      appMeasureTimer: null as any,
+      appCanvasRect: { left: 0, top: 0, width: 0, height: 0 },
+      appCanvasSize: { width: 300, height: 450 },
+      appCanvasReady: false,
+      handwritingSheetStyle: {} as Record<string, string>,
       appDrawingCommand: {
         action: 'init',
         nonce: 0,
@@ -35,16 +40,21 @@ export default defineComponent({
     }
   },
   mounted() {
+    this.syncHandwritingInsets()
     this.$nextTick(() => {
       // #ifdef APP-PLUS
-      this.sendAppCommand('init')
-      this.appRendererTimer = setTimeout(() => {
-        this.appRendererTimer = null
-        if (this.appInputMode === 'pending') {
-          this.activateAppFallback()
-          this.ensureAppFallbackContext()
-        }
-      }, 500)
+      this.measureAppCanvas(() => {
+        this.appCanvasReady = true
+        this.$nextTick(() => {
+          this.sendAppCommand('init')
+          this.appRendererTimer = setTimeout(() => {
+            this.appRendererTimer = null
+            if (this.appInputMode === 'pending') {
+              this.activateAppFallback()
+            }
+          }, 500)
+        })
+      })
       // #endif
 
       // #ifndef APP-PLUS
@@ -52,6 +62,9 @@ export default defineComponent({
       this.configureContext(this.canvasContext)
       // #endif
     })
+    // #ifdef APP-PLUS
+    if (typeof uni.onWindowResize === 'function') uni.onWindowResize(this.handleWindowResize)
+    // #endif
   },
   beforeUnmount() {
     if (this.appRendererTimer) {
@@ -62,8 +75,74 @@ export default defineComponent({
       clearTimeout(this.appFallbackTimer)
       this.appFallbackTimer = null
     }
+    if (this.appMeasureTimer) {
+      clearTimeout(this.appMeasureTimer)
+      this.appMeasureTimer = null
+    }
+    // #ifdef APP-PLUS
+    if (typeof uni.offWindowResize === 'function') uni.offWindowResize(this.handleWindowResize)
+    // #endif
   },
   methods: {
+    syncHandwritingInsets() {
+      // Android WebViews do not consistently expose env(safe-area-inset-top).
+      // Keep the system status bar out of the full-screen handwriting sheet.
+      // #ifdef APP-PLUS
+      try {
+        const info = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync()
+        const statusBarHeight = Math.max(0, Number(info.statusBarHeight) || 0)
+        this.handwritingSheetStyle = { '--handwriting-status-bar': `${statusBarHeight}px` }
+      } catch {
+        this.handwritingSheetStyle = { '--handwriting-status-bar': 'var(--status-bar-height, 0px)' }
+      }
+      // #endif
+    },
+    handleWindowResize() {
+      this.syncHandwritingInsets()
+      this.$nextTick(() => {
+        this.measureAppCanvas(() => {
+          this.$nextTick(() => {
+            if (this.appInputMode === 'renderjs') this.sendAppCommand('init')
+          })
+        })
+      })
+    },
+    measureAppCanvas(done?: () => void, attempt = 0) {
+      // #ifdef APP-PLUS
+      uni.createSelectorQuery().in(this).select('.canvas-shell').boundingClientRect((result) => {
+        const rect = result as UniApp.NodeInfo
+        const measuredWidth = Math.round(Number(rect?.width) || 0)
+        const measuredHeight = Math.round(Number(rect?.height) || 0)
+        if (measuredWidth <= 0 || measuredHeight <= 0) {
+          if (attempt < 12) {
+            this.appMeasureTimer = setTimeout(() => {
+              this.appMeasureTimer = null
+              this.measureAppCanvas(done, attempt + 1)
+            }, 50)
+          } else if (done) {
+            done()
+          }
+          return
+        }
+        if (this.appMeasureTimer) {
+          clearTimeout(this.appMeasureTimer)
+          this.appMeasureTimer = null
+        }
+        const width = Math.max(1, measuredWidth)
+        const height = Math.max(1, measuredHeight)
+        this.appCanvasRect = {
+          left: Number(rect?.left) || 0,
+          top: Number(rect?.top) || 0,
+          width,
+          height,
+        }
+        if (this.appCanvasSize.width !== width || this.appCanvasSize.height !== height) {
+          this.appCanvasSize = { width, height }
+        }
+        if (done) done()
+      }).exec()
+      // #endif
+    },
     configureContext(context: any) {
       if (!context) return
       context.setStrokeStyle('#29251f')
@@ -75,10 +154,20 @@ export default defineComponent({
     pointFromEvent(event: any): DrawingPoint | null {
       const touch = event?.touches?.[0] || event?.changedTouches?.[0]
       if (!touch) return null
-      const x = Number(touch.x ?? touch.offsetX ?? touch.clientX)
-      const y = Number(touch.y ?? touch.offsetY ?? touch.clientY)
+      const hasMeasuredCanvas = this.appInputMode === 'fallback' && this.appCanvasRect.width > 0 && this.appCanvasRect.height > 0
+      const hasClientPoint = Number.isFinite(Number(touch.clientX)) && Number.isFinite(Number(touch.clientY))
+      const x = hasMeasuredCanvas && hasClientPoint
+        ? Number(touch.clientX) - this.appCanvasRect.left
+        : Number(touch.x ?? touch.offsetX ?? touch.clientX)
+      const y = hasMeasuredCanvas && hasClientPoint
+        ? Number(touch.clientY) - this.appCanvasRect.top
+        : Number(touch.y ?? touch.offsetY ?? touch.clientY)
       if (!Number.isFinite(x) || !Number.isFinite(y)) return null
-      return { x, y }
+      if (!hasMeasuredCanvas) return { x, y }
+      return {
+        x: Math.max(0, Math.min(this.appCanvasRect.width, x)),
+        y: Math.max(0, Math.min(this.appCanvasRect.height, y)),
+      }
     },
     start(event: any) {
       const point = this.pointFromEvent(event)
@@ -127,13 +216,32 @@ export default defineComponent({
       this.appRendererReady = true
     },
     markAppFallbackReady() {
-      if (this.appInputMode === 'fallback') this.appFallbackReady = true
+      if (this.appInputMode !== 'fallback') return
+      if (this.appFallbackTimer) {
+        clearTimeout(this.appFallbackTimer)
+        this.appFallbackTimer = null
+      }
+      this.appFallbackReady = true
+      this.canvasContext = null
+      this.$nextTick(() => this.ensureAppFallbackContext())
     },
     ensureAppFallbackContext() {
+      if (this.appInputMode !== 'fallback' || !this.appFallbackReady) return false
+      this.measureAppCanvas()
       if (!this.canvasContext) {
         this.canvasContext = uni.createCanvasContext('note-handwriting-app-pad', this)
         this.configureContext(this.canvasContext)
       }
+      return true
+    },
+    retryAppFallbackHandshake(attempt = 0) {
+      if (this.appInputMode !== 'fallback' || this.appFallbackReady) return
+      this.sendAppCommand('fallback')
+      if (attempt >= 39) return
+      this.appFallbackTimer = setTimeout(() => {
+        this.appFallbackTimer = null
+        this.retryAppFallbackHandshake(attempt + 1)
+      }, 250)
     },
     activateAppFallback() {
       if (this.appInputMode === 'renderjs') return false
@@ -145,17 +253,14 @@ export default defineComponent({
         this.appInputMode = 'fallback'
         this.appRendererReady = false
         this.appFallbackReady = false
-        this.sendAppCommand('fallback')
-        this.appFallbackTimer = setTimeout(() => {
-          this.appFallbackTimer = null
-          if (this.appInputMode === 'fallback') this.appFallbackReady = true
-        }, 200)
+        this.canvasContext = null
+        this.retryAppFallbackHandshake()
       }
       return true
     },
     appFallbackStart(event: any) {
       if (!this.activateAppFallback()) return
-      this.ensureAppFallbackContext()
+      if (!this.ensureAppFallbackContext()) return
       this.start(event)
     },
     appFallbackMove(event: any) {
@@ -300,7 +405,7 @@ export default defineComponent({
 
 <template>
   <view class="handwriting-backdrop" @tap.self="cancel">
-    <view class="handwriting-sheet">
+    <view class="handwriting-sheet" :style="handwritingSheetStyle">
       <view class="handwriting-header">
         <view class="header-copy">
           <text class="handwriting-title">手写</text>
@@ -312,9 +417,13 @@ export default defineComponent({
       <view class="canvas-shell">
         <!-- #ifdef APP-PLUS -->
         <canvas
+          v-if="appCanvasReady"
           id="note-handwriting-app-pad"
           canvas-id="note-handwriting-app-pad"
           class="pad-canvas app-pad-canvas"
+          :width="appCanvasSize.width"
+          :height="appCanvasSize.height"
+          :hidpi="false"
           :disable-scroll="true"
           :drawing-command="appDrawingCommand"
           :change:drawing-command="handwritingRenderer.onCommandChanged"
@@ -324,7 +433,7 @@ export default defineComponent({
           @touchcancel.stop.prevent="appFallbackEnd"
         />
         <view
-          v-if="appInputMode === 'pending' || (appInputMode === 'fallback' && !appFallbackReady)"
+          v-if="!appCanvasReady || appInputMode === 'pending' || (appInputMode === 'fallback' && !appFallbackReady)"
           class="canvas-preparing"
         >
           <text>正在准备手写…</text>
@@ -446,6 +555,53 @@ export default {
       this.resizeObserver = null
       this.boundResize = null
     },
+    prepareCanvasForFallback(ownerInstance) {
+      this.disabled = true
+      this.activeStroke = null
+      this.strokes = []
+
+      const resolved = this.host && this.canvas
+        ? { host: this.host, canvas: this.canvas }
+        : this.resolveCanvas()
+      this.unbindCanvas()
+
+      if (resolved && resolved.canvas) {
+        const host = resolved.host
+        const canvas = resolved.canvas
+        const rect = host && host.getBoundingClientRect
+          ? host.getBoundingClientRect()
+          : { width: 0, height: 0 }
+        const cssWidth = Math.max(1, Math.round(this.cssWidth || rect.width || canvas.clientWidth || 1))
+        const cssHeight = Math.max(1, Math.round(this.cssHeight || rect.height || canvas.clientHeight || 1))
+        const scaledContext = this.context || canvas.getContext('2d')
+
+        // renderjs owns the DPR-scaled backing store while active. Release it
+        // completely before the service-layer CanvasContext starts drawing;
+        // otherwise CSS-pixel touch coordinates are scaled a second time.
+        if (scaledContext && scaledContext.setTransform) {
+          scaledContext.setTransform(1, 0, 0, 1, 0, 0)
+          scaledContext.clearRect(0, 0, canvas.width || cssWidth, canvas.height || cssHeight)
+        }
+        canvas.width = cssWidth
+        canvas.height = cssHeight
+        canvas.style.width = '100%'
+        canvas.style.height = '100%'
+        const fallbackContext = canvas.getContext('2d')
+        if (fallbackContext && fallbackContext.setTransform) {
+          fallbackContext.setTransform(1, 0, 0, 1, 0, 0)
+          fallbackContext.clearRect(0, 0, cssWidth, cssHeight)
+        }
+      }
+
+      this.context = null
+      this.canvas = null
+      this.host = null
+      this.cssWidth = 0
+      this.cssHeight = 0
+
+      const owner = ownerInstance || this.ownerInstance || this.$ownerInstance
+      if (owner && owner.callMethod) owner.callMethod('markAppFallbackReady')
+    },
     retryResize(attempt) {
       if (this.disabled) return
       this.resizeCanvas()
@@ -458,6 +614,9 @@ export default {
       if (!this.host || !this.canvas || !this.context) return
       const rect = this.host.getBoundingClientRect()
       if (!rect.width || !rect.height) return
+      // The uni-app canvas component enables its own HiDPI adaptation by
+      // default. The template disables that adaptation so renderjs is the
+      // single owner of the backing-store scale on Android.
       const ratio = Math.max(1, window.devicePixelRatio || 1)
       const nextWidth = Math.round(rect.width * ratio)
       const nextHeight = Math.round(rect.height * ratio)
@@ -474,9 +633,10 @@ export default {
       this.context.lineCap = 'round'
       this.context.lineJoin = 'round'
       this.redraw()
-      if (!this.rendererReadySent && this.$ownerInstance && this.$ownerInstance.callMethod) {
+      const owner = this.ownerInstance || this.$ownerInstance
+      if (!this.rendererReadySent && owner && owner.callMethod) {
         this.rendererReadySent = true
-        this.$ownerInstance.callMethod('markAppDrawingReady')
+        owner.callMethod('markAppDrawingReady')
       }
     },
     normalizedPoint(event) {
@@ -572,25 +732,13 @@ export default {
       }
     },
     onCommandChanged(command, _oldCommand, ownerInstance) {
-      this.scheduleMount(0)
       if (!command || !command.action) return
+      if (ownerInstance) this.ownerInstance = ownerInstance
       if (command.action === 'init') {
         this.disabled = false
+        this.scheduleMount(0)
       } else if (command.action === 'fallback') {
-        this.disabled = true
-        this.activeStroke = null
-        this.strokes = []
-        if (this.resizeObserver) {
-          this.resizeObserver.disconnect()
-          this.resizeObserver = null
-        }
-        if (this.boundResize) {
-          window.removeEventListener('resize', this.boundResize)
-          this.boundResize = null
-        }
-        if (this.$ownerInstance && this.$ownerInstance.callMethod) {
-          this.$ownerInstance.callMethod('markAppFallbackReady')
-        }
+        this.prepareCanvasForFallback(ownerInstance)
       } else if (command.action === 'clear') {
         this.clearCanvas()
       } else if (command.action === 'save') {
@@ -742,7 +890,7 @@ export default {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
-    padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+    padding: calc(16px + var(--handwriting-status-bar, env(safe-area-inset-top))) 16px calc(16px + env(safe-area-inset-bottom));
     border-radius: 0;
   }
 

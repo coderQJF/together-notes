@@ -1,14 +1,17 @@
 {
   "name": "together-notes",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "scripts": {
     "dev:h5": "uni",
     "build:h5": "uni build",
+    "postbuild:h5": "node scripts/verify-no-app-game-runtime.mjs h5",
     "dev:mp-weixin": "uni -p mp-weixin",
     "prebuild:mp-weixin": "node scripts/configure-wechat.mjs",
     "build:mp-weixin": "uni build -p mp-weixin",
+    "postbuild:mp-weixin": "node scripts/verify-no-app-game-runtime.mjs mp-weixin",
     "prebuild:app": "node scripts/configure-app.mjs",
     "build:app": "uni build -p app",
+    "postbuild:app": "node scripts/inject-app-game-runtime.mjs",
     "package:app-update": "node scripts/package-app-update.mjs",
     "prepare:android-beta": "node scripts/apply-android-beta-secrets.mjs",
     "package:android-beta": "node scripts/package-android-beta.mjs",
