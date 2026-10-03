@@ -7,6 +7,7 @@ import TimePickerField from '../../components/TimePickerField.vue'
 import { attachImages, request, type Item, type User } from '../../services/api'
 import { syncHomeWidgetNotes } from '../../services/home-widget'
 import { requestLocalReminderPermissions, scheduleLocalReminderForUser } from '../../services/local-reminders'
+import { materializeNoteBlocks } from '../../services/note-blocks'
 import { dateInputValue, timeInputValue } from '../../utils/date'
 
 const empty = (kind: 'note' | 'reminder'): Item => ({
@@ -52,15 +53,9 @@ const headerActionLabel = computed(() => draft.value.kind === 'note' ? '格式' 
 
 function noteBlockId() { return `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }
 function materializePaper() {
-  const blocks = draft.value.blocks || []
-  const lines = blocks.flatMap((block, index) => {
-    if (block.type === 'paragraph') return [block.style?.list === 'ordered' ? `${index + 1}. ${block.text || ''}` : block.style?.list === 'bullet' ? `• ${block.text || ''}` : block.text || '']
-    if (block.type === 'todo') return [`${block.checked ? '[已完成]' : '[待办]'} ${block.text || ''}`]
-    if (block.type === 'link') return [block.text || block.url || '']
-    return []
-  }).map(value => value.trim()).filter(Boolean)
-  draft.value.content = lines.join('\n')
-  draft.value.links = blocks.filter(block => block.type === 'link').map(block => String(block.url || '').trim()).filter(Boolean)
+  const materialized = materializeNoteBlocks(draft.value.blocks || [])
+  draft.value.content = materialized.content
+  draft.value.links = materialized.links
 }
 
 function selectNoteFormat(format: 'classic' | 'paper') {

@@ -7,6 +7,7 @@ import StructuredNoteContent from '../../components/StructuredNoteContent.vue'
 import { downloadFile, request, type Item, type User } from '../../services/api'
 import { selectHomeWidgetNote, syncHomeWidgetNotes } from '../../services/home-widget'
 import { cancelLocalReminder } from '../../services/local-reminders'
+import { materializeNoteBlocks } from '../../services/note-blocks'
 import { formatClock, formatCompactDateTime, formatDayHeading } from '../../utils/date'
 import { openExternalUrl, publicShareUrl, shareText } from '../../utils/platform'
 
@@ -158,6 +159,23 @@ async function showOnDesktop() {
   }
 }
 
+async function toggleNoteTodo(blockId: string) {
+  if (!item.value?.id || sharedPreview.value || pending.value || item.value.kind !== 'note') return
+  const blocks = (item.value.blocks || []).map(block => block.id === blockId && block.type === 'todo' ? { ...block, checked: !block.checked } : block)
+  const materialized = materializeNoteBlocks(blocks)
+  pending.value = `todo:${blockId}`
+  try {
+    item.value = await request<DetailItem>(`/items/${encodeURIComponent(item.value.id)}`, 'PUT', { ...item.value, blocks, ...materialized })
+    // #ifdef APP-PLUS
+    request<Item[]>('/items').then(syncHomeWidgetNotes).catch(() => {})
+    // #endif
+  } catch (reason) {
+    uni.showToast({ title: reason instanceof Error ? reason.message : '待办状态保存失败', icon: 'none' })
+  } finally {
+    if (active) pending.value = ''
+  }
+}
+
 onLoad(options => {
   shareToken.value = typeof options?.share === 'string' ? options.share.trim().toLowerCase() : ''
   sharedRoute = Boolean(shareToken.value)
@@ -214,7 +232,7 @@ onUnload(() => { active = false })
       </view>
 
       <text class="headline">{{ item.title }}</text>
-      <StructuredNoteContent v-if="structuredNote" :item="item" />
+      <StructuredNoteContent v-if="structuredNote" :item="item" :interactive="!sharedPreview && !pending" @toggle-todo="toggleNoteTodo" />
       <text v-else class="body-text">{{ item.content || '暂无正文' }}</text>
 
       <view v-if="sharedPreview" class="share-notice">

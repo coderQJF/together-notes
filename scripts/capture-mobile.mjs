@@ -227,7 +227,10 @@ const screens = [
   ...(paperId ? [{ name: 'detail-note-paper', path: `/pages/detail/detail?id=${encodeURIComponent(paperId)}`, ready: '旅行灵感纸' }] : []),
   { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },
   ...(paperId ? [{ name: 'editor-note-paper', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸内容' }] : []),
+  ...(paperId ? [{ name: 'editor-note-paper-todo-checked', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸内容', preClickSelector: '.todo-row uni-button' }] : []),
+  ...(paperId ? [{ name: 'editor-note-handwriting', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸内容', click: '手写', clicked: '清空画布', drawSelector: '.pad-canvas' }] : []),
   { name: 'editor-note-format', path: '/pages/editor/editor?kind=note', ready: '标题', click: '格式', clicked: '备忘录格式' },
+  ...(paperId ? [{ name: 'detail-note-paper-todo-checked', path: `/pages/detail/detail?id=${encodeURIComponent(paperId)}`, ready: '旅行灵感纸', preClickSelector: '.todo' }] : []),
   { name: 'editor-reminder', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间' },
   { name: 'sports-provider-error', path: '/pages/sports/sports', ready: '赛事数据获取失败' },
   { name: 'match-provider-error', path: '/pages/match-detail/match-detail?id=unavailable', ready: '无法显示这场比赛' },
@@ -324,6 +327,19 @@ try {
           if (!clickResult.result.value) throw new Error(`Could not find control: ${screen.click}`)
           await waitForText(page, screen.clicked)
         }
+      }
+      if (screen.drawSelector) {
+        const drawResult = await page.call('Runtime.evaluate', {
+          expression: `(() => { const node = document.querySelector(${JSON.stringify(screen.drawSelector)}); if (!node) return null; const rect = node.getBoundingClientRect(); return { left: rect.left, top: rect.top, width: rect.width, height: rect.height } })()`,
+          returnByValue: true,
+        })
+        const rect = drawResult.result.value
+        if (!rect) throw new Error(`Could not draw on: ${screen.drawSelector}`)
+        const points = [[.2, .28], [.3, .38], [.42, .32], [.53, .48], [.65, .36], [.76, .52]].map(([x, y]) => ({ x: rect.left + rect.width * x, y: rect.top + rect.height * y }))
+        await page.call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points[0]] })
+        for (const point of points.slice(1)) await page.call('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point] })
+        await page.call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+        await wait(180)
       }
       if (screen.ask) {
         const askResult = await page.call('Runtime.evaluate', {

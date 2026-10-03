@@ -215,6 +215,24 @@ test('paper notes expose the five requested tools and persist structured content
   assert.match(server, /sanitizeNoteBlocks/)
 })
 
+test('paper note handwriting and todo rows remain directly interactive on mobile', async () => {
+  const handwriting = await readFile('src/components/HandwritingPad.vue', 'utf8')
+  const editor = await readFile('src/components/StructuredNoteEditor.vue', 'utf8')
+  const content = await readFile('src/components/StructuredNoteContent.vue', 'utf8')
+  const detail = await readFile('src/pages/detail/detail.vue', 'utf8')
+  assert.match(handwriting, /canvas-id="note-handwriting-pad"/)
+  assert.match(handwriting, /boundingClientRect/)
+  assert.match(handwriting, /strokes\.push/)
+  assert.match(handwriting, /@touchstart\.stop\.prevent="start"/)
+  assert.doesNotMatch(handwriting, /class="pad-layer" @touchmove\.stop\.prevent/)
+  assert.match(editor, /<StatusIcon :checked="Boolean\(block\.checked\)" size="large"/)
+  assert.match(editor, /class="todo-row"[^>]*@click="toggleTodo\(block\.id\)"/)
+  assert.doesNotMatch(editor, /<StatusIcon :done=/)
+  assert.match(content, /emit\('toggle-todo',block\.id\)/)
+  assert.match(detail, /async function toggleNoteTodo/)
+  assert.match(detail, /@toggle-todo="toggleNoteTodo"/)
+})
+
 test('reader sheets lock the page and pagination labels are optically centered', async () => {
   const reader = await readFile('src/pages/reader/reader.vue', 'utf8')
   assert.match(reader, /<page-meta :page-style="panelPageStyle"/)
