@@ -213,7 +213,9 @@ const screenNames = new Set((process.env.CAPTURE_SCREENS || '').split(',').map(v
 const screens = [
   { name: 'index-login', path: '/pages/index/index', ready: '以前用过微信小程序', anonymous: true },
   { name: 'index-notes', path: '/pages/index/index', ready: '周末一起去看展' },
+  { name: 'index-notes-selection', path: '/pages/index/index', ready: '周末一起去看展', longPressSelector: '.feed-list .card' },
   { name: 'index-reminders', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事' },
+  { name: 'index-reminders-selection', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事', longPressSelector: '.feed-list .card' },
   { name: 'index-search', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记' },
   { name: 'index-search-result', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '周末看什么？', answered: '相关内容' },
   { name: 'index-search-model', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '猪什么时候会飞', answered: '现实中的猪不会自主飞行' },
@@ -327,6 +329,18 @@ try {
           if (!clickResult.result.value) throw new Error(`Could not find control: ${screen.click}`)
           await waitForText(page, screen.clicked)
         }
+      }
+      if (screen.longPressSelector) {
+        const longPressTarget = await page.call('Runtime.evaluate', {
+          expression: `(() => { const node = document.querySelector(${JSON.stringify(screen.longPressSelector)}); if (!node) return null; const rect = node.getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + Math.min(rect.height / 2, 80) } })()`,
+          returnByValue: true,
+        })
+        const point = longPressTarget.result.value
+        if (!point) throw new Error(`Could not long-press: ${screen.longPressSelector}`)
+        await page.call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
+        await wait(650)
+        await page.call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+        await waitForText(page, '已选择 1 项')
       }
       if (screen.drawSelector) {
         const drawResult = await page.call('Runtime.evaluate', {

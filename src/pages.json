@@ -42,6 +42,10 @@
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "游戏" }
     },
     {
+      "path": "pages/comics/comics",
+      "style": { "navigationStyle": "custom", "navigationBarTitleText": "漫画" }
+    },
+    {
       "path": "pages/game-player/game-player",
       "style": { "navigationBarTitleText": "游戏", "backgroundColor": "#111111" }
     },

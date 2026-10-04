@@ -23,6 +23,60 @@ test('binding, private/shared access, attachments, due delivery',async()=>{
  await call('/logout','POST',{},a.token);assert.equal((await call('/me','GET',undefined,a.token)).status,401);
  }finally{await new Promise(r=>app.server.close(r));app.db.close()}
 });
+test('deleting an item atomically clears dependants while preserving reusable authorizations and files',async()=>{
+ const app=createApp({dbPath:':memory:',testAuth:true});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
+ const call=async(path,method='GET',data,token)=>{const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+(token||'')},body:data?JSON.stringify(data):undefined});return {status:response.status,...await response.json()}};
+ const upload=async(token,name)=>fetch(base+'/files',{method:'POST',headers:{Authorization:'Bearer '+token,'x-file-name':encodeURIComponent(name)},body:Buffer.from(name)}).then(response=>response.json());
+ try{
+  const a=await call('/auth/test','POST',{name:'我'}),b=await call('/auth/test','POST',{name:'小金子'});
+  const reused=await upload(a.token,'复用附件.png'),foreign=await upload(b.token,'对方附件.png');
+  const first=await call('/items','POST',{kind:'note',title:'第一条',content:'',links:[],attachments:[reused],scope:'mine'},a.token);
+  const second=await call('/items','POST',{kind:'note',title:'第二条',content:'',links:[],attachments:[reused],scope:'mine'},a.token);
+  const textOnly=await call('/items','POST',{kind:'note',title:'正文 UUID',content:`正文里只是提到 ${reused.id}`,links:[],attachments:[],scope:'mine'},a.token);
+  const firstData=JSON.parse(app.db.prepare('SELECT data FROM items WHERE id=?').get(first.id).data);firstData.attachments.push(foreign);app.db.prepare('UPDATE items SET data=? WHERE id=?').run(JSON.stringify(firstData),first.id);
+  const secondData=JSON.parse(app.db.prepare('SELECT data FROM items WHERE id=?').get(second.id).data);secondData.attachments=[];secondData.blocks=[{id:'legacy-image',type:'image',attachmentId:reused.id}];app.db.prepare('UPDATE items SET data=? WHERE id=?').run(JSON.stringify(secondData),second.id);
+  assert.equal((await call('/items/'+first.id,'DELETE',undefined,a.token)).status,200);
+  assert.ok(app.db.prepare('SELECT id FROM files WHERE id=?').get(reused.id));
+  assert.ok(app.db.prepare('SELECT id FROM files WHERE id=?').get(foreign.id));
+  assert.equal((await call('/items/'+second.id,'DELETE',undefined,a.token)).status,200);
+  assert.equal(app.db.prepare('SELECT id FROM files WHERE id=?').get(reused.id),undefined);
+  assert.ok(app.db.prepare('SELECT id FROM items WHERE id=?').get(textOnly.id));
+  assert.ok(app.db.prepare('SELECT id FROM files WHERE id=?').get(foreign.id));
+
+  const owned=await upload(a.token,'提醒附件.png'),due=new Date(Date.now()+60000).toISOString();
+  const reminder=await call('/items','POST',{kind:'reminder',title:'待删除提醒',content:'',links:[],attachments:[owned],scope:'mine',repeat:'none',recipient:'me',advance:0,nextAt:due},a.token);
+  await call('/items/'+reminder.id+'/share','POST',{},a.token);
+  app.db.prepare('INSERT INTO notifications(id,user,title,due,seen,item) VALUES(?,?,?,?,0,?)').run('delete-notification',a.user.id,'待删除提醒',due,reminder.id);
+  app.db.prepare('INSERT INTO notifications(id,user,title,due,seen,item) VALUES(?,?,?,?,0,?)').run('delete-partner-notification',b.user.id,'待删除提醒',due,reminder.id);
+  app.db.prepare('INSERT INTO wechat_reminder_subscriptions VALUES(?,?,?,?,?,?,?,?)').run('delete-pending',reminder.id,a.user.id,due,'pending',Date.now(),null,null);
+  app.db.prepare('INSERT INTO wechat_reminder_subscriptions VALUES(?,?,?,?,?,?,?,?)').run('delete-sent',reminder.id,a.user.id,due,'sent',Date.now(),Date.now(),null);
+  app.db.prepare('INSERT INTO wechat_reminder_subscriptions VALUES(?,?,?,?,?,?,?,?)').run('delete-sending',reminder.id,b.user.id,due,'sending',Date.now(),null,null);
+  assert.equal((await call('/items/'+reminder.id+'/share','DELETE',undefined,a.token)).status,404);
+  assert.ok(app.db.prepare('SELECT id FROM items WHERE id=?').get(reminder.id));
+  app.db.exec(`CREATE TRIGGER reject_item_cleanup BEFORE DELETE ON items WHEN OLD.id='${reminder.id}' BEGIN SELECT RAISE(ABORT,'cleanup rollback'); END`);
+  assert.equal((await call('/items/'+reminder.id,'DELETE',undefined,a.token)).status,500);
+  assert.ok(app.db.prepare('SELECT id FROM items WHERE id=?').get(reminder.id));
+  assert.ok(app.db.prepare('SELECT id FROM files WHERE id=?').get(owned.id));
+  assert.equal(app.db.prepare('SELECT count(*) count FROM notifications WHERE item=?').get(reminder.id).count,2);
+  assert.equal(app.db.prepare('SELECT count(*) count FROM item_shares WHERE item=?').get(reminder.id).count,1);
+  assert.equal(app.db.prepare('SELECT count(*) count FROM wechat_reminder_subscriptions WHERE item=?').get(reminder.id).count,3);
+  app.db.exec('DROP TRIGGER reject_item_cleanup');
+
+  assert.equal((await call('/items/'+reminder.id,'DELETE',undefined,a.token)).status,200);
+  assert.equal(app.db.prepare('SELECT id FROM items WHERE id=?').get(reminder.id),undefined);
+  assert.equal(app.db.prepare('SELECT id FROM files WHERE id=?').get(owned.id),undefined);
+  assert.equal(app.db.prepare('SELECT count(*) count FROM notifications WHERE item=?').get(reminder.id).count,0);
+  assert.equal(app.db.prepare('SELECT count(*) count FROM item_shares WHERE item=?').get(reminder.id).count,0);
+  assert.deepEqual({...app.db.prepare('SELECT item,due,status FROM wechat_reminder_subscriptions WHERE id=?').get('delete-pending')},{item:null,due:null,status:'pending'});
+  assert.equal(app.db.prepare('SELECT id FROM wechat_reminder_subscriptions WHERE id=?').get('delete-sent'),undefined);
+  assert.equal(app.db.prepare('SELECT id FROM wechat_reminder_subscriptions WHERE id=?').get('delete-sending'),undefined);
+
+  const guarded=await upload(a.token,'损坏数据保护.png');const guardedItem=await call('/items','POST',{kind:'note',title:'损坏数据保护',content:'',links:[],attachments:[guarded],scope:'mine'},a.token);
+  app.db.prepare('INSERT INTO items VALUES(?,?,NULL,?,?)').run('malformed-data-item',b.user.id,'note','{');
+  assert.equal((await call('/items/'+guardedItem.id,'DELETE',undefined,a.token)).status,200);
+  assert.ok(app.db.prepare('SELECT id FROM files WHERE id=?').get(guarded.id));
+ }finally{await new Promise(r=>app.server.close(r));app.db.close()}
+});
 test('production does not expose test identities',async()=>{const app=createApp({dbPath:':memory:'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));try{const r=await fetch('http://127.0.0.1:'+app.server.address().port+'/api/auth/test',{method:'POST',body:JSON.stringify({name:'我'})});assert.equal(r.status,404)}finally{await new Promise(r=>app.server.close(r));app.db.close()}});
 test('legacy user databases gain a disabled VIP flag without changing accounts',async()=>{const directory=await mkdtemp(join(tmpdir(),'together-notes-vip-')),dbPath=join(directory,'legacy.sqlite');const legacy=new DatabaseSync(dbPath);legacy.exec("CREATE TABLE users(id TEXT PRIMARY KEY, identity TEXT UNIQUE,nickname TEXT,couple TEXT); INSERT INTO users VALUES('legacy-user','app:legacy','旧账号',NULL)");legacy.close();const app=createApp({dbPath});try{const row=app.db.prepare('SELECT * FROM users WHERE id=?').get('legacy-user');assert.equal(row.nickname,'旧账号');assert.equal(row.vip,0)}finally{app.db.close();await rm(directory,{recursive:true,force:true})}});
 test('legacy notifications gain reminder detail links',async()=>{const directory=await mkdtemp(join(tmpdir(),'together-notes-notifications-')),dbPath=join(directory,'legacy.sqlite');const legacy=new DatabaseSync(dbPath),due='2026-09-30T12:00:00.000Z';legacy.exec("CREATE TABLE users(id TEXT PRIMARY KEY,identity TEXT UNIQUE,nickname TEXT,couple TEXT); CREATE TABLE items(id TEXT PRIMARY KEY,owner TEXT,couple TEXT,kind TEXT,data TEXT); CREATE TABLE notifications(id TEXT PRIMARY KEY,user TEXT,title TEXT,due TEXT,seen INTEGER DEFAULT 0)");legacy.prepare('INSERT INTO users VALUES(?,?,?,NULL)').run('legacy-user','app:legacy','旧账号');legacy.prepare('INSERT INTO items VALUES(?,?,NULL,?,?)').run('legacy-reminder','legacy-user','reminder',JSON.stringify({title:'旧提醒',nextAt:due}));legacy.prepare('INSERT INTO notifications VALUES(?,?,?,?,0)').run('legacy-notification','legacy-user','旧提醒',due);legacy.close();const app=createApp({dbPath});try{assert.equal(app.db.prepare('SELECT item FROM notifications WHERE id=?').get('legacy-notification').item,'legacy-reminder')}finally{app.db.close();await rm(directory,{recursive:true,force:true})}});
@@ -42,8 +96,11 @@ test('app accounts register behind a beta code, log in securely, and can delete 
   const invite=await call('/invite','POST',{},a.token);await call('/invite/accept','POST',{code:invite.code},b.token);
   const ownedByA=await call('/items','POST',{kind:'note',title:'随账号删除',content:'私人内容',links:[],scope:'shared'},a.token);
   const ownedByB=await call('/items','POST',{kind:'note',title:'保留给另一方',content:'解绑后转为私人',links:[],scope:'shared'},b.token);
+  const accountDeleteDue=new Date(Date.now()+60000).toISOString();app.db.prepare('INSERT INTO notifications(id,user,title,due,seen,item) VALUES(?,?,?,?,0,?)').run('account-delete-partner-notification',b.user.id,'账号内容提醒',accountDeleteDue,ownedByA.id);
+  assert.equal(app.db.prepare('SELECT count(*) count FROM notifications WHERE item=?').get(ownedByA.id).count,1);
   assert.equal((await call('/me','DELETE',{password:'wrong-password'},a.token)).status,403);
   assert.equal((await call('/me','DELETE',{password:'safe-password-1'},a.token)).status,200);
+  assert.equal(app.db.prepare('SELECT count(*) count FROM notifications WHERE item=?').get(ownedByA.id).count,0);
   assert.equal((await call('/me','GET',undefined,a.token)).status,401);assert.equal((await call('/auth/app/login','POST',{username:'first_user',password:'safe-password-1'})).status,401);
   assert.equal((await call('/items/'+ownedByA.id,'GET',undefined,b.token)).status,404);
   const remaining=await call('/items/'+ownedByB.id,'GET',undefined,b.token);assert.equal(remaining.scope,'mine');assert.equal((await call('/me','GET',undefined,b.token)).partner,null);

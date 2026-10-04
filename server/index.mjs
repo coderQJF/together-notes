@@ -42,6 +42,14 @@ function sanitizeNoteBlocks(value,attachments){
   return[{id,type:'paragraph',text,style:{bold:!!style.bold,italic:!!style.italic,underline:!!style.underline,align:['left','center','right'].includes(style.align)?style.align:'left',list:['none','ordered','bullet'].includes(style.list)?style.list:'none',color:/^#[0-9a-f]{6}$/i.test(String(style.color||''))?String(style.color):'#3e382d'}}];
  });
 }
+function itemAttachmentIds(value){
+ try{
+  const data=typeof value==='string'?JSON.parse(value):value;
+  const ids=(Array.isArray(data?.attachments)?data.attachments:[]).map(file=>String(file?.id||''));
+  for(const block of (Array.isArray(data?.blocks)?data.blocks:[]))if(block?.type==='image'||block?.type==='drawing')ids.push(String(block.attachmentId||''));
+  return new Set(ids.filter(Boolean));
+ }catch{return null}
+}
 function multipartFile(buffer,contentType){
  const match=String(contentType||'').match(/boundary=(?:"([^"]+)"|([^;\s]+))/i),boundary=match?.[1]||match?.[2];
  if(!boundary||boundary.length>200)fail(400,'上传格式错误');
@@ -59,6 +67,7 @@ export function createApp({dbPath='server/data/app.sqlite',testAuth=false,wxAppI
  if(!db.prepare('PRAGMA table_info(users)').all().some(column=>column.name==='vip_expires_at'))db.exec('ALTER TABLE users ADD COLUMN vip_expires_at INTEGER');
  if(!db.prepare('PRAGMA table_info(novels)').all().some(column=>column.name==='audience'))db.exec("ALTER TABLE novels ADD COLUMN audience TEXT NOT NULL DEFAULT 'all_vip'");
  if(!db.prepare('PRAGMA table_info(notifications)').all().some(column=>column.name==='item'))db.exec('ALTER TABLE notifications ADD COLUMN item TEXT');
+ db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_item ON notifications(item); CREATE INDEX IF NOT EXISTS idx_wechat_reminder_item_status ON wechat_reminder_subscriptions(item,status);');
  db.exec("UPDATE wechat_reminder_subscriptions SET status='pending' WHERE status='sending'");
  const content=createContentService({db,dbPath,fetchImpl,...contentConfig});
  const ai=createAiSearchService({fetchImpl,...aiConfig});
@@ -181,7 +190,7 @@ export function createApp({dbPath='server/data/app.sqlite',testAuth=false,wxAppI
   const password=String(b.password||'');if(!validAppPassword(password)||!await passwordMatches(password,credential))fail(403,'密码不正确');
   const ownedItems=all('SELECT id FROM items WHERE owner=?',user.id),ownedFiles=new Set(all('SELECT id FROM files WHERE owner=?',user.id).map(file=>file.id)),couple=user.couple;
   transaction(()=>{
-   for(const item of ownedItems){run('DELETE FROM item_shares WHERE item=?',item.id);run("UPDATE wechat_reminder_subscriptions SET item=NULL,due=NULL WHERE item=? AND status='pending'",item.id);run("DELETE FROM wechat_reminder_subscriptions WHERE item=? AND status<>'pending'",item.id)}
+   for(const item of ownedItems){run('DELETE FROM notifications WHERE item=?',item.id);run('DELETE FROM item_shares WHERE item=?',item.id);run("UPDATE wechat_reminder_subscriptions SET item=NULL,due=NULL WHERE item=? AND status='pending'",item.id);run("DELETE FROM wechat_reminder_subscriptions WHERE item=? AND status IN ('sending','sent','failed')",item.id)}
    if(couple){for(const item of all('SELECT id,data FROM items WHERE couple=? AND owner<>?',couple,user.id)){const data=JSON.parse(item.data);if(Array.isArray(data.attachments)){data.attachments=data.attachments.filter(file=>!ownedFiles.has(file.id));run('UPDATE items SET data=? WHERE id=?',JSON.stringify(data),item.id)}}run('UPDATE items SET couple=NULL WHERE couple=?',couple);run('UPDATE users SET couple=NULL WHERE couple=? AND id<>?',couple,user.id)}
    run('DELETE FROM item_shares WHERE owner=?',user.id);run('DELETE FROM items WHERE owner=?',user.id);run('DELETE FROM files WHERE owner=?',user.id);run('DELETE FROM notifications WHERE user=?',user.id);run('DELETE FROM wechat_reminder_subscriptions WHERE user=?',user.id);run('DELETE FROM invites WHERE owner=?',user.id);run('DELETE FROM sessions WHERE user=?',user.id);run('DELETE FROM user_phones WHERE user=?',user.id);run('DELETE FROM app_credentials WHERE user=?',user.id);run('DELETE FROM users WHERE id=?',user.id);
   });
@@ -215,7 +224,7 @@ export function createApp({dbPath='server/data/app.sqlite',testAuth=false,wxAppI
  data.attachments=[];for(const a of (Array.isArray(b.attachments)?b.attachments:[]).slice(0,10)){const file=one('SELECT id,owner,name,length(bytes) size FROM files WHERE id=?',String(a.id));const old=existing?JSON.parse(existing.data).attachments||[]:[];if(!file||(file.owner!==user.id&&!old.some(x=>x.id===file.id)))fail(403,'无权引用此附件');data.attachments.push({id:file.id,name:file.name,size:file.size})}if(kind==='note'){data.noteFormat=b.noteFormat==='paper'?'paper':'classic';data.blocks=data.noteFormat==='paper'?sanitizeNoteBlocks(b.blocks,data.attachments):[]}
  if(kind==='reminder'){if(!['none','daily','weekly'].includes(b.repeat)||!['me','partner','both'].includes(b.recipient))fail(400,'提醒规则无效');if(b.recipient!=='me'&&b.scope!=='shared')fail(400,'提醒另一半需要共享');const time=Date.parse(b.nextAt);if(!Number.isFinite(time))fail(400,'请选择提醒时间');if(!existing&&time<Date.now()-60000)fail(400,'提醒时间不能早于现在');Object.assign(data,{nextAt:new Date(time).toISOString(),repeat:b.repeat,recipient:b.recipient,advance:[0,15,30,60].includes(b.advance)?b.advance:0,done:!!b.done})}
  const owner=existing?.owner||user.id;const itemCouple=b.scope==='shared'?user.couple:null;run('INSERT INTO items VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET couple=excluded.couple,data=excluded.data',id,owner,itemCouple,kind,JSON.stringify(data));let wechatSubscribed=false;if(kind==='reminder'){const savedItem={id,owner,couple:itemCouple};const targetIds=new Set(reminderUsers(savedItem,data).map(target=>target.id));if(b.wechatSubscribe===true&&wechatReminders.status().configured&&targetIds.has(user.id)){run("INSERT INTO wechat_reminder_subscriptions VALUES(?,?,?,?,?,?,NULL,NULL)",randomUUID(),id,user.id,data.nextAt,'pending',Date.now());wechatSubscribed=true}}return send(200,{...data,id,owner,kind,scope:b.scope,wechatSubscribed})}
- if(path.startsWith('/items/')&&req.method==='DELETE'){const i=one('SELECT * FROM items WHERE id=?',path.split('/')[2]);if(!i||!visible(i,user))fail(404,'内容不存在');if(i.owner!==user.id)fail(403,'只有创建者可以删除');run('DELETE FROM items WHERE id=?',i.id);run('DELETE FROM item_shares WHERE item=?',i.id);run("UPDATE wechat_reminder_subscriptions SET item=NULL,due=NULL WHERE item=? AND status='pending'",i.id);return send(200,{ok:true})}
+ if(/^\/items\/[^/]+$/.test(path)&&req.method==='DELETE'){const id=path.split('/')[2];transaction(()=>{const i=one('SELECT * FROM items WHERE id=?',id);if(!i||!visible(i,user))fail(404,'内容不存在');if(i.owner!==user.id)fail(403,'只有创建者可以删除');const candidates=itemAttachmentIds(i.data)||new Set(),referenced=new Set();let attachmentGcSafe=true;for(const item of all('SELECT data FROM items WHERE id<>?',i.id)){const ids=itemAttachmentIds(item.data);if(!ids){attachmentGcSafe=false;break}for(const fileId of ids)referenced.add(fileId)}run('DELETE FROM notifications WHERE item=?',i.id);run('DELETE FROM item_shares WHERE item=?',i.id);run("UPDATE wechat_reminder_subscriptions SET item=NULL,due=NULL WHERE item=? AND status='pending'",i.id);run("DELETE FROM wechat_reminder_subscriptions WHERE item=? AND status IN ('sending','sent','failed')",i.id);run('DELETE FROM items WHERE id=?',i.id);if(attachmentGcSafe)for(const fileId of candidates){const file=one('SELECT owner FROM files WHERE id=?',fileId);if(file?.owner===i.owner&&!referenced.has(fileId))run('DELETE FROM files WHERE id=? AND owner=?',fileId,i.owner)}});return send(200,{ok:true})}
  if(path==='/notifications'&&req.method==='GET'){tick();return send(200,all('SELECT id,title,due,seen,item itemId FROM notifications WHERE user=? ORDER BY due DESC LIMIT 100',user.id))}
  if(path==='/notifications/read'&&req.method==='POST'){const itemId=String(b.itemId||'').trim();if(itemId)run('UPDATE notifications SET seen=1 WHERE user=? AND item=?',user.id,itemId);else run('UPDATE notifications SET seen=1 WHERE user=?',user.id);return send(200,{ok:true})}
  fail(404,'接口不存在');
