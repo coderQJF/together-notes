@@ -20,7 +20,7 @@ const emit = defineEmits<{ select: [game: GameDefinition] }>()
       <view class="game-copy">
         <view class="game-title-row"><text class="game-title">{{ game.title }}</text><text class="game-tag">{{ game.tag }}</text></view>
         <text class="game-description">{{ game.description }}</text>
-        <text class="game-source">开源来源：{{ game.sourceName }} · {{ game.license }}</text>
+        <text class="game-source">运行来源：{{ game.sourceName }} · {{ game.license }}</text>
       </view>
       <view class="game-chevron" />
     </button>

@@ -1,4 +1,6 @@
-export type GameId = 'pokemon-dark-phantom-45' | 'sudoku'
+import type { CloudGame } from '../../services/api'
+
+export type GameId = string
 export type GameRuntime = 'local-gba' | 'remote-web'
 
 export type GameDefinition = {
@@ -13,26 +15,19 @@ export type GameDefinition = {
   license: string
   requiresOwnedRom: boolean
   mark: 'controller' | 'grid'
+  romFilename?: string
+  romBytes?: number
+  romSha256?: string
 }
+
+const CLOUD_GAME_CACHE_KEY = 'together-notes.cloud-games.v1'
 
 /**
  * Open-source runtimes stay behind catalog metadata so they remain replaceable.
- * The GBA runtime is packaged locally, while copyrighted ROM data is never
- * bundled or downloaded by Together Notes.
+ * The GBA runtime is packaged locally. Server-published game files are kept
+ * outside the install bundle and cached on the device after the first download.
  */
 export const GAME_CATALOG: readonly GameDefinition[] = Object.freeze([
-  {
-    id: 'pokemon-dark-phantom-45',
-    title: '口袋妖怪漆黑的魅影 4.5',
-    description: '模拟器和操作界面已内置；首次选择一次合法持有的 .gba，之后可离线直开。',
-    tag: 'GBA · 本地运行',
-    runtime: 'local-gba',
-    sourceName: 'EmulatorJS 4.2.3 · mGBA',
-    sourceUrl: 'https://github.com/EmulatorJS/EmulatorJS/tree/v4.2.3',
-    license: 'GPL-3.0 / MPL-2.0',
-    requiresOwnedRom: true,
-    mark: 'controller',
-  },
   {
     id: 'sudoku',
     title: '数独',
@@ -48,6 +43,35 @@ export const GAME_CATALOG: readonly GameDefinition[] = Object.freeze([
   },
 ])
 
+export function mapCloudGames(items: CloudGame[]): GameDefinition[] {
+  return items.map(game => ({
+    id: game.id,
+    title: game.title,
+    description: game.description || '下载一次后可离线运行',
+    tag: 'GBA · 下载后离线',
+    runtime: 'local-gba',
+    sourceName: 'Together 游戏库 · EmulatorJS / mGBA',
+    sourceUrl: 'https://github.com/EmulatorJS/EmulatorJS',
+    license: '运营上传内容',
+    requiresOwnedRom: false,
+    mark: 'controller',
+    romFilename: game.filename,
+    romBytes: game.bytes,
+    romSha256: game.sha256,
+  }))
+}
+
+export function cacheCloudGames(games: GameDefinition[]) {
+  try { uni.setStorageSync(CLOUD_GAME_CACHE_KEY, games) } catch {}
+}
+
+export function getCachedCloudGames(): GameDefinition[] {
+  try {
+    const value = uni.getStorageSync(CLOUD_GAME_CACHE_KEY)
+    return Array.isArray(value) ? value.filter(game => game?.id && game?.runtime === 'local-gba') : []
+  } catch { return [] }
+}
+
 export function findGame(id: string): GameDefinition | undefined {
-  return GAME_CATALOG.find(game => game.id === id)
+  return GAME_CATALOG.find(game => game.id === id) || getCachedCloudGames().find(game => game.id === id)
 }

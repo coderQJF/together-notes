@@ -45,6 +45,7 @@ PORT=8787
 DB_PATH=server/data/app.sqlite
 PUBLIC_DIR=
 MEDIA_DIR=server/data/media
+GAMES_DIR=server/data/games
 MEDIA_MAX_TOTAL_BYTES=536870912
 MEDIA_MAX_FILES=5000
 PUBLIC_BASE_URL=https://notes.example.com
@@ -71,7 +72,7 @@ AI_RATE_LIMIT_PER_MINUTE=5
 APP_TIME_ZONE=Asia/Shanghai
 ```
 
-内容服务会在启动后和上述间隔自动同步。密钥不能下发到 H5/小程序；GDELT 模式不需要注册或密钥，显式使用 NewsAPI 时缺少密钥会返回 `NEWS_API_UNCONFIGURED`。上游故障返回可追踪的结构化错误，不会伪造赛程或新闻。`MEDIA_DIR` 应与 SQLite 一样挂载到持久化磁盘；未显式配置时默认使用数据库文件的同级 `media` 目录。
+内容服务会在启动后和上述间隔自动同步。密钥不能下发到 H5/小程序；GDELT 模式不需要注册或密钥，显式使用 NewsAPI 时缺少密钥会返回 `NEWS_API_UNCONFIGURED`。上游故障返回可追踪的结构化错误，不会伪造赛程或新闻。`MEDIA_DIR` 和 `GAMES_DIR` 应与 SQLite 一样挂载到持久化磁盘；未显式配置时分别默认使用数据库文件同级的 `media`、`games` 目录。
 
 微信提醒使用“日历提醒”一次性订阅模板：`thing1` 为提醒事项、`time2` 为提醒时间、`thing6` 为备注。小程序不提供额外的微信通知开关；用户保存自己会接收的提醒时，直接申请本次微信服务通知。服务端将尚未消费的授权按用户保存，在下一条到期且包含该用户的提醒上使用；“我们俩”的提醒会分别消费双方的可用授权。一次授权仅用于一次发送，重复提醒的后续周期需要新的授权。模板 ID 不是密钥，可提交或由 `WX_REMINDER_TEMPLATE_ID` 覆盖；`WX_APP_SECRET` 仍只允许保存在服务器环境文件中。
 
@@ -262,6 +263,7 @@ DB_PATH=/var/lib/together-notes/app.sqlite
 BACKUP_DIR=/var/lib/together-notes/backups
 PUBLIC_DIR=/opt/together-notes/current/dist/build/h5
 MEDIA_DIR=/var/lib/together-notes/media
+GAMES_DIR=/var/lib/together-notes/games
 MEDIA_MAX_TOTAL_BYTES=536870912
 MEDIA_MAX_FILES=5000
 PUBLIC_BASE_URL=https://notes.example.com

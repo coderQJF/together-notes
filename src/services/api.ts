@@ -4,6 +4,7 @@ export interface CloudNovelSummary {id:string;title:string;author:string;charact
 export interface CloudNovelChapterSummary {chapterIndex:number;title:string;characterCount:number}
 export interface CloudNovelCatalog {id:string;title:string;author:string;chapterCount:number;chapters:CloudNovelChapterSummary[];createdAt:string;updatedAt:string}
 export interface CloudNovelChapter extends CloudNovelChapterSummary {content:string}
+export interface CloudGame {id:string;title:string;description:string;filename:string;bytes:number;sha256:string;downloadPath:string;updatedAt:string}
 export interface NoteBlockStyle {bold?:boolean;italic?:boolean;underline?:boolean;align?:'left'|'center'|'right';list?:'none'|'ordered'|'bullet';color?:string}
 export interface NoteBlock {id:string;type:'paragraph'|'todo'|'image'|'drawing'|'link';text?:string;checked?:boolean;attachmentId?:string;url?:string;style?:NoteBlockStyle}
 export interface Item {id?:string;owner?:string;kind:'note'|'reminder';title:string;content:string;scope:'mine'|'shared';pinned?:boolean;attachments?:Attachment[];links:string[];noteFormat?:'classic'|'paper';blocks?:NoteBlock[];sourceKey?:string;nextAt?:string;repeat?:string;recipient?:string;advance?:number;done?:boolean;updatedAt?:string}
@@ -91,6 +92,8 @@ export async function registerWithApp(username:string,password:string,nickname:s
 export async function listCloudNovels(){return (await request<{items:CloudNovelSummary[]}>('/novels')).items}
 export async function getCloudNovelCatalog(id:string){return request<CloudNovelCatalog>('/novels/'+encodeURIComponent(id)+'/chapters','GET',undefined,{timeout:60000})}
 export async function getCloudNovelChapter(id:string,chapterIndex:number){return request<CloudNovelChapter>('/novels/'+encodeURIComponent(id)+'/chapters/'+Math.max(0,Math.floor(chapterIndex)),'GET',undefined,{timeout:30000})}
+export async function listCloudGames(){return (await request<{items:CloudGame[]}>('/games')).items}
+export function cloudGameDownloadUrl(id:string){return apiBase()+'/games/'+encodeURIComponent(id)+'/download'}
 function imageName(file:any,index:number){
  const original=String(file?.name||'').trim();if(original)return original.slice(0,150)
  const path=String(file?.path||file?.tempFilePath||'');const match=path.match(/\.([a-z0-9]{2,5})(?:[?#].*)?$/i);const extension=match?.[1]?.toLowerCase()||'jpg'

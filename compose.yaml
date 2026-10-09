@@ -10,6 +10,7 @@ services:
       KEEP_BACKUPS: ${KEEP_BACKUPS:-14}
       PUBLIC_DIR: /app/public
       MEDIA_DIR: /data/media
+      GAMES_DIR: /data/games
       MEDIA_MAX_TOTAL_BYTES: ${MEDIA_MAX_TOTAL_BYTES:-536870912}
       MEDIA_MAX_FILES: ${MEDIA_MAX_FILES:-5000}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}

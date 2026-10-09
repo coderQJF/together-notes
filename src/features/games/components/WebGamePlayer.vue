@@ -18,7 +18,7 @@
       <text class="state-title">游戏加载失败</text>
       <text class="state-copy">{{ failureCopy || (localRuntime ? '本机模拟器或游戏文件无法读取' : '请检查网络后重试') }}</text>
       <button class="retry-button" @tap="retry">重新加载</button>
-      <button v-if="localRuntime" class="secondary-button" @tap="$emit('reimport')">重新导入 GBA</button>
+      <button v-if="localRuntime" class="secondary-button" @tap="$emit('reimport')">返回游戏页</button>
     </view>
   </view>
 </template>
@@ -224,7 +224,7 @@ export default defineComponent({
         if (this.childWebview !== child) return
         this.failWebGame(
           child,
-          this.localRuntime ? '本机模拟器启动超时，请重新加载或重新导入 GBA 文件' : '',
+          this.localRuntime ? '本机模拟器启动超时，请重新加载或返回游戏页重新下载' : '',
         )
       }, this.localRuntime ? LOCAL_RUNTIME_START_TIMEOUT_MS : REMOTE_LOAD_TIMEOUT_MS)
     },

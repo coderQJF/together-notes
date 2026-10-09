@@ -153,3 +153,14 @@ test('operations API protects account data, manages VIP, and scopes novels to se
   assert.equal((await call('/operations/novels/'+uploaded.id,'DELETE',undefined,'operations-secret')).ok,true);assert.equal((await call('/novels/'+uploaded.id,'GET',undefined,account.token)).status,404);assert.equal(app.db.prepare('SELECT count(*) count FROM novel_chapters WHERE novel=?').get(uploaded.id).count,0);
  }finally{await new Promise(r=>app.server.close(r));app.db.close()}
 });
+test('operations can publish GBA files for authenticated app downloads',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'together-notes-games-')),app=createApp({dbPath:join(directory,'app.sqlite'),gamesDir:join(directory,'games'),testAuth:true,opsAdminToken:'operations-secret'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
+ try{
+  const login=await fetch(base+'/auth/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'我'})}).then(r=>r.json()),rom=Buffer.alloc(64*1024,0);rom[0xb2]=0x96;const form=new FormData();form.set('title','测试 GBA');form.set('description','下载后离线运行');form.set('file',new Blob([rom]),'test.gba');
+  const uploadedResponse=await fetch(base+'/operations/games',{method:'POST',headers:{Authorization:'Bearer operations-secret'},body:form});assert.equal(uploadedResponse.status,201);const uploaded=await uploadedResponse.json();assert.equal(uploaded.bytes,rom.length);assert.equal(uploaded.sha256.length,64);
+  const operations=await fetch(base+'/operations/games',{headers:{Authorization:'Bearer operations-secret'}}).then(r=>r.json());assert.equal(operations.items.length,1);const catalog=await fetch(base+'/games',{headers:{Authorization:'Bearer '+login.token}}).then(r=>r.json());assert.equal(catalog.items[0].id,uploaded.id);assert.match(catalog.items[0].downloadPath,/\/download$/);
+  const download=await fetch(base+catalog.items[0].downloadPath,{headers:{Authorization:'Bearer '+login.token}});assert.equal(download.status,200);assert.equal(Number(download.headers.get('content-length')),rom.length);assert.deepEqual(Buffer.from(await download.arrayBuffer()),rom);
+  const partial=await fetch(base+catalog.items[0].downloadPath,{headers:{Authorization:'Bearer '+login.token,Range:'bytes=0-31'}});assert.equal(partial.status,206);assert.equal((await partial.arrayBuffer()).byteLength,32);
+  const removed=await fetch(base+'/operations/games/'+uploaded.id,{method:'DELETE',headers:{Authorization:'Bearer operations-secret'}}).then(r=>r.json());assert.equal(removed.ok,true);assert.equal((await fetch(base+'/games',{headers:{Authorization:'Bearer '+login.token}}).then(r=>r.json())).items.length,0);
+ }finally{await new Promise(r=>app.server.close(r));app.db.close();await rm(directory,{recursive:true,force:true})}
+});
