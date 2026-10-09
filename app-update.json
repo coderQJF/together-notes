@@ -1,5 +1,5 @@
 {
   "nativeMinVersion": "0.8.0",
-  "releaseNotes": "修复 Android 端导入 GBA 文件时部分机型提示 exists is not a function、无法完成本机保存的问题。",
+  "releaseNotes": "修复 Android 端导入 GBA 文件时文件 API 不兼容，以及读取缓冲区无法匹配导致导入停滞的问题。",
   "mandatory": false
 }

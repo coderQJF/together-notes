@@ -128,13 +128,18 @@ async function copyAndroidRom(
   let output: any
   let total = 0
   const MessageDigest = android.importClass('java.security.MessageDigest')
+  const JavaArray = android.importClass('java.lang.reflect.Array')
+  const Byte = android.importClass('java.lang.Byte')
   const digest = MessageDigest.getInstance('SHA-256')
   const deadline = Date.now() + COPY_TIMEOUT_MS
   try {
     input = android.invoke(resolver, 'openInputStream', uri)
     if (!input) throw new Error('系统没有返回可读取的 GBA 文件')
     output = android.newObject('java.io.FileOutputStream', temporary, false)
-    const buffer = android.newObject('byte[]', 8192)
+    // Native.js cannot reliably resolve InputStream.read(byte[]) when the
+    // buffer is created by its friendly `byte[]` alias. A real reflected JVM
+    // byte array keeps the overload stable across Android/WebView versions.
+    const buffer = JavaArray.newInstance(Byte.TYPE, 8192)
     let emptyReads = 0
     onProgress?.({ phase: 'copying', name: metadata.name, bytesCopied: 0, totalBytes: metadata.size || undefined })
 
@@ -143,7 +148,11 @@ async function copyAndroidRom(
       let reachedEof = false
       while (batchBytes < COPY_BATCH_BYTES) {
         if (Date.now() > deadline) throw new Error('复制 GBA 文件超时，请把文件保存到手机本地后重试')
-        const length = Number(android.invoke(input, 'read', buffer))
+        const readResult = android.invoke(input, 'read', buffer)
+        if (readResult === null || readResult === undefined || !Number.isFinite(Number(readResult))) {
+          throw new Error('当前系统无法批量读取这个 GBA 文件，请更新 App 后重试')
+        }
+        const length = Number(readResult)
         if (length < 0) {
           reachedEof = true
           break
