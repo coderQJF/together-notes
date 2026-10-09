@@ -57,7 +57,11 @@ function fileExists(path: string) {
     if (plus.os.name !== 'Android') return false
     const android = plus.android as any
     const file = android.newObject('java.io.File', path) as any
-    return Boolean(file?.exists?.() && file?.isFile?.() && Number(file?.length?.() || 0) >= MIN_ROM_BYTES)
+    return Boolean(
+      android.invoke(file, 'exists')
+      && android.invoke(file, 'isFile')
+      && Number(android.invoke(file, 'length') || 0) >= MIN_ROM_BYTES,
+    )
   } catch {
     return false
   }
@@ -103,16 +107,21 @@ async function copyAndroidRom(
   if (!/\.gba$/i.test(metadata.name)) throw new Error('请选择扩展名为 .gba 的游戏文件')
   if (metadata.size > MAX_ROM_BYTES) throw new Error('这个 GBA 文件超过 64MB，无法导入')
 
-  const filesDir = main.getFilesDir()
+  const filesDir = android.invoke(main, 'getFilesDir')
   const gameDir = android.newObject('java.io.File', filesDir, DIRECTORY_NAME) as any
-  if (!gameDir.exists() && !gameDir.mkdirs()) throw new Error('无法创建本机游戏目录')
+  if (!android.invoke(gameDir, 'exists') && !android.invoke(gameDir, 'mkdirs')) {
+    throw new Error('无法创建本机游戏目录')
+  }
   const destination = android.newObject('java.io.File', gameDir, ROM_FILE_NAME) as any
   const temporary = android.newObject('java.io.File', gameDir, `${ROM_FILE_NAME}.tmp`) as any
   const backup = android.newObject('java.io.File', gameDir, `${ROM_FILE_NAME}.bak`) as any
-  try { if (temporary.exists()) temporary.delete() } catch {}
+  try { if (android.invoke(temporary, 'exists')) android.invoke(temporary, 'delete') } catch {}
   try {
-    if (backup.exists() && !destination.exists()) backup.renameTo(destination)
-    else if (backup.exists()) backup.delete()
+    if (android.invoke(backup, 'exists') && !android.invoke(destination, 'exists')) {
+      android.invoke(backup, 'renameTo', destination)
+    } else if (android.invoke(backup, 'exists')) {
+      android.invoke(backup, 'delete')
+    }
   } catch {}
 
   let input: any
@@ -162,7 +171,7 @@ async function copyAndroidRom(
   }
 
   if (total < MIN_ROM_BYTES) {
-    try { temporary.delete() } catch {}
+    try { android.invoke(temporary, 'delete') } catch {}
     throw new Error('这个文件太小，不像有效的 GBA 游戏文件')
   }
   const digestBytes = digest.digest()
@@ -174,29 +183,31 @@ async function copyAndroidRom(
   let movedExistingToBackup = false
   let promotedTemporary = false
   try {
-    if (destination.exists()) {
-      if (backup.exists() && !backup.delete()) throw new Error('无法清理旧的 GBA 备份')
-      if (!destination.renameTo(backup)) throw new Error('无法备份旧的 GBA 文件')
+    if (android.invoke(destination, 'exists')) {
+      if (android.invoke(backup, 'exists') && !android.invoke(backup, 'delete')) {
+        throw new Error('无法清理旧的 GBA 备份')
+      }
+      if (!android.invoke(destination, 'renameTo', backup)) throw new Error('无法备份旧的 GBA 文件')
       movedExistingToBackup = true
     }
-    if (!temporary.renameTo(destination)) throw new Error('无法保存 GBA 文件到应用私有目录')
+    if (!android.invoke(temporary, 'renameTo', destination)) throw new Error('无法保存 GBA 文件到应用私有目录')
     promotedTemporary = true
-    if (Number(destination.length()) !== total) throw new Error('保存后的 GBA 文件大小不一致')
+    if (Number(android.invoke(destination, 'length')) !== total) throw new Error('保存后的 GBA 文件大小不一致')
     if (movedExistingToBackup) {
-      try { backup.delete() } catch {}
+      try { android.invoke(backup, 'delete') } catch {}
     }
   } catch (reason) {
-    try { temporary.delete() } catch {}
+    try { android.invoke(temporary, 'delete') } catch {}
     try {
-      if (promotedTemporary && destination.exists()) destination.delete()
+      if (promotedTemporary && android.invoke(destination, 'exists')) android.invoke(destination, 'delete')
       if (movedExistingToBackup) {
-        backup.renameTo(destination)
+        android.invoke(backup, 'renameTo', destination)
       }
     } catch {}
     throw reason
   }
 
-  const absolutePath = String(destination.getAbsolutePath())
+  const absolutePath = String(android.invoke(destination, 'getAbsolutePath'))
   const record: StoredLocalGbaRom = {
     name: metadata.name,
     size: total,

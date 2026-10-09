@@ -1,5 +1,5 @@
 {
   "nativeMinVersion": "0.8.0",
-  "releaseNotes": "修复笔记与提醒编辑页链接输入框在 Android 上的顶部裁切；新增随记、提醒长按多选和二次确认删除，并同步清理关联消息与孤立附件；将小说、游戏、漫画入口统一移至小空间，并新增漫画调研入口。",
+  "releaseNotes": "修复 Android 端导入 GBA 文件时部分机型提示 exists is not a function、无法完成本机保存的问题。",
   "mandatory": false
 }
