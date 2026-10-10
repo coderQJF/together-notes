@@ -9,6 +9,8 @@ import { listCloudGames } from '../../services/api'
 
 const games = ref<GameDefinition[]>([...GAME_CATALOG])
 const loadingGames = ref(false)
+const downloadProgress = ref<Record<string, number>>({})
+const downloadErrors = ref<Record<string, string>>({})
 
 onShow(async () => {
   loadingGames.value = true
@@ -34,29 +36,25 @@ async function launch(game: GameDefinition) {
     openPlayer(game)
     return
   }
-  const confirmed = await new Promise<boolean>(resolve => {
-    uni.showModal({
-      title: `下载《${game.title}》？`,
-      content: `${fileSize(game.romBytes || 0)}，下载后保存在本机，之后可以离线直开。`,
-      confirmText: '开始下载',
-      cancelText: '暂不进入',
-      confirmColor: '#494032',
-      success: result => resolve(result.confirm),
-      fail: () => resolve(false),
-    })
-  })
-  if (!confirmed) return
+  if (downloadProgress.value[game.id] !== undefined) return
+  const { [game.id]: _previousError, ...remainingErrors } = downloadErrors.value
+  downloadErrors.value = remainingErrors
+  downloadProgress.value = { ...downloadProgress.value, [game.id]: 0 }
   try {
-    const downloaded = await downloadAndStoreCloudGba(game, percent => uni.showLoading({ title: `下载中 ${percent}%`, mask: true }))
-    uni.hideLoading()
+    const downloaded = await downloadAndStoreCloudGba(game, percent => {
+      downloadProgress.value = { ...downloadProgress.value, [game.id]: percent }
+    })
     if (downloaded) openPlayer(game)
   } catch (reason) {
-    uni.hideLoading()
-    uni.showModal({ title: '下载失败', content: reason instanceof Error ? reason.message : '游戏下载失败', showCancel: false, confirmColor: '#494032' })
+    downloadErrors.value = {
+      ...downloadErrors.value,
+      [game.id]: reason instanceof Error ? reason.message : '游戏下载失败',
+    }
+  } finally {
+    const { [game.id]: _completedProgress, ...remainingProgress } = downloadProgress.value
+    downloadProgress.value = remainingProgress
   }
 }
-
-function fileSize(value: number) { return value >= 1024 * 1024 ? `${(value / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(value / 1024)} KB` }
 </script>
 
 <template>
@@ -65,7 +63,7 @@ function fileSize(value: number) { return value >= 1024 * 1024 ? `${(value / 102
     <text class="page-title">放松一下。</text>
     <text class="page-subtitle">游戏运行能力来自 GitHub 开源项目，并与小记业务隔离；本机 ROM 不会上传。</text>
     <text v-if="loadingGames" class="catalog-status">正在同步游戏库…</text>
-    <GameHub :games="games" @select="launch" />
+    <GameHub :games="games" :download-progress="downloadProgress" :download-errors="downloadErrors" @select="launch" />
     <view class="source-note">
       <text class="source-note-title">关于开源与 ROM</text>
       <text>GBA 模拟器、mGBA 核心和触控操作界面已内置。游戏从小记游戏库下载一次后保存在本机，后续启动不再消耗流量；数独使用 MIT 开源项目。</text>

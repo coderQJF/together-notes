@@ -135,6 +135,7 @@ export default defineComponent({
     },
     appendWhenOwnerReady(child: NativeGameWebview, attempt: number) {
       if (this.childWebview !== child) return
+      if (!this.loading) return
       const owner = this.resolveOwnerWebview()
       if (owner) {
         try {
@@ -212,9 +213,13 @@ export default defineComponent({
           if (bridgeOwner?.id) {
             child.evalJS(`window.__setTogetherNotesGameBridgeOwner && window.__setTogetherNotesGameBridgeOwner(${JSON.stringify(bridgeOwner.id)})`)
           }
-          return
+          if (this.loading) {
+            this.clearOwnerRetryTimer()
+            this.appendWhenOwnerReady(child, 0)
+          }
+        } else {
+          this.appendWhenOwnerReady(child, 0)
         }
-        this.appendWhenOwnerReady(child, 0)
       })
       child.addEventListener('error', () => {
         this.failWebGame(child)
@@ -227,6 +232,10 @@ export default defineComponent({
           this.localRuntime ? '本机模拟器启动超时，请重新加载或返回游戏页重新下载' : '',
         )
       }, this.localRuntime ? LOCAL_RUNTIME_START_TIMEOUT_MS : REMOTE_LOAD_TIMEOUT_MS)
+
+      // The bundled runtime has its own visible boot and error states. Attach it
+      // immediately instead of waiting for the optional game-start bridge event.
+      if (this.localRuntime) this.appendWhenOwnerReady(child, 0)
     },
   },
 })
