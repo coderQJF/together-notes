@@ -1,5 +1,5 @@
 {
   "nativeMinVersion": "0.8.0",
-  "releaseNotes": "游戏页现可从小记游戏库下载 GBA 游戏，首次下载后保存在本机并可离线运行。",
+  "releaseNotes": "优化游戏下载体验：进度改为卡片内显示，并修复游戏启动页一直停留在加载状态的问题。",
   "mandatory": false
 }
