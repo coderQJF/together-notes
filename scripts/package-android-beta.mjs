@@ -150,7 +150,18 @@ async function verifyNativeCapabilities(decodedDirectory) {
     'lib/armeabi-v7a/libmgba_libretro.so',
   ]
   for (const path of nativeLibraries) await access(resolve(decodedDirectory, path))
-  console.log('已验证 APK 包含桌面小工具、本地提醒与 ARM64/ARMv7 原生 mGBA 核心。')
+  const dexDirectories = (await readdir(decodedDirectory, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory() && /^smali(?:_|$)/.test(entry.name))
+    .map(entry => resolve(decodedDirectory, entry.name))
+  for (const name of ['NativeGbaView', 'GbaPlayerMenu', 'GbaSaveStore', 'GbaInput']) {
+    const path = `uts/sdk/modules/togetherNativeGba/${name}.smali`
+    let found = false
+    for (const directory of dexDirectories) {
+      try { await access(resolve(directory, path)); found = true; break } catch {}
+    }
+    if (!found) throw new Error(`APK 缺少原生游戏实现：${name}`)
+  }
+  console.log('已验证 APK 包含桌面小工具、本地提醒、原生操作/存档管理及 ARM64/ARMv7 mGBA 核心。')
 }
 
 async function latestRawApk() {

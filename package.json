@@ -1,6 +1,6 @@
 {
   "name": "together-notes",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "scripts": {
     "dev:h5": "uni",
     "build:h5": "uni build",
@@ -21,6 +21,7 @@
     "preview:mp-weixin": "node scripts/preview-wechat.mjs",
     "qa:icons": "node scripts/generate-ui-icons.mjs",
     "qa:mobile": "node scripts/capture-mobile.mjs",
+    "qa:native-gba": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-native-gba.ps1",
     "type-check": "vue-tsc --noEmit",
     "server": "node --env-file-if-exists=server/.env server/index.mjs",
     "vip": "node --env-file-if-exists=server/.env server/manage-vip.mjs",

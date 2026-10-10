@@ -150,7 +150,7 @@ npm run build:app
 
 ### Android 内测安装包
 
-代码仓库已经固定 DCloud AppID `__UNI__10E8CA8`、包名 `cn.coderf.togethernotes` 和版本 `0.9.0 (37)`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享、Android 本机定时通知及原生 mGBA 游戏运行器。当前内测版不需要开通 UniPush 或 uniCloud；验收时只需准备一台 Android 真机：
+代码仓库已经固定 DCloud AppID `__UNI__10E8CA8`、包名 `cn.coderf.togethernotes` 和版本 `0.10.0 (38)`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享、Android 本机定时通知及原生 mGBA 游戏运行器。当前内测版不需要开通 UniPush 或 uniCloud；验收时只需准备一台 Android 真机：
 
 - 在手机系统设置中允许“小记”通知；如果系统提供“闹钟与提醒”特殊权限，也一并允许。测试时创建两分钟后的提醒，划掉 App 并锁屏等待通知。不要用系统设置中的“强行停止”作为普通关闭方式。
 
@@ -162,7 +162,7 @@ npm run build:app
 - 证书密码、内测注册口令和证书指纹：`.private/android/app-release-secrets.local.json`。
 - 1024×1024 图标及 Android 密度图：`src/static/app-icons`。
 - Android 本机闹钟插件：`src/uni_modules/together-local-reminder`。
-- Android 原生 GBA 插件：`src/uni_modules/together-native-gba`；APK 同时包含 ARM64 与 ARMv7 的 mGBA Libretro 核心，ROM 和 SRAM 存档只保存在应用本机目录。
+- Android 原生 GBA 插件：`src/uni_modules/together-native-gba`；APK 同时包含 ARM64 与 ARMv7 的 mGBA Libretro 核心，ROM、SRAM 和即时存档只保存在应用本机目录。十字键支持八方向，下排 A/B 为按住连发；快进键循环切换正常、2 倍、4 倍（快进静音）。菜单提供声音、重启、退出和存档管理。
 
 `.private` 已被 Git 忽略。首次安装包发出前请把整个 `.private/android` 目录加密备份到另一个安全位置；以后每次升级必须继续使用同一证书，丢失后无法覆盖安装旧版本。需要重新初始化一套全新身份时才可删除旧文件并运行：
 
@@ -193,6 +193,10 @@ npm run package:android-beta
 第二条命令会生成忽略提交的 HBuilderX 打包配置，使用自有证书申请 Android 安心云打包；完成后会从 APK 运行清单移除 HBuilderX 注入的证书路径和密码字段，再用同一证书重新签名并校验，全程不在终端输出密码。
 
 原生 mGBA、原生提醒或其他 UTS 插件有变更时必须重新发布并安装 APK，不能只发布 WGT 热更新；纯页面、样式和业务脚本修改仍可走应用内资源更新。
+
+即时存档提供 10 个手动槽、一个快速槽和一个自动槽，记录画面缩略图和时间；每分钟、切到后台、正常退出时更新自动槽。通过“存档”选择读档、覆盖或删除；读档回到保存时的模拟器状态，游戏内保存的 SRAM 继续独立保留。存档按 ROM 的 SHA-256 隔离，不自动混用游戏不同版本的状态，也不提供云存档或会员商店。
+
+`npm run qa:native-gba` 使用本机 Gradle 缓存中的 Kotlin 2.0 编译器和 Android SDK 编译插件并运行输入/文件存档行为测试。`scripts/build-native-gba-qa.ps1` 生成独立的 x86_64 调试程序和原创 ARM 测试 ROM，便于在 Android 模拟器验证实际界面、连发和即时存档；这些测试内容不进入发布 APK。默认工具路径为 `F:/AndroidSDK`、`F:/AndroidStudio/jbr`，可通过 `ANDROID_HOME` 和 `JAVA_64_HOME` 指定。
 
 ### 划掉 App 后的系统提醒
 

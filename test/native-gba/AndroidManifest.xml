@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="cn.coderf.gbaqa">
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="32" />
+  <application android:label="GBA QA" android:debuggable="true" android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+    <activity android:name="uts.sdk.modules.togetherNativeGba.GbaQaActivity" android:exported="true">
+      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+    </activity>
+    <activity android:name="uts.sdk.modules.togetherNativeGba.NativeGbaActivity" android:exported="false" android:configChanges="keyboardHidden|orientation|screenSize" android:screenOrientation="sensorLandscape" />
+  </application>
+</manifest>

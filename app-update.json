@@ -1,5 +1,5 @@
 {
-  "nativeMinVersion": "0.9.0",
-  "releaseNotes": "GBA 游戏改用 Android 原生 mGBA 核心，减少重复加载并提供原生触控、音频和本机存档。",
+  "nativeMinVersion": "0.10.0",
+  "releaseNotes": "GBA 操作区升级为八方向十字键，新增 A/B 连发、2/4 倍快进、暂停菜单和带缩略图的多槽即时存档。",
   "mandatory": false
 }
