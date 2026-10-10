@@ -150,7 +150,7 @@ npm run build:app
 
 ### Android 内测安装包
 
-代码仓库已经固定 DCloud AppID `__UNI__10E8CA8`、包名 `cn.coderf.togethernotes` 和版本 `0.2.4 (24)`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享及 Android 本机定时通知。当前内测版不需要开通 UniPush 或 uniCloud；验收时只需准备一台 Android 真机：
+代码仓库已经固定 DCloud AppID `__UNI__10E8CA8`、包名 `cn.coderf.togethernotes` 和版本 `0.9.0 (37)`，并提供账号密码登录、原生隐私弹窗、协议页、账号注销、系统分享、Android 本机定时通知及原生 mGBA 游戏运行器。当前内测版不需要开通 UniPush 或 uniCloud；验收时只需准备一台 Android 真机：
 
 - 在手机系统设置中允许“小记”通知；如果系统提供“闹钟与提醒”特殊权限，也一并允许。测试时创建两分钟后的提醒，划掉 App 并锁屏等待通知。不要用系统设置中的“强行停止”作为普通关闭方式。
 
@@ -162,6 +162,7 @@ npm run build:app
 - 证书密码、内测注册口令和证书指纹：`.private/android/app-release-secrets.local.json`。
 - 1024×1024 图标及 Android 密度图：`src/static/app-icons`。
 - Android 本机闹钟插件：`src/uni_modules/together-local-reminder`。
+- Android 原生 GBA 插件：`src/uni_modules/together-native-gba`；APK 同时包含 ARM64 与 ARMv7 的 mGBA Libretro 核心，ROM 和 SRAM 存档只保存在应用本机目录。
 
 `.private` 已被 Git 忽略。首次安装包发出前请把整个 `.private/android` 目录加密备份到另一个安全位置；以后每次升级必须继续使用同一证书，丢失后无法覆盖安装旧版本。需要重新初始化一套全新身份时才可删除旧文件并运行：
 
@@ -190,6 +191,8 @@ npm run package:android-beta
 ```
 
 第二条命令会生成忽略提交的 HBuilderX 打包配置，使用自有证书申请 Android 安心云打包；完成后会从 APK 运行清单移除 HBuilderX 注入的证书路径和密码字段，再用同一证书重新签名并校验，全程不在终端输出密码。
+
+原生 mGBA、原生提醒或其他 UTS 插件有变更时必须重新发布并安装 APK，不能只发布 WGT 热更新；纯页面、样式和业务脚本修改仍可走应用内资源更新。
 
 ### 划掉 App 后的系统提醒
 

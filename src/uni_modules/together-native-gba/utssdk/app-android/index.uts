@@ -1,0 +1,18 @@
+import { OpenNativeGba, ConsumeNativeGbaClosed } from '../interface.uts'
+
+export const openNativeGba : OpenNativeGba = function (
+  romPath : string,
+  gameTitle : string,
+  gameIdentity : string,
+  sessionId : string
+) : boolean {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity == null) return false
+  return NativeGbaLauncher.open(activity, romPath, gameTitle, gameIdentity, sessionId)
+}
+
+export const consumeNativeGbaClosed : ConsumeNativeGbaClosed = function (sessionId : string) : boolean {
+  const context = UTSAndroid.getAppContext()
+  if (context == null) return false
+  return NativeGbaLauncher.consumeClosed(context, sessionId)
+}

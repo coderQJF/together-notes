@@ -104,6 +104,7 @@ async function verifyNativeCapabilities(decodedDirectory) {
     'uts.sdk.modules.togetherLocalReminder.ReminderAlarmReceiver',
     'uts.sdk.modules.togetherLocalReminder.ReminderSyncReceiver',
     'uts.sdk.modules.togetherLocalReminder.ReminderBootReceiver',
+    'uts.sdk.modules.togetherNativeGba.NativeGbaActivity',
   ]
   for (const entry of expectedManifestEntries) {
     if (!androidManifest.includes(entry)) throw new Error(`APK 缺少原生能力声明：${entry}`)
@@ -144,7 +145,12 @@ async function verifyNativeCapabilities(decodedDirectory) {
   }
   if (!reconfigurable) throw new Error('APK 缺少 Android 12+ 桌面小工具重新配置声明')
   if (!thirtyMinuteQuoteRefresh) throw new Error('APK 桌面小工具缺少 30 分钟句读刷新配置')
-  console.log('已验证 APK 包含小记/句读桌面小工具与进程退出后本地提醒能力。')
+  const nativeLibraries = [
+    'lib/arm64-v8a/libmgba_libretro.so',
+    'lib/armeabi-v7a/libmgba_libretro.so',
+  ]
+  for (const path of nativeLibraries) await access(resolve(decodedDirectory, path))
+  console.log('已验证 APK 包含桌面小工具、本地提醒与 ARM64/ARMv7 原生 mGBA 核心。')
 }
 
 async function latestRawApk() {

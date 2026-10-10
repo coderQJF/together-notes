@@ -1,0 +1,6 @@
+{
+  "minSdkVersion": 21,
+  "dependencies": [
+    "net.java.dev.jna:jna:5.19.1@aar"
+  ]
+}

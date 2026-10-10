@@ -66,7 +66,7 @@ async function launch(game: GameDefinition) {
     <GameHub :games="games" :download-progress="downloadProgress" :download-errors="downloadErrors" @select="launch" />
     <view class="source-note">
       <text class="source-note-title">关于开源与 ROM</text>
-      <text>GBA 模拟器、mGBA 核心和触控操作界面已内置。游戏从小记游戏库下载一次后保存在本机，后续启动不再消耗流量；数独使用 MIT 开源项目。</text>
+      <text>原生 mGBA 核心和触控操作界面已内置。游戏从小记游戏库下载一次后保存在本机，后续启动不再消耗流量；数独使用 MIT 开源项目。</text>
     </view>
   </view>
 </template>

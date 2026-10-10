@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="io.dcloud.uni_modules.together_native_gba">
+  <application>
+    <activity
+      android:name="uts.sdk.modules.togetherNativeGba.NativeGbaActivity"
+      android:configChanges="keyboardHidden|orientation|screenSize"
+      android:exported="false"
+      android:screenOrientation="sensorLandscape"
+      android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
+  </application>
+</manifest>

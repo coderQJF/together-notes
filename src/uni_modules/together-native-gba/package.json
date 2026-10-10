@@ -1,0 +1,37 @@
+{
+  "id": "together-native-gba",
+  "displayName": "小记原生 GBA",
+  "version": "1.0.0",
+  "description": "使用 Android 原生 Libretro mGBA 核心运行本机 GBA 游戏",
+  "engines": {
+    "HBuilderX": "^5.26"
+  },
+  "dcloudext": {
+    "type": "uts",
+    "declaration": {
+      "ads": "无",
+      "data": "仅在 Android 应用私有目录读取本机 ROM 并保存游戏 SRAM，不上传游戏内容",
+      "permissions": "无新增权限"
+    }
+  },
+  "uni_modules": {
+    "dependencies": [],
+    "encrypt": [],
+    "platforms": {
+      "client": {
+        "Vue": {
+          "vue2": "n",
+          "vue3": "y"
+        },
+        "App": {
+          "app-android": {
+            "minVersion": "21"
+          },
+          "app-ios": {
+            "minVersion": "x"
+          }
+        }
+      }
+    }
+  }
+}

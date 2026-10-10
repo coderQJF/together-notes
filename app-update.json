@@ -1,5 +1,5 @@
 {
-  "nativeMinVersion": "0.8.0",
-  "releaseNotes": "优化游戏下载体验：进度改为卡片内显示，并修复游戏启动页一直停留在加载状态的问题。",
+  "nativeMinVersion": "0.9.0",
+  "releaseNotes": "GBA 游戏改用 Android 原生 mGBA 核心，减少重复加载并提供原生触控、音频和本机存档。",
   "mandatory": false
 }
