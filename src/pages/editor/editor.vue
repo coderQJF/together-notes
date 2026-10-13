@@ -5,9 +5,9 @@ import FormTextareaField from '../../components/FormTextareaField.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import StructuredNoteEditor from '../../components/StructuredNoteEditor.vue'
 import TimePickerField from '../../components/TimePickerField.vue'
-import { attachImages, request, type Item, type User } from '../../services/api'
+import { attachImages, cachedHome, request, type Item, type User } from '../../services/api'
 import { syncHomeWidgetNotes } from '../../services/home-widget'
-import { requestLocalReminderPermissions, scheduleLocalReminderForUser } from '../../services/local-reminders'
+import { configureBackgroundReminderSync, requestLocalReminderPermissions, scheduleLocalReminderForUser } from '../../services/local-reminders'
 import { materializeNoteBlocks } from '../../services/note-blocks'
 import { dateInputValue, timeInputValue } from '../../utils/date'
 
@@ -37,6 +37,8 @@ const error = ref('')
 const editingExisting = ref(false)
 const wechatStatus = ref<{ configured: boolean; templateId: string | null }>({ configured: false, templateId: null })
 const formatPickerOpen = ref(false)
+const settingsOpen = ref(false)
+const isPaper = computed(() => draft.value.kind === 'note' && draft.value.noteFormat === 'paper')
 let active = true
 let closing = false
 
@@ -88,15 +90,23 @@ async function load(options?: Record<string, string | undefined>) {
   // #endif
   try {
     const id = options?.id ? decodeURIComponent(options.id) : ''
+    const cached = cachedHome()
+    user.value = cached?.user || null
+    const cachedDraft = cached?.items.find(item => item.id === id)
     if (id) {
-      const [nextUser, nextDraft] = await Promise.all([
-        request<User>('/me'),
-        request<Item>(`/items/${encodeURIComponent(id)}`),
-      ])
-      user.value = nextUser
-      draft.value = nextDraft
+      if (cachedDraft) {
+        draft.value = JSON.parse(JSON.stringify(cachedDraft))
+      } else {
+        const [nextUser, nextDraft] = await Promise.all([
+          request<User>('/me'),
+          request<Item>(`/items/${encodeURIComponent(id)}`),
+        ])
+        user.value = nextUser
+        draft.value = nextDraft
+      }
     } else {
-      user.value = await request<User>('/me')
+      // A blank personal draft must never wait for the account/network request.
+      if (!user.value) void request<User>('/me').then(value => { if (active) user.value = value }).catch(() => {})
       if (options?.title) draft.value.title = decodeURIComponent(options.title).slice(0, 100)
       if (options?.content) draft.value.content = decodeURIComponent(options.content).slice(0, 50000)
       if (options?.at && Number.isFinite(Number(options.at))) draft.value.nextAt = new Date(Number(options.at)).toISOString()
@@ -104,7 +114,7 @@ async function load(options?: Record<string, string | undefined>) {
     linkText.value = (draft.value.links || []).join('\n')
     syncDateFields()
     // #ifdef MP-WEIXIN
-    if (wechatStatusRequest) wechatStatus.value = await wechatStatusRequest
+    if (wechatStatusRequest) void wechatStatusRequest.then(value => { if (active) wechatStatus.value = value })
     // #endif
   } catch (e) {
     error.value = e instanceof Error ? e.message : '内容加载失败'
@@ -192,16 +202,17 @@ async function save() {
     if (!active) return
     // #ifdef APP-PLUS
     try {
-      const latestItems = await request<Item[]>('/items')
-      await syncHomeWidgetNotes(latestItems)
+      const latestItems = cachedHome()?.items || [saved]
+      void syncHomeWidgetNotes(latestItems)
     } catch {
       // Saving the note succeeded even if the optional desktop cache is unavailable.
     }
     // #endif
     const localReminderScheduled = saved.kind === 'reminder' && user.value ? scheduleLocalReminderForUser(saved, user.value) : false
+    configureBackgroundReminderSync()
     if (localReminderScheduled) requestLocalReminderPermissions()
     closing = true
-    uni.showToast({ title: saved.wechatSubscribed ? '已保存，微信提醒已开启' : wechatAuthorizationRequested ? '已保存，微信提醒未授权' : localReminderScheduled ? '已保存并设置本机提醒' : '已保存', icon: saved.wechatSubscribed || localReminderScheduled || !wechatAuthorizationRequested ? 'success' : 'none' })
+    uni.showToast({ title: saved.wechatSubscribed ? '已保存，微信提醒已开启' : localReminderScheduled ? '已保存并设置本机提醒' : saved.syncPending ? '已保存到本机' : wechatAuthorizationRequested ? '已保存，微信提醒未授权' : '已保存', icon: 'success' })
     returnToPrevious()
   } catch (e) {
     if (active) uni.showToast({ title: e instanceof Error ? e.message : '保存失败', icon: 'none' })
@@ -220,7 +231,7 @@ onUnload(() => { active = false })
 </script>
 
 <template>
-  <view class="shell">
+  <view class="shell" :class="{ 'paper-shell': isPaper }">
     <SubpageHeader :label="pageLabel" :action-label="headerActionLabel" @action="formatPickerOpen=true" />
 
     <view v-if="loading" class="state">正在准备…</view>
@@ -229,13 +240,19 @@ onUnload(() => { active = false })
       <text class="muted">{{ error }}</text>
     </view>
 
+    <view v-else-if="isPaper" class="paper-page">
+      <input v-model="draft.title" class="paper-title" maxlength="100" placeholder="标题" />
+      <view class="paper-meta"><text>灵感纸</text><button @click="settingsOpen=true">{{ draft.scope === 'shared' ? '我们俩' : '仅自己' }} · 设置</button></view>
+      <StructuredNoteEditor full-page :blocks="draft.blocks || []" :attachments="draft.attachments || []" :saving="pending === 'save'" @save="save" @update:blocks="draft.blocks=$event" @update:attachments="draft.attachments=$event" />
+    </view>
+
     <view v-else class="form">
       <text class="headline">{{ headline }}</text>
 
       <text class="label">标题</text>
       <input v-model="draft.title" maxlength="100" placeholder="想记下什么？" />
 
-      <template v-if="draft.kind !== 'note' || draft.noteFormat !== 'paper'">
+      <template>
         <FormTextareaField v-model="draft.content" class="content-input" label="内容" :maxlength="50000" placeholder="文字、清单，或者想对她说的话…" size="content" />
 
         <FormTextareaField v-model="linkText" class="links-input" label="链接（每行一个）" :maxlength="2000" placeholder="https://…" size="links" />
@@ -251,15 +268,11 @@ onUnload(() => { active = false })
         <button class="attachment-button" :disabled="Boolean(pending)" @click="addAttachment">
           <view v-if="pending === 'attachment'" class="spinner" />
           <view v-else class="mini-plus" />
-          <text>{{ pending === 'attachment' ? '上传中…' : '选择图片（可多选）' }}</text>
+          <text>{{ pending === 'attachment' ? '添加中…' : '选择图片（可多选）' }}</text>
         </button>
         <text class="muted small hint">单张最大 12MB，最多 10 张；桌面小组件会自动轮播所选小记的图片。</text>
       </template>
-      <template v-else>
-        <text class="label paper-label">灵感纸内容</text>
-        <StructuredNoteEditor :blocks="draft.blocks || []" :attachments="draft.attachments || []" @update:blocks="draft.blocks=$event" @update:attachments="draft.attachments=$event" />
-        <text class="muted small hint">内容会按当前顺序保存；图片与手写也会同步到桌面小组件。</text>
-      </template>
+
 
       <text class="label">可见范围</text>
       <view v-if="isGuestEditor" class="picker readonly">
@@ -328,6 +341,16 @@ onUnload(() => { active = false })
       </button>
     </view>
 
+    <view v-if="settingsOpen" class="format-picker-layer" @click="settingsOpen=false" @touchmove.stop.prevent>
+      <view class="format-picker paper-settings" @click.stop>
+        <view class="format-picker-heading"><text>灵感纸设置</text><button aria-label="关闭设置" @click="settingsOpen=false"><view class="close-icon" /></button></view>
+        <text class="label">可见范围</text>
+        <view v-if="isGuestEditor" class="picker readonly">我们俩 · 共同编辑</view>
+        <picker v-else :range="['仅自己', '我们俩']" :value="draft.scope === 'shared' ? 1 : 0" @change="draft.scope = Number($event.detail.value) ? 'shared' : 'mine'"><view class="picker"><text>{{ draft.scope === 'shared' ? '我们俩 · 共同编辑' : '仅自己可见' }}</text><view class="chevron-down" /></view></picker>
+        <view class="setting pin-setting"><text>置顶这条备忘</text><switch color="#b28b35" :checked="draft.pinned" @change="setPinned" /></view>
+      </view>
+    </view>
+
     <view v-if="formatPickerOpen" class="format-picker-layer" @click="formatPickerOpen=false" @touchmove.stop.prevent>
       <view class="format-picker" @click.stop>
         <view class="format-picker-heading"><view><text>备忘录格式</text><text>随时切换，已有内容会保留</text></view><button aria-label="关闭格式选择" @click="formatPickerOpen=false"><view class="close-icon" /></button></view>
@@ -346,4 +369,14 @@ onUnload(() => { active = false })
 @media(max-width:360px){.shell{padding-left:20px;padding-right:20px}.headline{font-size:29px}.date-row{gap:8px}}
 .shell{padding-left:calc(24px + env(safe-area-inset-left));padding-right:calc(24px + env(safe-area-inset-right))}
 @media(max-width:360px){.shell{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}}
+</style>
+
+<style scoped>
+.paper-shell{padding-bottom:0;color:#494032}
+.paper-page{min-height:calc(100vh - 100px)}
+.paper-title{display:block;width:100%;height:64px;margin:0;padding:0;border:0;background:transparent;color:#494032;font-size:30px;font-weight:650;line-height:1.4}
+.paper-meta{display:flex;align-items:center;gap:12px;margin-bottom:8px;color:#8b806e;font-size:12px}
+.paper-meta button{display:flex;align-items:center;justify-content:center;min-height:44px;margin:0;padding:0 12px;border:0;border-radius:12px;background:#f4efe2;color:#786d5b;font-size:12px}
+.paper-meta button::after{border:0}
+.paper-settings .label{margin-top:10px}
 </style>

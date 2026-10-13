@@ -32,7 +32,8 @@ async function performHomeWidgetSync(items: Item[]) {
         let key = runNativeSafely('', () => nativeCachedHomeWidgetImage(note.id, image.id))
         if (!key) {
           try {
-            const base64 = await attachmentBase64({ id: image.id, name: image.name, size: 0 })
+            const file = items.flatMap(item => item.attachments || []).find(file => file.id === image.id)
+            const base64 = await attachmentBase64(file || { id: image.id, name: image.name, size: 0 })
             key = runNativeSafely('', () => nativeCacheHomeWidgetImage(note.id, image.id, base64))
           } catch {
             key = ''

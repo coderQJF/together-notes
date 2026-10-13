@@ -1,5 +1,5 @@
 {
   "nativeMinVersion": "0.10.0",
-  "releaseNotes": "GBA 操作区升级为八方向十字键，新增 A/B 连发、2/4 倍快进、暂停菜单和带缩略图的多槽即时存档。",
+  "releaseNotes": "个人备忘录与提醒支持本机保存和联网同步；灵感纸采用整页编辑和底部工具栏；小说、漫画、游戏仅在 App 编译。",
   "mandatory": false
 }

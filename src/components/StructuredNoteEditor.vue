@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { attachImages, uploadImagePath, type Attachment, type NoteBlock } from '../services/api'
 import { summarizeLedgerBlocks } from '../services/note-ledger'
 import HandwritingPad from './HandwritingPad.vue'
@@ -8,12 +8,20 @@ import LedgerSummary from './LedgerSummary.vue'
 import NoteToolIcon from './NoteToolIcon.vue'
 import StatusIcon from './StatusIcon.vue'
 
-const props = defineProps<{ blocks: NoteBlock[]; attachments: Attachment[] }>()
-const emit = defineEmits<{ 'update:blocks': [value: NoteBlock[]]; 'update:attachments': [value: Attachment[]] }>()
+const props = withDefaults(defineProps<{ blocks: NoteBlock[]; attachments: Attachment[]; fullPage?: boolean; saving?: boolean }>(), { fullPage: false, saving: false })
+const emit = defineEmits<{ 'update:blocks': [value: NoteBlock[]]; 'update:attachments': [value: Attachment[]]; save: [] }>()
 const handwritingOpen = ref(false)
 const formatOpen = ref(false)
 const activeParagraph = ref('')
 const busy = ref(false)
+const keyboardHeight = ref(0)
+function keyboardChanged(event: { height: number }) { keyboardHeight.value = Math.max(0, event.height) }
+function viewportChanged() {
+  // #ifdef H5
+  const viewport = window.visualViewport
+  if (viewport) keyboardHeight.value = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+  // #endif
+}
 const tools = [
   { key: 'handwriting', label: '手写' }, { key: 'todo', label: '待办' }, { key: 'paragraph', label: '段落' },
   { key: 'image', label: '图片' }, { key: 'link', label: '链接' },
@@ -59,14 +67,14 @@ async function saveDrawing(path: string) {
     const added = await uploadImagePath(path)
     emit('update:attachments', [...props.attachments, added].slice(0, 10))
     update([...props.blocks, { id: blockId(), type: 'drawing', attachmentId: added.id }])
-  } catch (reason) { uni.showToast({ title: reason instanceof Error ? reason.message : '手写内容上传失败', icon: 'none' }) }
+  } catch (reason) { uni.showToast({ title: reason instanceof Error ? reason.message : '手写内容保存失败', icon: 'none' }) }
   finally { busy.value = false }
 }
 
 function useTool(key: typeof tools[number]['key']) {
   if (key === 'handwriting') handwritingOpen.value = true
   if (key === 'todo') addTodo()
-  if (key === 'paragraph') addParagraph()
+  if (key === 'paragraph') { if (props.fullPage && activeBlock.value) formatOpen.value = true; else addParagraph() }
   if (key === 'image') void addImage()
   if (key === 'link') addLink()
 }
@@ -78,15 +86,33 @@ function patchStyle(patch: Record<string, unknown>) {
 }
 
 onMounted(() => {
-  if (!props.blocks.length) update([paragraphBlock()])
+  if (!props.blocks.length) {
+    const block = paragraphBlock()
+    update([block])
+    activeParagraph.value = block.id
+  } else activeParagraph.value = props.blocks.find(block => block.type === 'paragraph')?.id || ''
+  // #ifndef H5
+  uni.onKeyboardHeightChange(keyboardChanged)
+  // #endif
+  // #ifdef H5
+  window.visualViewport?.addEventListener('resize', viewportChanged)
+  // #endif
+})
+onUnmounted(() => {
+  // #ifndef H5
+  uni.offKeyboardHeightChange(keyboardChanged)
+  // #endif
+  // #ifdef H5
+  window.visualViewport?.removeEventListener('resize', viewportChanged)
+  // #endif
 })
 </script>
 
 <template>
-  <view class="paper-editor">
-    <view v-for="(block, index) in blocks" :key="block.id" class="block" :class="`block-${block.type}`">
-      <view v-if="block.type !== 'todo'" class="block-top"><text>{{ block.type === 'paragraph' ? '段落' : block.type === 'link' ? '链接' : block.type === 'drawing' ? '手写' : '图片' }}</text><button aria-label="移除这段内容" @click="removeBlock(block.id)">移除</button></view>
-      <textarea v-if="block.type === 'paragraph'" class="block-input paragraph-input" :style="paragraphCss(block)" :value="block.text" maxlength="10000" placeholder="输入正文…" auto-height disable-default-padding @focus="activeParagraph=block.id" @input="patchBlock(block.id,{text:eventValue($event)})" />
+  <view class="paper-editor" :class="{ 'full-page': fullPage }" :style="{ '--paper-keyboard': `${keyboardHeight}px` }">
+    <view v-for="(block, index) in blocks" :key="block.id" class="block" :class="[`block-${block.type}`, { 'sole-paragraph': blocks.length === 1 && block.type === 'paragraph' }]">
+      <view v-if="block.type !== 'todo' && (!fullPage || block.type !== 'paragraph' || blocks.length > 1)" class="block-top"><text>{{ block.type === 'paragraph' ? '段落' : block.type === 'link' ? '链接' : block.type === 'drawing' ? '手写' : '图片' }}</text><button aria-label="移除这段内容" @click="removeBlock(block.id)">移除</button></view>
+      <textarea v-if="block.type === 'paragraph'" class="block-input paragraph-input" :style="paragraphCss(block)" :value="block.text" maxlength="10000" placeholder="输入正文…" auto-height :adjust-position="!fullPage" :cursor-spacing="100" disable-default-padding @focus="activeParagraph=block.id" @input="patchBlock(block.id,{text:eventValue($event)})" />
       <view v-else-if="block.type === 'todo'" class="todo-row" :class="{checked:block.checked}" @click="toggleTodo(block.id)"><button aria-label="切换待办状态" @click.stop="toggleTodo(block.id)" @tap.stop><StatusIcon :checked="Boolean(block.checked)" size="large" /></button><input :value="block.text" maxlength="500" placeholder="待办事项" @click.stop @tap.stop @input="patchBlock(block.id,{text:eventValue($event)})" /><button class="todo-remove" aria-label="移除这条待办" @click.stop="removeBlock(block.id)" @tap.stop><view class="remove-icon" /></button></view>
       <view v-else-if="block.type === 'link'" class="link-fields"><input :value="block.text" maxlength="500" placeholder="链接名称（选填）" @input="patchBlock(block.id,{text:eventValue($event)})" /><input :value="block.url" maxlength="2000" placeholder="https://…" @input="patchBlock(block.id,{url:eventValue($event)})" /></view>
       <ImageAttachmentGallery v-else-if="attachment(block.attachmentId)" inline :attachments="[attachment(block.attachmentId)!]" />
@@ -97,12 +123,14 @@ onMounted(() => {
     <LedgerSummary v-if="ledgerSummary" :summary="ledgerSummary" />
 
     <view class="paper-toolbar">
-      <button v-for="tool in tools" :key="tool.key" :disabled="busy" :aria-label="tool.label" @click="useTool(tool.key)"><NoteToolIcon :kind="tool.key" /><text>{{ tool.label }}</text></button>
+      <button v-for="tool in tools" :key="tool.key" :disabled="busy || saving" :aria-label="tool.label" @click="useTool(tool.key)"><NoteToolIcon :kind="tool.key" /><text>{{ tool.label }}</text></button>
+      <button v-if="fullPage" class="paper-save" :disabled="busy || saving" aria-label="保存灵感纸" @click="emit('save')"><StatusIcon checked size="large" /><text>{{ saving ? '保存中' : '保存' }}</text></button>
     </view>
 
     <view v-if="formatOpen" class="format-layer" @click="formatOpen=false">
       <view class="format-sheet" @click.stop>
         <view class="format-heading"><text>段落样式</text><button @click="formatOpen=false"><view class="close-icon" /></button></view>
+        <button v-if="fullPage" class="new-paragraph" @click="addParagraph">新增段落</button>
         <view class="format-actions">
           <button :class="{active:activeBlock?.style?.bold}" @click="patchStyle({bold:!activeBlock?.style?.bold})"><text class="bold">B</text><text>粗体</text></button>
           <button :class="{active:activeBlock?.style?.italic}" @click="patchStyle({italic:!activeBlock?.style?.italic})"><text class="italic">I</text><text>斜体</text></button>
@@ -123,4 +151,18 @@ onMounted(() => {
 
 <style scoped>
 .paper-editor{padding-bottom:76px}.block{position:relative;padding:13px 14px;margin:12px 0;border:1px solid #ece5d6;border-radius:18px;background:#fff}.block-todo{padding:0;margin:2px 0;border:0;border-radius:0;background:transparent}.block-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;color:#9a8b72;font-size:10px}.block-top button{display:flex;width:52px;height:44px;min-height:44px;align-items:center;justify-content:flex-end;margin:-12px -4px -10px 0;padding:0;border:0;background:transparent;color:#ae4b3b;font-size:11px}.block-top button::after{border:0}.block-input,.link-fields input,.todo-row input{width:100%;border:0;background:transparent;color:#3e382d}.paragraph-input{min-height:64px;font-size:16px;line-height:1.8;text-decoration:var(--paragraph-decoration,none)}.todo-row{display:flex;min-height:56px;align-items:center;gap:7px;color:#3e382d}.todo-row>button{display:flex;width:44px;height:44px;min-height:44px;align-items:center;justify-content:center;flex:0 0 44px;margin:0;padding:0;border:0;background:transparent}.todo-row>button::after{border:0}.todo-row input{height:48px;min-width:0;flex:1;font-size:16px}.todo-row.checked input{color:#9c9487;text-decoration:line-through}.todo-row>.todo-remove{width:44px;flex-basis:44px}.remove-icon{position:relative;width:14px;height:14px}.remove-icon::before,.remove-icon::after{content:'';position:absolute;left:1px;top:6px;width:12px;border-top:1.5px solid #b3aa9d;transform:rotate(45deg)}.remove-icon::after{transform:rotate(-45deg)}.link-fields{display:flex;flex-direction:column;gap:4px}.link-fields input{height:42px;border-bottom:1px solid #eee7da}.link-fields input:last-child{border-bottom:0;color:#83692e}.missing-file{display:block;padding:24px;color:#9a8b72;text-align:center}.block-order{position:absolute;right:12px;bottom:8px;color:#c1b7a7;font-size:9px}.block-todo .block-order{display:none}.paper-toolbar{position:sticky;z-index:25;bottom:8px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:6px;margin-top:18px;border:1px solid #e6dfd1;border-radius:18px;background:rgba(255,255,255,.96);box-shadow:0 10px 30px rgba(64,54,40,.14);backdrop-filter:blur(10px)}.paper-toolbar button{display:flex;height:54px;min-height:54px;align-items:center;justify-content:center;flex-direction:column;gap:2px;margin:0;padding:0;border:0;background:transparent;color:#494032;font-size:9px}.paper-toolbar button::after{border:0}.paper-toolbar button[disabled]{opacity:.4}.format-layer{position:fixed;z-index:90;inset:0;display:flex;align-items:flex-end;justify-content:center;background:rgba(49,42,33,.25)}.format-sheet{width:min(100%,640px);padding:16px 20px calc(22px + env(safe-area-inset-bottom));border-radius:24px 24px 0 0;background:#f6f6f4;box-sizing:border-box}.format-heading{display:flex;height:44px;align-items:center;justify-content:space-between;color:#62594a;font-size:16px;font-weight:600}.format-heading button{display:flex;width:44px;height:44px;align-items:center;justify-content:center;margin:0 -10px 0 0;padding:0;border:0;background:transparent}.format-heading button::after{border:0}.close-icon{position:relative;width:16px;height:16px}.close-icon::before,.close-icon::after{content:'';position:absolute;left:1px;top:7px;width:14px;border-top:1.5px solid #786d5b;transform:rotate(45deg)}.close-icon::after{transform:rotate(-45deg)}.format-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}.format-actions button{display:flex;height:56px;align-items:center;justify-content:center;flex-direction:column;gap:3px;margin:0;padding:0;border:1px solid #e2ddd3;border-radius:12px;background:#fff;color:#62594a;font-size:9px}.format-actions button::after{border:0}.format-actions button>text:first-child{font-size:16px}.format-actions button.active{border-color:#d0ad55;background:#fff8e5;color:#6c5624}.bold{font-weight:800}.italic{font-style:italic}.underline{text-decoration:underline}.colors{display:flex;justify-content:space-between;margin-top:16px}.colors button{width:38px;height:38px;min-height:38px;margin:0;padding:0;border:4px solid #f6f6f4;border-radius:50%;box-shadow:0 0 0 1px #d7d0c4}.colors button::after{border:0}.colors button.active{box-shadow:0 0 0 2px #b28b35}@media(max-width:360px){.paper-toolbar{padding:4px}.paper-toolbar button{height:50px;min-height:50px}.format-sheet{padding-left:16px;padding-right:16px}}
+</style>
+
+<style scoped>
+.full-page{min-height:calc(100vh - 210px);padding-bottom:calc(100px + env(safe-area-inset-bottom));color:#494032}
+.full-page .block{margin:0;padding:8px 0;border:0;border-radius:0;background:transparent}
+.full-page .sole-paragraph .paragraph-input{min-height:calc(100vh - 280px)}
+.full-page .paragraph-input{min-height:130px;line-height:1.9}
+.full-page .block-order{display:none}
+.full-page .paper-toolbar{position:fixed;left:50%;bottom:var(--paper-keyboard,0px);transform:translateX(-50%);width:100%;max-width:640px;grid-template-columns:repeat(6,minmax(0,1fr));margin:0;padding:8px 20px calc(8px + env(safe-area-inset-bottom));border-width:1px 0 0;border-radius:0;background:#faf8f2;box-shadow:0 -4px 20px rgba(64,54,40,.04);box-sizing:border-box}
+.full-page .paper-toolbar button{min-width:44px;min-height:54px}
+.full-page .paper-save{color:#83692e}
+.new-paragraph{display:flex;align-items:center;justify-content:center;min-height:44px;margin:8px 0;border-radius:12px;background:#f7e7ad;color:#494032}
+.colors button{width:44px;height:44px;min-height:44px}
+@media(max-width:360px){.full-page .paper-toolbar{padding-left:16px;padding-right:16px}}
 </style>

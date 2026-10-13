@@ -228,9 +228,13 @@ const screens = [
   ...(itemId ? [{ name: 'detail-note-gallery', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '附件', preClickSelector: '.thumbnail' }] : []),
   ...(paperId ? [{ name: 'detail-note-paper', path: `/pages/detail/detail?id=${encodeURIComponent(paperId)}`, ready: '旅行灵感纸' }] : []),
   { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },
-  ...(paperId ? [{ name: 'editor-note-paper', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸内容' }] : []),
-  ...(paperId ? [{ name: 'editor-note-paper-todo-checked', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸内容', preClickSelector: '.todo-row uni-button' }] : []),
-  ...(paperId ? [{ name: 'editor-note-handwriting', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸内容', click: '手写', clicked: '清空', drawSelector: '.pad-canvas' }] : []),
+  { name: 'editor-note-offline', path: '/pages/editor/editor?kind=note', ready: '标题', offline: true, offlineSave: '断网也能记下' },
+  { name: 'editor-reminder-offline', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间', offline: true, offlineSave: '断网提醒' },
+  { name: 'editor-paper-empty', path: '/pages/editor/editor?kind=note', ready: '标题', paperEmpty: true },
+  ...(paperId ? [{ name: 'editor-note-paper', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸' }] : []),
+  ...(paperId ? [{ name: 'editor-note-paper-todo-checked', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', preClickSelector: '.todo-row uni-button' }] : []),
+  ...(paperId ? [{ name: 'editor-note-paper-settings', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', click: '仅自己 · 设置', clicked: '灵感纸设置' }] : []),
+  ...(paperId ? [{ name: 'editor-note-handwriting', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', click: '手写', clicked: '清空', drawSelector: '.pad-canvas' }] : []),
   { name: 'editor-note-format', path: '/pages/editor/editor?kind=note', ready: '标题', click: '格式', clicked: '备忘录格式' },
   ...(paperId ? [{ name: 'detail-note-paper-todo-checked', path: `/pages/detail/detail?id=${encodeURIComponent(paperId)}`, ready: '旅行灵感纸', preClickSelector: '.todo' }] : []),
   { name: 'editor-reminder', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间' },
@@ -238,11 +242,6 @@ const screens = [
   { name: 'match-provider-error', path: '/pages/match-detail/match-detail?id=unavailable', ready: '无法显示这场比赛' },
   { name: 'news-provider-error', path: '/pages/news/news', ready: '新闻数据获取失败' },
   { name: 'news-detail-error', path: '/pages/news-detail/news-detail?id=unavailable', ready: '无法显示这条新闻' },
-  { name: 'library', path: '/pages/library/library', ready: '窗边的小灯' },
-  { name: 'reader', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人' },
-  { name: 'reader-controls', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人', preClickSelector: '.reading-surface' },
-  { name: 'reader-directory', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人', preClickSelector: '.reading-surface', click: '目录', clicked: '第二章 留下的话' },
-  { name: 'reader-settings', path: '/pages/reader/reader?id=starter-window-light', ready: '晚归的人', preClickSelector: '.reading-surface', click: '阅读设置', clicked: '阅读背景' },
   { name: 'pair-invite', path: '/pages/pair/pair?mode=invite', ready: '把小记' },
   { name: 'pair-join', path: '/pages/pair/pair?mode=join', ready: '加入彼此' },
   { name: 'inbox', path: '/pages/inbox/inbox', ready: '到时间了' },
@@ -270,6 +269,7 @@ try {
   await page.open()
   await page.call('Page.enable')
   await page.call('Runtime.enable')
+  await page.call('Network.enable')
   await page.call('Page.navigate', { url: baseUrl })
   await wait(700)
   if (session) {
@@ -296,6 +296,8 @@ try {
     await page.call('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
 
     for (const screen of screens) {
+      const remoteCountBefore = screen.offlineSave ? (await apiRequest('/api/items', 'GET', undefined, session)).filter(item => item.title === screen.offlineSave).length : 0
+      await page.call('Network.setBlockedURLs', { urls: screen.offline ? ['*/api/*'] : [] })
       if (session && !screen.anonymous) {
         await page.call('Runtime.evaluate', {
           expression: `localStorage.setItem('session', ${JSON.stringify(session)})`,
@@ -308,6 +310,32 @@ try {
       await page.call('Page.navigate', { url: route(screen.path, ++navigationNonce) })
       await wait(500)
       await waitForText(page, screen.ready)
+      if (screen.paperEmpty) {
+        await page.call('Runtime.evaluate', { expression: `(() => { const buttons=[...document.querySelectorAll('uni-button')]; buttons.find(node=>node.textContent.trim()==='格式').click() })()` })
+        await waitForText(page, '备忘录格式')
+        await page.call('Runtime.evaluate', { expression: `(() => { [...document.querySelectorAll('.format-picker > uni-button')].find(node=>node.textContent.includes('灵感纸')).click() })()` })
+        await waitForText(page, '灵感纸')
+      }
+      if (screen.offlineSave) {
+        await page.call('Runtime.evaluate', { expression: `(() => { const input=document.querySelector('.form input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(screen.offlineSave)}); input.dispatchEvent(new Event('input',{bubbles:true})); })()` })
+        await wait(100)
+        await page.call('Runtime.evaluate', { expression: `document.querySelector('.form .primary').click()` })
+        await waitForText(page, '已保存到本机')
+        await page.call('Page.navigate', { url: route('/pages/index/index', ++navigationNonce) })
+        if (screen.path.includes('reminder')) {
+          await waitForText(page, '随手记下')
+          await page.call('Runtime.evaluate', { expression: `(() => { [...document.querySelectorAll('.dock uni-button')].find(node=>node.textContent.trim()==='提醒').click() })()` })
+        }
+        await waitForText(page, screen.offlineSave)
+        // Reloading the document while API requests are blocked verifies durable storage.
+        await page.call('Page.reload', { ignoreCache: true })
+        await waitForText(page, '随手记下')
+        if (screen.path.includes('reminder')) await page.call('Runtime.evaluate', { expression: `(() => { [...document.querySelectorAll('.dock uni-button')].find(node=>node.textContent.trim()==='提醒').click() })()` })
+        await waitForText(page, screen.offlineSave)
+        await page.call('Runtime.evaluate', { expression: `(() => { [...document.querySelectorAll('.feed-list .card')].find(node=>node.textContent.includes(${JSON.stringify(screen.offlineSave)})).click() })()` })
+        await waitForText(page, screen.offlineSave)
+        await waitForText(page, '编辑')
+      }
       if (screen.preClickSelector) {
         const preClickResult = await page.call('Runtime.evaluate', {
           expression: `(() => { const node = document.querySelector(${JSON.stringify(screen.preClickSelector)}); if (!node) return false; node.click(); return true })()`,
@@ -396,6 +424,18 @@ try {
       })
       await writeFile(join(outputDir, `${width}-${screen.name}.png`), Buffer.from(shot.data, 'base64'))
       report.push({ width, screen: screen.name, ...audit.result.value })
+      if (screen.offlineSave) {
+        await page.call('Network.setBlockedURLs', { urls: [] })
+        await page.call('Page.navigate', { url: route('/pages/index/index', ++navigationNonce) })
+        let synced = false
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+          const count = (await apiRequest('/api/items', 'GET', undefined, session)).filter(item => item.title === screen.offlineSave).length
+          if (count === remoteCountBefore + 1) { synced = true; break }
+          if (count > remoteCountBefore + 1) throw new Error('Offline sync created a duplicate item')
+          await wait(150)
+        }
+        if (!synced) throw new Error(`Offline item did not sync after reconnecting: ${screen.offlineSave}`)
+      }
     }
   }
   await writeFile(join(outputDir, 'layout-report.json'), `${JSON.stringify(report, null, 2)}\n`)

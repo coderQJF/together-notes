@@ -2,15 +2,27 @@
 import { consumeHomeWidgetRoute } from './services/home-widget'
 import { checkForAppResourceUpdate } from './services/app-update'
 import { consumeLocalReminderRoute } from './services/local-reminders'
+import { cachedHome, syncOfflineItems } from './services/api'
+import { configureBackgroundReminderSync, syncLocalReminders } from './services/local-reminders'
+
+function syncPersonalItems() {
+  void syncOfflineItems().then(() => {
+    const home = cachedHome()
+    if (home) syncLocalReminders(home.items, home.user)
+    configureBackgroundReminderSync()
+  }).catch(() => {})
+}
 
 let nativeRouteTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   onLaunch() {
+    uni.onNetworkStatusChange(event => { if (event.isConnected) syncPersonalItems() })
     setTimeout(() => { void checkForAppResourceUpdate() }, 1800)
   },
   onShow() {
     if (!uni.getStorageSync('session')) return
+    syncPersonalItems()
     const route = consumeLocalReminderRoute() || consumeHomeWidgetRoute()
     if (!/^\/pages\/detail\/detail\?id=[^\s]+$/.test(route)) return
     clearTimeout(nativeRouteTimer)

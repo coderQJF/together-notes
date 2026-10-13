@@ -4,7 +4,7 @@ import { onLoad, onShareAppMessage, onShow, onUnload } from '@dcloudio/uni-app'
 import ImageAttachmentGallery from '../../components/ImageAttachmentGallery.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import StructuredNoteContent from '../../components/StructuredNoteContent.vue'
-import { downloadFile, request, type Item, type User } from '../../services/api'
+import { cachedHome, downloadFile, request, type Item, type User } from '../../services/api'
 import { selectHomeWidgetNote, syncHomeWidgetNotes } from '../../services/home-widget'
 import { cancelLocalReminder } from '../../services/local-reminders'
 import { materializeNoteBlocks } from '../../services/note-blocks'
@@ -42,6 +42,11 @@ const widgetActionLabel = computed(() => appWidgetAvailable.value && !sharedPrev
 
 async function load() {
   if ((!itemId && !shareToken.value) || pending.value === 'delete') return
+  if (!sharedRoute) {
+    const cached = cachedHome()
+    const local = cached?.items.find(value => value.id === itemId)
+    if (local) { item.value = local; user.value = cached!.user }
+  }
   loading.value = !item.value
   error.value = ''
   try {
@@ -62,7 +67,7 @@ async function load() {
     }
     prepareShare()
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '内容加载失败'
+    if (!item.value) error.value = e instanceof Error ? e.message : '内容加载失败'
   } finally {
     loading.value = false
   }
@@ -70,6 +75,7 @@ async function load() {
 
 async function prepareShare() {
   if (!itemId || sharedRoute || shareToken.value || sharePreparing.value) return
+  if (item.value?.syncPending) { shareError.value = ''; return }
   sharePreparing.value = true
   shareError.value = ''
   try {
@@ -148,7 +154,7 @@ async function showOnDesktop() {
   if (!item.value?.id || pending.value || item.value.kind !== 'note') return
   pending.value = 'widget'
   try {
-    const latestItems = await request<Item[]>('/items')
+    const latestItems = cachedHome()?.items || await request<Item[]>('/items')
     const synced = await syncHomeWidgetNotes(latestItems)
     if (!synced || !selectHomeWidgetNote(item.value.id)) throw new Error('桌面小工具暂时不可用')
     uni.showToast({ title: '已展示到桌面', icon: 'success' })
@@ -283,12 +289,12 @@ onUnload(() => { active = false })
 
       <!-- #ifdef MP-WEIXIN -->
       <button v-if="!sharedPreview" class="share-action" open-type="share" hover-class="none" :disabled="!shareToken || sharePreparing">
-        {{ sharePreparing ? '正在准备分享…' : '分享给好友' }}
+        {{ item.syncPending ? '联网同步后可分享' : sharePreparing ? '正在准备分享…' : '分享给好友' }}
       </button>
       <!-- #endif -->
       <!-- #ifndef MP-WEIXIN -->
       <button v-if="!sharedPreview" class="share-action" hover-class="none" :disabled="!shareToken || sharePreparing" @click="shareItem">
-        {{ sharePreparing ? '正在准备分享…' : '分享给好友' }}
+        {{ item.syncPending ? '联网同步后可分享' : sharePreparing ? '正在准备分享…' : '分享给好友' }}
       </button>
       <!-- #endif -->
       <text v-if="shareError && !sharedPreview" class="share-error" @click="prepareShare">{{ shareError }}，点此重试</text>

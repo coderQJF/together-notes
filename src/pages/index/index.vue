@@ -5,7 +5,7 @@ import BulkSelectionBar from '../../components/BulkSelectionBar.vue';
 import JellyTabs from '../../components/JellyTabs.vue';
 import LegalLinks from '../../components/LegalLinks.vue';
 import StatusIcon from '../../components/StatusIcon.vue';
-import {request,login,loginWithApp,registerWithApp,readHomeSnapshot,saveHomeSnapshot,clearHomeSnapshot,type User,type Item,type Message} from '../../services/api';
+import {request,login,loginWithApp,registerWithApp,cachedHome,readHomeSnapshot,saveHomeSnapshot,clearHomeSnapshot,type User,type Item,type Message} from '../../services/api';
 import {formatDateTime,formatDayHeading} from '../../utils/date';
 import {errorMessage} from '../../utils/errors';
 import {openExternalUrl} from '../../utils/platform';
@@ -58,7 +58,7 @@ function toUiError(e:unknown,fallback='请求失败'):UiError{const value=e as {
 async function act(key:string,fn:()=>Promise<void>){if(pending[key])return;pending[key]=true;error.value='';try{await fn()}catch(e){showActionError(e)}finally{pending[key]=false}}
 async function performRefresh(epoch=mutationEpoch){const session=String(uni.getStorageSync('session')||'');if(!session){user.value=null;items.value=[];messages.value=[];clearHomeSnapshot();clearHomeWidgetNotes();configureBackgroundReminderSync();error.value='';return}try{const [u,i,m]=await Promise.all([request<User>('/me'),request<Item[]>('/items'),request<Message[]>('/notifications')]);if(epoch!==mutationEpoch)return;user.value=u;items.value=i;messages.value=m;reconcileSelection(i);saveHomeSnapshot(session,{user:u,items:i,messages:m});error.value='';syncLocalReminders(i,u);syncStockSystemNotifications(i,m);configureBackgroundReminderSync();syncHomeWidgetNotes(i)}catch(e){if(epoch!==mutationEpoch)return;if(!uni.getStorageSync('session')){user.value=null;items.value=[];messages.value=[];clearHomeSnapshot();clearHomeWidgetNotes();configureBackgroundReminderSync();error.value='';return}throw e}}
 function refresh(force=false){if(refreshing&&!force)return refreshing;const epoch=mutationEpoch,sequence=++refreshSequence;const tracked=performRefresh(epoch).finally(()=>{if(refreshSequence===sequence)refreshing=undefined});refreshing=tracked;return tracked}
-function restoreHomeSnapshot(){const session=String(uni.getStorageSync('session')||''),snapshot=readHomeSnapshot(session);if(!snapshot)return false;user.value=snapshot.user;items.value=snapshot.items;messages.value=snapshot.messages;ready.value=true;return true}
+function restoreHomeSnapshot(){const session=String(uni.getStorageSync('session')||''),snapshot=cachedHome();if(!snapshot)return false;user.value=snapshot.user;items.value=snapshot.items;messages.value=snapshot.messages;ready.value=true;syncLocalReminders(items.value,user.value);configureBackgroundReminderSync();return true}
 async function signIn(){await act('login',async()=>{if(!agree.value)throw new Error('请先确认数据使用说明');user.value=await login();await refresh()})}
 async function loadAppAuthStatus(){try{appAuthStatus.value=await request<AppAuthStatus>('/auth/app/status')}catch{appAuthStatus.value={registrationEnabled:false}}}
 async function submitAppAuth(){await act('login',async()=>{if(!agree.value)throw new Error('请先阅读并同意用户协议与隐私政策');const username=authUsername.value.trim(),password=authPassword.value;if(!username||!password)throw new Error('请填写账号和密码');if(authMode.value==='register'){if(!appAuthStatus.value?.registrationEnabled)throw new Error('App 内测注册尚未开放');if(!authNickname.value.trim())throw new Error('请填写昵称');if(!authBetaCode.value.trim())throw new Error('请填写内测口令')}user.value=authMode.value==='register'?await registerWithApp(username,password,authNickname.value.trim(),authBetaCode.value.trim()):await loginWithApp(username,password);authPassword.value='';authBetaCode.value='';await refresh()})}
@@ -135,19 +135,18 @@ async function deleteSelectedItems(){
  }finally{bulkDeleting.value=false}
 }
 function selectReminderCategory(value:string){if(value==='待办'){category.value=value;return}if(value==='消息'){inbox();return}uni.navigateTo({url:value==='比赛'?'/pages/sports/sports':'/pages/news/news'})}
-async function toggle(i:Item){await act('toggle:'+i.id,async()=>{await request('/items/'+i.id,'PUT',{...i,done:!i.done});await refresh()})}
+async function toggle(i:Item){await act('toggle:'+i.id,async()=>{await request('/items/'+i.id,'PUT',{...i,done:!i.done});restoreHomeSnapshot();void refresh(true).catch(showInlineError)})}
 function openUs(){uni.navigateTo({url:'/pages/us/us'})}
-function openLibrary(){uni.navigateTo({url:'/pages/library/library'})}
 function format(v?:string){return formatDateTime(v)}
 function inbox(){uni.navigateTo({url:'/pages/inbox/inbox'})}
 function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value&&!selectionMode.value)refresh().catch(()=>{})},30000)}
  onLoad(async()=>{restoreHomeSnapshot();try{
  if(showAppAuth&&!uni.getStorageSync('session'))await loadAppAuthStatus();
- await refresh()}catch(e){showInlineError(e)}finally{ready.value=true}});onShow(()=>{today.value=formatDayHeading();start();if(ready.value)refresh().then(()=>{if(page.value==='search')void loadAiStatus()}).catch(showInlineError)});onHide(()=>{clearInterval(timer);exitSelectionMode()});onUnmounted(()=>clearInterval(timer));
+ await refresh()}catch(e){showInlineError(e)}finally{ready.value=true}});onShow(()=>{today.value=formatDayHeading();restoreHomeSnapshot();start();if(ready.value)refresh().then(()=>{if(page.value==='search')void loadAiStatus()}).catch(showInlineError)});onHide(()=>{clearInterval(timer);exitSelectionMode()});onUnmounted(()=>clearInterval(timer));
 </script>
 <template>
 <view class="shell" :class="{ 'feed-shell': Boolean(user) && ['notes','reminders'].includes(page) }">
- <view class="header"><BulkSelectionBar v-if="selectionMode" class="header-selection" :selected-count="selectedCount" :deleting="bulkDeleting" @cancel="exitSelectionMode" @delete="deleteSelectedItems"/><view v-else class="brand-lockup"><button v-if="user" class="profile-trigger" hover-class="profile-pressed" :aria-label="user.partner?`进入我们的小空间，已与${user.partner.nickname}绑定`:'进入我们的小空间'" @click="openUs"><text class="profile-face">{{user.nickname.slice(0,1)}}</text></button><view class="wordmark"><text class="brand">小记</text><text class="brand-sub">TOGETHER</text></view></view><!-- #ifndef MP-WEIXIN --><!-- #ifndef APP-PLUS --><view v-if="user&&!selectionMode" class="header-tools"><button v-if="user.vip" class="library-trigger" hover-class="header-tool-pressed" aria-label="打开本地书架" @click="openLibrary"><image src="/static/nav-icons/book-active.png" mode="aspectFit"/><text>阅读</text></button></view><!-- #endif --><!-- #endif --></view>
+ <view class="header"><BulkSelectionBar v-if="selectionMode" class="header-selection" :selected-count="selectedCount" :deleting="bulkDeleting" @cancel="exitSelectionMode" @delete="deleteSelectedItems"/><view v-else class="brand-lockup"><button v-if="user" class="profile-trigger" hover-class="profile-pressed" :aria-label="user.partner?`进入我们的小空间，已与${user.partner.nickname}绑定`:'进入我们的小空间'" @click="openUs"><text class="profile-face">{{user.nickname.slice(0,1)}}</text></button><view class="wordmark"><text class="brand">小记</text><text class="brand-sub">TOGETHER</text></view></view></view>
  <view v-if="!ready" class="empty">正在打开小记…</view>
   <view v-else-if="!user" class="login">
    <view class="login-card">
@@ -193,7 +192,7 @@ function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value&&!sel
       @click="handleCardClick(i)"
      >
       <view class="card-meta"><view class="meta-tags"><text class="meta-tag">{{i.scope==='shared'?'我们俩':'仅自己'}}</text><text v-if="i.pinned" class="meta-tag pin-tag">置顶</text><text v-if="selectionMode&&!canDeleteItem(i)" class="meta-tag locked-tag">{{lockedItemLabel(i)}}</text></view><text class="card-time">{{i.kind==='reminder'?format(i.nextAt):format(i.updatedAt)}}</text></view>
-      <view class="row" :class="{'selection-row':selectionMode}"><button v-if="selectionMode" class="selection-toggle" :class="{locked:!canDeleteItem(i)}" :aria-pressed="isItemSelected(i)" :aria-disabled="!canDeleteItem(i)" :aria-label="canDeleteItem(i)?(isItemSelected(i)?'取消选择':'选择这条内容'):(i.owner?'对方创建，仅创建者可删除':'无法确认创建者，暂不可删除')" @longpress.stop @click.stop="toggleItemSelection(i)"><StatusIcon :checked="isItemSelected(i)" :label="isItemSelected(i)?'已选择':'未选择'" /></button><text class="card-title">{{i.title}}</text><button v-if="i.kind==='reminder'&&!selectionMode" class="done" :disabled="pending['toggle:'+i.id]" :aria-label="i.done?'标记为待办':'标记为完成'" @longpress.stop @click.stop="toggle(i)"><view v-if="pending['toggle:'+i.id]" class="button-spinner status-spinner"/><StatusIcon v-else :checked="Boolean(i.done)" /></button></view>
+      <view class="row" :class="{'selection-row':selectionMode}"><button v-if="selectionMode" class="selection-toggle" :class="{locked:!canDeleteItem(i)}" :aria-pressed="isItemSelected(i)" :aria-disabled="!canDeleteItem(i)" :aria-label="canDeleteItem(i)?(isItemSelected(i)?'取消选择':'选择这条内容'):(i.owner?'对方创建，仅创建者可删除':'无法确认创建者，暂不可删除')" @longpress.stop @click.stop="toggleItemSelection(i)"><StatusIcon :checked="isItemSelected(i)" :label="isItemSelected(i)?'已选择':'未选择'" /></button><text class="card-title">{{i.title}}</text><button v-if="i.kind==='reminder'&&!selectionMode" class="done" :disabled="pending['toggle:'+i.id]" :aria-label="i.done?'标记为待办':'标记为完成'" @longpress.stop @click.stop="toggle(i)"><view v-if="pending['toggle:'+i.id]" class="button-spinner status-spinner"/><StatusIcon :checked="Boolean(i.done)" /></button></view>
       <text v-if="i.content" class="excerpt">{{i.content}}</text><text class="muted small block">{{i.kind==='note'?(i.links.length?'附 '+i.links.length+' 个链接':'文字备忘'):(i.done?'已完成':({none:'单次',daily:'每天',weekly:'每周'} as any)[i.repeat||'none'])}}<!-- #ifdef APP-PLUS --> · 本机系统提醒<!-- #endif --><!-- #ifndef APP-PLUS --> · 站内提醒<!-- #endif --></text>
      </view>
    </view>

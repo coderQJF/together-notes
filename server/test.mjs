@@ -164,3 +164,22 @@ test('operations can publish GBA files for authenticated app downloads',async()=
   const removed=await fetch(base+'/operations/games/'+uploaded.id,{method:'DELETE',headers:{Authorization:'Bearer operations-secret'}}).then(r=>r.json());assert.equal(removed.ok,true);assert.equal((await fetch(base+'/games',{headers:{Authorization:'Bearer '+login.token}}).then(r=>r.json())).items.length,0);
  }finally{await new Promise(r=>app.server.close(r));app.db.close();await rm(directory,{recursive:true,force:true})}
 });
+
+
+test('offline personal creates retry idempotently and cannot overwrite another account',async()=>{
+ const app=createApp({dbPath:':memory:',testAuth:true});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
+ const call=async(path,method,data,token)=>{const r=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+(token||'')},body:data?JSON.stringify(data):undefined});return {status:r.status,...await r.json()}};
+ try{
+  const a=await call('/auth/test','POST',{name:'我'}),b=await call('/auth/test','POST',{name:'小金子'});
+  const data={clientId:'local-123456789abc-123abc',kind:'note',title:'本机笔记',content:'断网时记录',scope:'mine',links:[]};
+  const first=await call('/items','POST',data,a.token),retry=await call('/items','POST',{...data,title:'再次同步'},a.token);
+  assert.equal(first.id,data.clientId);assert.equal(retry.id,first.id);
+  assert.equal((await call('/items/'+first.id,'GET',undefined,a.token)).title,'再次同步');
+  assert.equal((await call('/items','POST',data,b.token)).status,409);
+  assert.equal((await call('/items','POST',{...data,clientId:'../bad'},a.token)).status,400);
+  assert.equal((await call('/items','POST',{...data,scope:'shared'},a.token)).status,400);
+  const reminder={...data,clientId:'local-123456789abc-456abc',kind:'reminder',recipient:'me',repeat:'none',advance:0,nextAt:new Date(Date.now()-3600000).toISOString()};
+  assert.equal((await call('/items','POST',reminder,a.token)).status,200);
+  assert.equal((await call('/items','POST',{...reminder,clientId:undefined},a.token)).status,400);
+ }finally{await new Promise(r=>app.server.close(r));app.db.close()}
+});

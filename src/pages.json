@@ -28,6 +28,7 @@
       "path": "pages/news-detail/news-detail",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "新闻详情" }
     },
+    // #ifdef APP-PLUS
     {
       "path": "pages/library/library",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "阅读" }
@@ -36,7 +37,6 @@
       "path": "pages/reader/reader",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "小说阅读", "disableScroll": false }
     },
-    // #ifdef APP-PLUS
     {
       "path": "pages/games/games",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "游戏" }

@@ -18,7 +18,7 @@ onLoad(options => {
     <SubpageHeader :label="title" />
     <view class="document">
       <text class="headline">{{ title }}</text>
-      <text class="updated">更新日期：2026 年 9 月 24 日</text>
+      <text class="updated">更新日期：2026 年 10 月 13 日</text>
 
       <template v-if="document === 'terms'">
         <view class="section"><text class="section-title">1. 服务说明</text><text>“小记”提供随记、提醒、双人共享、附件、资讯、搜索和本地文本阅读等功能。内测期间功能可能调整或暂时中断，请勿把本服务作为医疗、财务、安全等关键事项的唯一提醒方式。</text></view>
@@ -37,7 +37,7 @@ onLoad(options => {
         <view class="section"><text class="section-title">5. 本机系统提醒</text><text>App 会把提醒对象包含你的提醒标题、内容、时间、重复规则和打开目标保存在当前 Android 设备，用于在 App 被划掉或进程被系统回收后创建通知。登录时会立即同步，App 关闭后约每 15 分钟使用当前登录会话从小记服务端只读同步一次，所以对方新建的“我们俩”提醒也可以登记到本机；断网时会保留上一次成功同步的计划。登录会话和提醒计划仅保存在 Android 应用私有目录，相关数据不会发送给 UniPush、个推或 uniCloud。退出登录或注销账号时会清理本机会话与计划；Android 省电策略可能延后同步，在系统设置中“强行停止”App 后会停止后台同步，重新打开 App 后恢复。</text></view>
         <view class="section"><text class="section-title">6. Android 桌面小工具</text><text>你主动添加桌面小工具后，App 会把已同步的小记标题、正文摘要、更新时间和所选小记 ID 缓存在当前 Android 设备，用于在华为桌面显示卡片。桌面上的内容可能被能查看或操作本设备的人看到；这些缓存不会发送给新的第三方服务，退出登录或注销账号时会清理。</text></view>
         <view class="section"><text class="section-title">7. 其他第三方服务</text><text>联网搜索、赛事、资讯和图片缓存可能调用页面中标明的第三方服务。请求仅包含实现功能所需的信息；账号密码和私人小记不会提供给内容数据源。</text></view>
-        <view class="section"><text class="section-title">8. 保存与保护</text><text>业务数据保存在本服务配置的服务器和备份中，通过 HTTPS 传输并按账号权限隔离。我们会采取合理安全措施，但互联网服务无法保证绝对安全。</text></view>
+        <view class="section"><text class="section-title">8. 保存与保护</text><text>个人备忘录、提醒、图片与手写先保存在当前设备，联网后通过 HTTPS 同步到本服务配置的服务器和备份；未同步内容按账号隔离，退出登录后仍保留，重新登录原账号可继续同步。共享内容与微信服务通知需要联网。我们会采取合理安全措施，但互联网服务无法保证绝对安全。</text></view>
         <view class="section"><text class="section-title">9. 共享与删除</text><text>只有你主动选择“我们俩”时，绑定对象才能访问相应内容。你可以删除单条内容，也可以在“小空间”中注销账号；账号注销会解除双人绑定并删除本人账号和本人创建的服务端数据。本地书架和 GBA 文件不随账号同步；书架内容需在书架中单独删除，GBA 文件可在游戏模块中替换，也可通过系统清除应用数据或卸载 App 一并移除。</text></view>
         <view class="section"><text class="section-title">10. 联系与变更</text><text>内测问题请联系向你提供安装包的维护者。政策发生实质变化时，将在后续版本中更新日期和说明。</text></view>
       </template>

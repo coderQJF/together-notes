@@ -1,4 +1,4 @@
-import { reminderSyncApiBase, type Item, type Message, type User } from './api'
+import { hasPendingOfflineItems, reminderSyncApiBase, type Item, type Message, type User } from './api'
 import { localReminderPlan, stockSystemNotificationPlans } from './local-reminder-rules'
 
 const STOCK_SYSTEM_NOTIFICATION_IDS_KEY = 'stock-system-notification-ids'
@@ -55,7 +55,7 @@ export function syncLocalReminders(items: Item[], user: User) {
 export function configureBackgroundReminderSync() {
   // #ifdef APP-PLUS
   const session = String(uni.getStorageSync('session') || '')
-  if (!session) return runNativeSafely(false, nativeDisableSync)
+  if (!session || hasPendingOfflineItems()) return runNativeSafely(false, nativeDisableSync)
   return runNativeSafely(false, () => nativeConfigureSync(reminderSyncApiBase(), session))
   // #endif
   // #ifndef APP-PLUS
