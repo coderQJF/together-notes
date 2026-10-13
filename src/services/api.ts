@@ -114,7 +114,13 @@ export function syncOfflineItems():Promise<void>{
  if(current)return current
  const store=outbox(snapshot.user)
  let completed=false
- const job=store.flush(async(path,method,data)=>{
+ // Frontends may upload before the API release finishes. Keep the outbox intact
+ // until the server supports stable client ids, rather than creating duplicates
+ // against an older API that silently ignores clientId.
+ const readiness=store.pending().length?remoteRequest<{offlineItemsSupported?:boolean}>('/health','GET',undefined,{timeout:5000}).then(health=>{
+  if(!health.offlineItemsSupported)throw new ApiError('同步服务暂未就绪，内容已保存在本机',0,'OFFLINE_SYNC_UNAVAILABLE')
+ }):Promise.resolve()
+ const job=readiness.then(()=>store.flush(async(path,method,data)=>{
   if(uni.getStorageSync('session')!==session)throw new Error('账号已切换')
   const payload=data as Item|undefined
   const body=payload?await prepareItemUploads(payload):undefined
@@ -125,7 +131,7 @@ export function syncOfflineItems():Promise<void>{
   const latest=readHomeSnapshot(session)
   if(!latest)return
   saveHomeSnapshot(session,{...latest,items:store.merge([...latest.items.filter(value=>value.id!==item.id),item])})
- }).then(()=>{completed=true}).finally(()=>{
+ })).then(()=>{completed=true}).finally(()=>{
   syncJobs.delete(session)
   if(completed&&store.pending().length&&uni.getStorageSync('session')===session)void syncOfflineItems().catch(()=>{})
  })

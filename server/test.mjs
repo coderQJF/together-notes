@@ -29,6 +29,7 @@ test('deleting an item atomically clears dependants while preserving reusable au
  const upload=async(token,name)=>fetch(base+'/files',{method:'POST',headers:{Authorization:'Bearer '+token,'x-file-name':encodeURIComponent(name)},body:Buffer.from(name)}).then(response=>response.json());
  try{
   const a=await call('/auth/test','POST',{name:'我'}),b=await call('/auth/test','POST',{name:'小金子'});
+  assert.equal((await call('/health','GET')).offlineItemsSupported,true);
   const reused=await upload(a.token,'复用附件.png'),foreign=await upload(b.token,'对方附件.png');
   const first=await call('/items','POST',{kind:'note',title:'第一条',content:'',links:[],attachments:[reused],scope:'mine'},a.token);
   const second=await call('/items','POST',{kind:'note',title:'第二条',content:'',links:[],attachments:[reused],scope:'mine'},a.token);

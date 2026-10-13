@@ -8,7 +8,7 @@ test('health reports whether WeChat reminders are configured without exposing cr
   try {
     const { port } = app.server.address();
     const result = await fetch(`http://127.0.0.1:${port}/api/health`).then(response => response.json());
-    assert.deepEqual(result, { ok: true, wechatRemindersConfigured: true });
+    assert.deepEqual(result, { ok: true, offlineItemsSupported: true, wechatRemindersConfigured: true });
   } finally {
     await new Promise(resolve => app.server.close(resolve));
     app.db.close();
