@@ -1,5 +1,6 @@
 <script lang="ts">
 import { defineComponent } from 'vue'
+import { drawInkDot, drawInkSegment } from '../services/handwriting'
 
 type DrawingPoint = {
   x: number
@@ -87,11 +88,16 @@ export default defineComponent({
     syncHandwritingInsets() {
       // Android WebViews do not consistently expose env(safe-area-inset-top).
       // Keep the system status bar out of the full-screen handwriting sheet.
-      // #ifdef APP-PLUS
+      // #ifndef H5
       try {
         const info = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync()
         const statusBarHeight = Math.max(0, Number(info.statusBarHeight) || 0)
-        this.handwritingSheetStyle = { '--handwriting-status-bar': `${statusBarHeight}px` }
+        let topInset = statusBarHeight
+        // #ifdef MP-WEIXIN
+        const capsule = uni.getMenuButtonBoundingClientRect()
+        topInset = Math.max(topInset, Number(capsule?.bottom) || 0)
+        // #endif
+        this.handwritingSheetStyle = { '--handwriting-status-bar': `${topInset}px` }
       } catch {
         this.handwritingSheetStyle = { '--handwriting-status-bar': 'var(--status-bar-height, 0px)' }
       }
@@ -173,28 +179,26 @@ export default defineComponent({
       const point = this.pointFromEvent(event)
       if (!point || !this.canvasContext) return
       this.currentStroke = [point]
-      this.canvasContext.beginPath()
-      this.canvasContext.moveTo(point.x, point.y)
     },
     move(event: any) {
       const point = this.pointFromEvent(event)
       if (!point || !this.canvasContext || !this.currentStroke.length) return
+      const previous = this.currentStroke[this.currentStroke.length - 1]
       this.currentStroke.push(point)
-      this.canvasContext.lineTo(point.x, point.y)
-      this.canvasContext.stroke()
-      this.canvasContext.draw(true)
+      drawInkSegment(this.canvasContext, previous, point)
       this.hasInk = true
     },
     end(event: any) {
       if (!this.currentStroke.length) return
       const point = this.pointFromEvent(event)
-      if (point) this.currentStroke.push(point)
+      const previous = this.currentStroke[this.currentStroke.length - 1]
+      if (point && this.canvasContext && (point.x !== previous.x || point.y !== previous.y)) {
+        drawInkSegment(this.canvasContext, previous, point)
+        this.currentStroke.push(point)
+      }
       if (this.currentStroke.length === 1 && this.canvasContext) {
         const onlyPoint = this.currentStroke[0]
-        this.canvasContext.beginPath()
-        this.canvasContext.arc(onlyPoint.x, onlyPoint.y, 1.3, 0, Math.PI * 2)
-        this.canvasContext.fill()
-        this.canvasContext.draw(true)
+        drawInkDot(this.canvasContext, onlyPoint)
       }
       this.strokes.push({ points: [...this.currentStroke] })
       this.currentStroke = []

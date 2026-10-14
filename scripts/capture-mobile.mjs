@@ -233,6 +233,7 @@ const screens = [
   { name: 'editor-paper-empty', path: '/pages/editor/editor?kind=note', ready: '标题', paperEmpty: true },
   ...(paperId ? [{ name: 'editor-note-paper', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸' }] : []),
   ...(paperId ? [{ name: 'editor-note-paper-todo-checked', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', preClickSelector: '.todo-row uni-button' }] : []),
+  ...(paperId ? [{ name: 'editor-note-paper-todo-flow', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', todoFlow: true }] : []),
   ...(paperId ? [{ name: 'editor-note-paper-settings', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', click: '仅自己 · 设置', clicked: '灵感纸设置' }] : []),
   ...(paperId ? [{ name: 'editor-note-handwriting', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', click: '手写', clicked: '清空', drawSelector: '.pad-canvas' }] : []),
   { name: 'editor-note-format', path: '/pages/editor/editor?kind=note', ready: '标题', click: '格式', clicked: '备忘录格式' },
@@ -370,6 +371,20 @@ try {
         await page.call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
         await waitForText(page, '已选择 1 项')
       }
+      if (screen.todoFlow) {
+        await page.call('Runtime.evaluate', { expression: `(() => { const field=document.querySelector('.todo-row input'); field.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'回车继续下一项'); field.dispatchEvent(new Event('input',{bubbles:true,composed:true})); })()` })
+        const before = await page.call('Runtime.evaluate', { expression: `document.querySelectorAll('.todo-row input').length`, returnByValue: true })
+        await page.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+        await page.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+        await wait(150)
+        const continued = await page.call('Runtime.evaluate', { expression: `({ count:document.querySelectorAll('.todo-row input').length, focused:document.activeElement?.closest('.todo-row')!==null, value:document.activeElement?.value })`, returnByValue: true })
+        if (continued.result.value.count !== before.result.value + 1 || !continued.result.value.focused || continued.result.value.value !== '') throw new Error('Todo Enter did not create and focus the next item')
+        await page.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+        await page.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+        await wait(150)
+        const exited = await page.call('Runtime.evaluate', { expression: `document.activeElement?.tagName==='TEXTAREA' && document.querySelectorAll('.todo-row input').length===${before.result.value}`, returnByValue: true })
+        if (!exited.result.value) throw new Error('Empty todo Enter did not continue into a paragraph')
+      }
       if (screen.drawSelector) {
         const drawResult = await page.call('Runtime.evaluate', {
           expression: `(() => { const node = document.querySelector(${JSON.stringify(screen.drawSelector)}); if (!node) return null; const rect = node.getBoundingClientRect(); return { left: rect.left, top: rect.top, width: rect.width, height: rect.height } })()`,
@@ -382,6 +397,10 @@ try {
         for (const point of points.slice(1)) await page.call('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point] })
         await page.call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
         await wait(180)
+        const inkAudit = await page.call('Runtime.evaluate', {
+          expression: `(() => { const host=document.querySelector(${JSON.stringify(screen.drawSelector)}); const canvas=host?.querySelector('canvas') || host; const context=canvas?.getContext?.('2d'); if(!context) return null; const pixels=context.getImageData(0,0,canvas.width,canvas.height).data; let cornerInk=0,totalInk=0; for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++){const i=(y*canvas.width+x)*4; if(pixels[i+3]>0 && pixels[i]<100 && pixels[i+1]<100 && pixels[i+2]<100){totalInk++;if(x<canvas.width*.12 && y<canvas.height*.12)cornerInk++;}} return {cornerInk,totalInk}; })()`, returnByValue: true,
+        })
+        if (!inkAudit.result.value || inkAudit.result.value.cornerInk || !inkAudit.result.value.totalInk) throw new Error('Handwriting drew stray origin lines or no ink')
       }
       if (screen.ask) {
         const askResult = await page.call('Runtime.evaluate', {

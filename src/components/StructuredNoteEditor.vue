@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, getCurrentInstance, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { attachImages, uploadImagePath, type Attachment, type NoteBlock } from '../services/api'
 import { summarizeLedgerBlocks } from '../services/note-ledger'
+import { keyboardDockOffset, paperScrollTarget } from '../services/paper-layout'
 import HandwritingPad from './HandwritingPad.vue'
 import ImageAttachmentGallery from './ImageAttachmentGallery.vue'
 import LedgerSummary from './LedgerSummary.vue'
@@ -15,11 +16,61 @@ const formatOpen = ref(false)
 const activeParagraph = ref('')
 const busy = ref(false)
 const keyboardHeight = ref(0)
-function keyboardChanged(event: { height: number }) { keyboardHeight.value = Math.max(0, event.height) }
+const keyboardOpen = ref(false)
+const activeId = ref('')
+const focusedId = ref('')
+const caretAtEnd = ref(false)
+const instance = getCurrentInstance()
+let baselineHeight = 0
+let reportedKeyboard = 0
+let layoutTimer: ReturnType<typeof setTimeout> | undefined
+function windowHeight() {
+  // #ifdef H5
+  return window.innerHeight
+  // #endif
+  // #ifndef H5
+  return (typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync()).windowHeight
+  // #endif
+}
+function keepFieldVisible() {
+  if (!props.fullPage || !activeId.value || !keyboardOpen.value || handwritingOpen.value || formatOpen.value) return
+  const query = uni.createSelectorQuery().in(instance?.proxy)
+  query.select(`#paper-${activeId.value}`).boundingClientRect()
+  query.select('.paper-toolbar').boundingClientRect()
+  query.selectViewport().scrollOffset(() => {})
+  query.exec(results => {
+    const [field, toolbar, viewport] = results
+    if (!field || !toolbar || !viewport) return
+    const safeTop = Math.max(80, Number(uni.getSystemInfoSync().statusBarHeight || 0) + 60)
+    // Tall paragraphs keep their current line visible without moving their start offscreen on focus.
+    const bottom = caretAtEnd.value ? field.bottom : Math.min(field.bottom, field.top + 64)
+    const target = paperScrollTarget(viewport.scrollTop || 0, field.top, bottom, safeTop, toolbar.top - 12)
+    if (target !== null) uni.pageScrollTo({ scrollTop: target, duration: 0 })
+  })
+}
+function syncKeyboardLayout() {
+  const height = windowHeight()
+  baselineHeight = Math.max(baselineHeight, height)
+  keyboardOpen.value = reportedKeyboard > 0
+  keyboardHeight.value = keyboardDockOffset(reportedKeyboard, baselineHeight, height)
+  void nextTick(keepFieldVisible)
+}
+function keyboardChanged(event: { height: number }) {
+  reportedKeyboard = Math.max(0, Number(event.height) || 0)
+  scheduleLayout()
+}
+function scheduleLayout() {
+  clearTimeout(layoutTimer)
+  layoutTimer = setTimeout(syncKeyboardLayout, 100)
+}
 function viewportChanged() {
   // #ifdef H5
   const viewport = window.visualViewport
-  if (viewport) keyboardHeight.value = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+  if (viewport) {
+    keyboardHeight.value = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+    keyboardOpen.value = keyboardHeight.value > 80
+    void nextTick(keepFieldVisible)
+  }
   // #endif
 }
 const tools = [
@@ -35,24 +86,71 @@ function eventValue(event: Event) { return String((event as any).detail?.value |
 function update(next: NoteBlock[]) { emit('update:blocks', next) }
 function patchBlock(id: string, patch: Partial<NoteBlock>) { update(props.blocks.map(block => block.id === id ? { ...block, ...patch } : block)) }
 function toggleTodo(id: string) { const block = props.blocks.find(item => item.id === id); if (block?.type === 'todo') patchBlock(id, { checked: !block.checked }) }
-function removeBlock(id: string) { update(props.blocks.filter(block => block.id !== id)) }
+function removeBlock(id: string) {
+  const next = props.blocks.filter(block => block.id !== id)
+  update(next)
+  if (activeId.value === id) { activeId.value = next[next.length - 1]?.id || ''; activeParagraph.value = '' }
+}
 function attachment(id?: string) { return props.attachments.find(item => item.id === id) }
 function paragraphCss(block: NoteBlock) { return { fontWeight: block.style?.bold ? '700' : '400', fontStyle: block.style?.italic ? 'italic' : 'normal', textDecoration: block.style?.underline ? 'underline' : 'none', textAlign: block.style?.align || 'left', color: block.style?.color || '#3e382d' } }
 
+function focusBlock(id: string, paragraph = false) {
+  activeId.value = id
+  activeParagraph.value = paragraph ? id : ''
+  focusedId.value = ''
+  void nextTick(() => { focusedId.value = id; keepFieldVisible() })
+}
+function fieldFocused(id: string, paragraph = false) {
+  activeId.value = id; activeParagraph.value = paragraph ? id : ''; focusedId.value = id
+  caretAtEnd.value = false
+  void nextTick(keepFieldVisible)
+}
+function paragraphInput(id: string, event: Event) {
+  const text = eventValue(event)
+  caretAtEnd.value = (event as any).detail?.cursor === text.length
+  patchBlock(id, { text })
+  void nextTick(keepFieldVisible)
+}
+function insertBlocks(added: NoteBlock[], anchor = activeId.value) {
+  const next = [...props.blocks]
+  const index = next.findIndex(block => block.id === anchor)
+  next.splice(index < 0 ? next.length : index + 1, 0, ...added)
+  update(next)
+}
 function addParagraph() {
   const block = paragraphBlock()
-  update([...props.blocks, block]); activeParagraph.value = block.id; formatOpen.value = true
+  insertBlocks([block]); formatOpen.value = false; focusBlock(block.id, true)
 }
-function addTodo() { update([...props.blocks, { id: blockId(), type: 'todo', text: '', checked: false }]) }
-function addLink() { update([...props.blocks, { id: blockId(), type: 'link', text: '', url: '' }]) }
+function addTodo(anchor = activeId.value) {
+  const block: NoteBlock = { id: blockId(), type: 'todo', text: '', checked: false }
+  insertBlocks([block], anchor); focusBlock(block.id)
+}
+function continueTodo(id: string, event: Event) {
+  const value = eventValue(event)
+  const block = props.blocks.find(item => item.id === id)
+  if (!block) return
+  if (!value.trim()) {
+    update(props.blocks.map(item => item.id === id ? { ...paragraphBlock(), id } : item))
+    focusBlock(id, true)
+    return
+  }
+  const next: NoteBlock = { id: blockId(), type: 'todo', text: '', checked: false }
+  const blocks = props.blocks.map(item => item.id === id ? { ...item, text: value } : item)
+  blocks.splice(blocks.findIndex(item => item.id === id) + 1, 0, next)
+  update(blocks); focusBlock(next.id)
+}
+function addLink() { const block: NoteBlock = { id: blockId(), type: 'link', text: '', url: '' }; insertBlocks([block]); focusBlock(block.id) }
 
 async function addImage() {
   if (busy.value || props.attachments.length >= 10) return
   busy.value = true
+  const anchor = activeId.value
   try {
     const added = await attachImages(10 - props.attachments.length)
     emit('update:attachments', [...props.attachments, ...added].slice(0, 10))
-    update([...props.blocks, ...added.map(item => ({ id: blockId(), type: 'image' as const, attachmentId: item.id }))])
+    const imageBlocks = added.map(item => ({ id: blockId(), type: 'image' as const, attachmentId: item.id }))
+    insertBlocks(imageBlocks, anchor)
+    activeId.value = imageBlocks[imageBlocks.length - 1]?.id || anchor; activeParagraph.value = ''
   } catch (reason) {
     const message = reason instanceof Error ? reason.message : '添加图片失败'
     if (message !== '未选择图片') uni.showToast({ title: message, icon: 'none' })
@@ -66,13 +164,14 @@ async function saveDrawing(path: string) {
   try {
     const added = await uploadImagePath(path)
     emit('update:attachments', [...props.attachments, added].slice(0, 10))
-    update([...props.blocks, { id: blockId(), type: 'drawing', attachmentId: added.id }])
+    const drawing: NoteBlock = { id: blockId(), type: 'drawing', attachmentId: added.id }
+    insertBlocks([drawing]); activeId.value = drawing.id; activeParagraph.value = ''
   } catch (reason) { uni.showToast({ title: reason instanceof Error ? reason.message : '手写内容保存失败', icon: 'none' }) }
   finally { busy.value = false }
 }
 
 function useTool(key: typeof tools[number]['key']) {
-  if (key === 'handwriting') handwritingOpen.value = true
+  if (key === 'handwriting') { uni.hideKeyboard(); handwritingOpen.value = true }
   if (key === 'todo') addTodo()
   if (key === 'paragraph') { if (props.fullPage && activeBlock.value) formatOpen.value = true; else addParagraph() }
   if (key === 'image') void addImage()
@@ -86,6 +185,7 @@ function patchStyle(patch: Record<string, unknown>) {
 }
 
 onMounted(() => {
+  baselineHeight = windowHeight()
   if (!props.blocks.length) {
     const block = paragraphBlock()
     update([block])
@@ -93,14 +193,17 @@ onMounted(() => {
   } else activeParagraph.value = props.blocks.find(block => block.type === 'paragraph')?.id || ''
   // #ifndef H5
   uni.onKeyboardHeightChange(keyboardChanged)
+  uni.onWindowResize(scheduleLayout)
   // #endif
   // #ifdef H5
   window.visualViewport?.addEventListener('resize', viewportChanged)
   // #endif
 })
 onUnmounted(() => {
+  clearTimeout(layoutTimer)
   // #ifndef H5
   uni.offKeyboardHeightChange(keyboardChanged)
+  uni.offWindowResize(scheduleLayout)
   // #endif
   // #ifdef H5
   window.visualViewport?.removeEventListener('resize', viewportChanged)
@@ -109,16 +212,18 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <view class="paper-editor" :class="{ 'full-page': fullPage }" :style="{ '--paper-keyboard': `${keyboardHeight}px` }">
-    <view v-for="(block, index) in blocks" :key="block.id" class="block" :class="[`block-${block.type}`, { 'sole-paragraph': blocks.length === 1 && block.type === 'paragraph' }]">
+  <view class="paper-editor" :class="{ 'full-page': fullPage, 'keyboard-open': keyboardOpen }" :style="{ '--paper-keyboard': `${keyboardHeight}px` }">
+    <view v-for="(block, index) in blocks" :id="`paper-${block.id}`" :key="block.id" class="block" :class="[`block-${block.type}`, { 'sole-paragraph': blocks.length === 1 && block.type === 'paragraph' }]">
       <view v-if="block.type !== 'todo' && (!fullPage || block.type !== 'paragraph' || blocks.length > 1)" class="block-top"><text>{{ block.type === 'paragraph' ? '段落' : block.type === 'link' ? '链接' : block.type === 'drawing' ? '手写' : '图片' }}</text><button aria-label="移除这段内容" @click="removeBlock(block.id)">移除</button></view>
-      <textarea v-if="block.type === 'paragraph'" class="block-input paragraph-input" :style="paragraphCss(block)" :value="block.text" maxlength="10000" placeholder="输入正文…" auto-height :adjust-position="!fullPage" :cursor-spacing="100" disable-default-padding @focus="activeParagraph=block.id" @input="patchBlock(block.id,{text:eventValue($event)})" />
-      <view v-else-if="block.type === 'todo'" class="todo-row" :class="{checked:block.checked}" @click="toggleTodo(block.id)"><button aria-label="切换待办状态" @click.stop="toggleTodo(block.id)" @tap.stop><StatusIcon :checked="Boolean(block.checked)" size="large" /></button><input :value="block.text" maxlength="500" placeholder="待办事项" @click.stop @tap.stop @input="patchBlock(block.id,{text:eventValue($event)})" /><button class="todo-remove" aria-label="移除这条待办" @click.stop="removeBlock(block.id)" @tap.stop><view class="remove-icon" /></button></view>
-      <view v-else-if="block.type === 'link'" class="link-fields"><input :value="block.text" maxlength="500" placeholder="链接名称（选填）" @input="patchBlock(block.id,{text:eventValue($event)})" /><input :value="block.url" maxlength="2000" placeholder="https://…" @input="patchBlock(block.id,{url:eventValue($event)})" /></view>
+      <textarea v-if="block.type === 'paragraph'" class="block-input paragraph-input" :style="paragraphCss(block)" :value="block.text" :focus="focusedId === block.id" maxlength="10000" placeholder="输入正文…" placeholder-style="font-size:16px;line-height:24px" auto-height :adjust-position="!fullPage" :cursor-spacing="88" :show-confirm-bar="false" disable-default-padding @focus="fieldFocused(block.id,true)" @input="paragraphInput(block.id,$event)" @linechange="keepFieldVisible" />
+      <view v-else-if="block.type === 'todo'" class="todo-row" :class="{checked:block.checked}" @click="toggleTodo(block.id)"><button aria-label="切换待办状态" @click.stop="toggleTodo(block.id)" @tap.stop><StatusIcon :checked="Boolean(block.checked)" size="large" /></button><input :value="block.text" :focus="focusedId === block.id" :adjust-position="!fullPage" :cursor-spacing="88" confirm-type="next" :confirm-hold="true" maxlength="500" placeholder="待办事项" @focus="fieldFocused(block.id)" @confirm="continueTodo(block.id,$event)" @click.stop @tap.stop @input="patchBlock(block.id,{text:eventValue($event)})" /><button class="todo-remove" aria-label="移除这条待办" @click.stop="removeBlock(block.id)" @tap.stop><view class="remove-icon" /></button></view>
+      <view v-else-if="block.type === 'link'" class="link-fields"><input :value="block.text" :focus="focusedId === block.id" :adjust-position="!fullPage" :cursor-spacing="88" maxlength="500" placeholder="链接名称（选填）" @focus="fieldFocused(block.id)" @input="patchBlock(block.id,{text:eventValue($event)})" /><input :value="block.url" :adjust-position="!fullPage" :cursor-spacing="88" maxlength="2000" placeholder="https://…" @focus="fieldFocused(block.id)" @input="patchBlock(block.id,{url:eventValue($event)})" /></view>
       <ImageAttachmentGallery v-else-if="attachment(block.attachmentId)" inline :attachments="[attachment(block.attachmentId)!]" />
       <text v-else class="missing-file">图片已移除</text>
       <text class="block-order">{{ index + 1 }}</text>
     </view>
+
+    <button v-if="blocks[blocks.length-1]?.type === 'todo'" class="continue-paragraph" @click="activeId=blocks[blocks.length-1].id;addParagraph()">继续写正文</button>
 
     <LedgerSummary v-if="ledgerSummary" :summary="ledgerSummary" />
 
@@ -156,8 +261,12 @@ onUnmounted(() => {
 <style scoped>
 .full-page{min-height:calc(100vh - 210px);padding-bottom:calc(100px + env(safe-area-inset-bottom));color:#494032}
 .full-page .block{margin:0;padding:8px 0;border:0;border-radius:0;background:transparent}
-.full-page .sole-paragraph .paragraph-input{min-height:calc(100vh - 280px)}
-.full-page .paragraph-input{min-height:130px;line-height:1.9}
+.paragraph-input{display:block;margin:0;padding:0;line-height:24px;box-sizing:border-box}
+.full-page .paragraph-input{min-height:48px;line-height:24px}
+.continue-paragraph{display:flex;align-items:center;min-height:44px;margin:8px 0;padding:0 10px;border:0;border-radius:12px;background:#f1ede4;color:#786d5b;font-size:13px;text-align:left}
+.continue-paragraph::after{border:0}
+.keyboard-open.full-page{padding-bottom:calc(100px + var(--paper-keyboard,0px))}
+.keyboard-open .paper-toolbar{padding-bottom:8px}
 .full-page .block-order{display:none}
 .full-page .paper-toolbar{position:fixed;left:50%;bottom:var(--paper-keyboard,0px);transform:translateX(-50%);width:100%;max-width:640px;grid-template-columns:repeat(6,minmax(0,1fr));margin:0;padding:8px 20px calc(8px + env(safe-area-inset-bottom));border-width:1px 0 0;border-radius:0;background:#faf8f2;box-shadow:0 -4px 20px rgba(64,54,40,.04);box-sizing:border-box}
 .full-page .paper-toolbar button{min-width:44px;min-height:54px}

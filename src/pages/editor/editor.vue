@@ -241,7 +241,7 @@ onUnload(() => { active = false })
     </view>
 
     <view v-else-if="isPaper" class="paper-page">
-      <input v-model="draft.title" class="paper-title" maxlength="100" placeholder="标题" />
+      <input v-model="draft.title" class="paper-title" :adjust-position="false" :cursor-spacing="88" maxlength="100" placeholder="标题" />
       <view class="paper-meta"><text>灵感纸</text><button @click="settingsOpen=true">{{ draft.scope === 'shared' ? '我们俩' : '仅自己' }} · 设置</button></view>
       <StructuredNoteEditor full-page :blocks="draft.blocks || []" :attachments="draft.attachments || []" :saving="pending === 'save'" @save="save" @update:blocks="draft.blocks=$event" @update:attachments="draft.attachments=$event" />
     </view>

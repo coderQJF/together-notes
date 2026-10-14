@@ -396,7 +396,7 @@ test('paper notes expose the five requested tools and persist structured content
   assert.match(editor, /灵感纸/)
   for (const label of ['手写', '待办', '段落', '图片', '链接']) assert.match(structured, new RegExp(`label: '${label}'`))
   assert.match(structured, /<HandwritingPad/)
-  assert.match(structured, /onMounted\(\(\) => \{\s*if \(!props\.blocks\.length\) \{\s*const block = paragraphBlock\(\)/)
+  assert.match(structured, /onMounted\(\(\) => \{[\s\S]*if \(!props\.blocks\.length\) \{\s*const block = paragraphBlock\(\)/)
   assert.match(structured, /<LedgerSummary v-if="ledgerSummary"/)
   assert.match(detail, /<StructuredNoteContent/)
   assert.match(server, /sanitizeNoteBlocks/)
