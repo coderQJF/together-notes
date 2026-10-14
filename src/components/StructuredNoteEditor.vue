@@ -24,6 +24,13 @@ const instance = getCurrentInstance()
 let baselineHeight = 0
 let reportedKeyboard = 0
 let layoutTimer: ReturnType<typeof setTimeout> | undefined
+let scrollTimer: ReturnType<typeof setTimeout> | undefined
+function queueFieldVisibility() {
+  // nextTick updates the service/component state before native textarea
+  // auto-height has reached the view. Measure only after that layout settles.
+  clearTimeout(scrollTimer)
+  scrollTimer = setTimeout(keepFieldVisible, 80)
+}
 function windowHeight() {
   // #ifdef H5
   return window.innerHeight
@@ -34,6 +41,22 @@ function windowHeight() {
 }
 function keepFieldVisible() {
   if (!props.fullPage || !activeId.value || !keyboardOpen.value || handwritingOpen.value || formatOpen.value) return
+  const reveal = (field: { top: number; bottom: number }, toolbar: { top: number }, scrollTop: number, atEnd = caretAtEnd.value) => {
+    const safeTop = Math.max(80, Number(uni.getSystemInfoSync().statusBarHeight || 0) + 60)
+    if (!atEnd && field.bottom - field.top > toolbar.top - safeTop - 12) return
+    const bottom = atEnd ? field.bottom : Math.min(field.bottom, field.top + 64)
+    const target = paperScrollTarget(scrollTop, field.top, bottom, safeTop, toolbar.top - 12)
+    if (target !== null) uni.pageScrollTo({ scrollTop: target, duration: 0 })
+  }
+  // #ifdef H5
+  const field = document.getElementById(`paper-${activeId.value}`)
+  const toolbar = field?.closest('.paper-editor')?.querySelector('.paper-toolbar')
+  const input = document.activeElement as HTMLTextAreaElement | null
+  const atEnd = caretAtEnd.value || (input?.tagName === 'TEXTAREA' && input.selectionEnd === input.value.length)
+  if (field && toolbar) reveal(field.getBoundingClientRect(), toolbar.getBoundingClientRect(), window.scrollY, atEnd)
+  return
+  // #endif
+  // #ifndef H5
   const query = uni.createSelectorQuery().in(instance?.proxy)
   query.select(`#paper-${activeId.value}`).boundingClientRect()
   query.select('.paper-toolbar').boundingClientRect()
@@ -41,20 +64,16 @@ function keepFieldVisible() {
   query.exec(results => {
     const [field, toolbar, viewport] = results
     if (!field || !toolbar || !viewport) return
-    const safeTop = Math.max(80, Number(uni.getSystemInfoSync().statusBarHeight || 0) + 60)
-    if (!caretAtEnd.value && field.bottom - field.top > toolbar.top - safeTop - 12) return
-    // Tall paragraphs keep their current line visible without moving their start offscreen on focus.
-    const bottom = caretAtEnd.value ? field.bottom : Math.min(field.bottom, field.top + 64)
-    const target = paperScrollTarget(viewport.scrollTop || 0, field.top, bottom, safeTop, toolbar.top - 12)
-    if (target !== null) uni.pageScrollTo({ scrollTop: target, duration: 0 })
+    reveal(field, toolbar, viewport.scrollTop || 0)
   })
+  // #endif
 }
 function syncKeyboardLayout() {
   const height = windowHeight()
   baselineHeight = Math.max(baselineHeight, height)
   keyboardOpen.value = reportedKeyboard > 0
   keyboardHeight.value = keyboardDockOffset(reportedKeyboard, baselineHeight, height)
-  void nextTick(keepFieldVisible)
+  void nextTick(queueFieldVisibility)
 }
 function keyboardChanged(event: { height: number }) {
   reportedKeyboard = Math.max(0, Number(event.height) || 0)
@@ -70,7 +89,7 @@ function viewportChanged() {
   if (viewport) {
     keyboardHeight.value = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
     keyboardOpen.value = keyboardHeight.value > 80
-    void nextTick(keepFieldVisible)
+    void nextTick(queueFieldVisibility)
   }
   // #endif
 }
@@ -99,18 +118,23 @@ function focusBlock(id: string, paragraph = false) {
   activeId.value = id
   activeParagraph.value = paragraph ? id : ''
   focusedId.value = ''
-  void nextTick(() => { focusedId.value = id; keepFieldVisible() })
+  void nextTick(() => { focusedId.value = id; queueFieldVisibility() })
 }
 function fieldFocused(id: string, paragraph = false) {
   activeId.value = id; activeParagraph.value = paragraph ? id : ''; focusedId.value = id
   caretAtEnd.value = false
-  void nextTick(keepFieldVisible)
+  void nextTick(queueFieldVisibility)
 }
 function paragraphInput(id: string, event: Event) {
+  activeId.value = id; activeParagraph.value = id
   const text = eventValue(event)
   caretAtEnd.value = (event as any).detail?.cursor === text.length
   patchBlock(id, { text })
-  void nextTick(keepFieldVisible)
+  void nextTick(queueFieldVisibility)
+}
+function textInput(id: string, patch: Partial<NoteBlock>) {
+  activeId.value = id; activeParagraph.value = ''
+  patchBlock(id, patch)
 }
 function insertBlocks(added: NoteBlock[], anchor = activeId.value) {
   const next = [...props.blocks]
@@ -202,6 +226,8 @@ onMounted(() => {
 })
 onUnmounted(() => {
   clearTimeout(layoutTimer)
+  clearTimeout(scrollTimer)
+  clearTimeout(scrollTimer)
   // #ifndef H5
   uni.offKeyboardHeightChange(keyboardChanged)
   uni.offWindowResize(scheduleLayout)
@@ -216,9 +242,9 @@ onUnmounted(() => {
   <view class="paper-editor" :class="{ 'full-page': fullPage, 'keyboard-open': keyboardOpen }" :style="{ '--paper-keyboard': `${keyboardHeight}px` }">
     <view v-for="(block, index) in blocks" :id="`paper-${block.id}`" :key="block.id" class="block" :class="[`block-${block.type}`, { 'sole-paragraph': blocks.length === 1 && block.type === 'paragraph' }]">
       <view v-if="block.type !== 'todo' && (!fullPage || block.type !== 'paragraph' || blocks.length > 1)" class="block-top"><text>{{ block.type === 'paragraph' ? '段落' : block.type === 'link' ? '链接' : block.type === 'drawing' ? '手写' : '图片' }}</text><button aria-label="移除这段内容" @click="removeBlock(block.id)">移除</button></view>
-      <textarea v-if="block.type === 'paragraph'" class="block-input paragraph-input" :style="paragraphCss(block)" :value="block.text" :focus="focusedId === block.id" maxlength="10000" placeholder="输入正文…" placeholder-style="font-size:16px;line-height:24px" auto-height :adjust-position="!fullPage" :cursor-spacing="88" :show-confirm-bar="false" disable-default-padding @focus="fieldFocused(block.id,true)" @input="paragraphInput(block.id,$event)" @linechange="keepFieldVisible" />
-      <view v-else-if="block.type === 'todo'" class="todo-row" :class="{checked:block.checked}" @click="toggleTodo(block.id)"><button aria-label="切换待办状态" @click.stop="toggleTodo(block.id)" @tap.stop><StatusIcon :checked="Boolean(block.checked)" size="large" /></button><input :value="block.text" :focus="focusedId === block.id" :adjust-position="!fullPage" :cursor-spacing="88" confirm-type="next" :confirm-hold="true" maxlength="500" placeholder="待办事项" @focus="fieldFocused(block.id)" @confirm="continueTodo(block.id,$event)" @click.stop @tap.stop @input="patchBlock(block.id,{text:eventValue($event)})" /><button class="todo-remove" aria-label="移除这条待办" @click.stop="removeBlock(block.id)" @tap.stop><view class="remove-icon" /></button></view>
-      <view v-else-if="block.type === 'link'" class="link-fields"><input :value="block.text" :focus="focusedId === block.id" :adjust-position="!fullPage" :cursor-spacing="88" maxlength="500" placeholder="链接名称（选填）" @focus="fieldFocused(block.id)" @input="patchBlock(block.id,{text:eventValue($event)})" /><input :value="block.url" :adjust-position="!fullPage" :cursor-spacing="88" maxlength="2000" placeholder="https://…" @focus="fieldFocused(block.id)" @input="patchBlock(block.id,{url:eventValue($event)})" /></view>
+      <textarea v-if="block.type === 'paragraph'" class="block-input paragraph-input" :style="paragraphCss(block)" :value="block.text" :focus="focusedId === block.id" maxlength="10000" placeholder="输入正文…" placeholder-style="font-size:16px;line-height:24px" auto-height :adjust-position="!fullPage" :cursor-spacing="88" :show-confirm-bar="false" disable-default-padding @focus="fieldFocused(block.id,true)" @input="paragraphInput(block.id,$event)" @linechange="queueFieldVisibility" />
+      <view v-else-if="block.type === 'todo'" class="todo-row" :class="{checked:block.checked}" @click="toggleTodo(block.id)"><button aria-label="切换待办状态" @click.stop="toggleTodo(block.id)" @tap.stop><StatusIcon :checked="Boolean(block.checked)" size="large" /></button><input :value="block.text" :focus="focusedId === block.id" :adjust-position="!fullPage" :cursor-spacing="88" confirm-type="next" :confirm-hold="true" maxlength="500" placeholder="待办事项" @focus="fieldFocused(block.id)" @confirm="continueTodo(block.id,$event)" @click.stop @tap.stop @input="textInput(block.id,{text:eventValue($event)})" /><button class="todo-remove" aria-label="移除这条待办" @click.stop="removeBlock(block.id)" @tap.stop><view class="remove-icon" /></button></view>
+      <view v-else-if="block.type === 'link'" class="link-fields"><input :value="block.text" :focus="focusedId === block.id" :adjust-position="!fullPage" :cursor-spacing="88" maxlength="500" placeholder="链接名称（选填）" @focus="fieldFocused(block.id)" @input="textInput(block.id,{text:eventValue($event)})" /><input :value="block.url" :adjust-position="!fullPage" :cursor-spacing="88" maxlength="2000" placeholder="https://…" @focus="fieldFocused(block.id)" @input="textInput(block.id,{url:eventValue($event)})" /></view>
       <ImageAttachmentGallery v-else-if="attachment(block.attachmentId)" inline :attachments="[attachment(block.attachmentId)!]" />
       <text v-else class="missing-file">图片已移除</text>
       <text class="block-order">{{ index + 1 }}</text>

@@ -96,6 +96,7 @@ class Cdp {
     this.socket = new WebSocket(url)
     this.nextId = 1
     this.pending = new Map()
+    this.exceptions = []
   }
 
   async open() {
@@ -105,6 +106,8 @@ class Cdp {
     })
     this.socket.on('message', raw => {
       const message = JSON.parse(String(raw))
+      if (message.method === 'Runtime.exceptionThrown') this.exceptions.push(message.params.exceptionDetails.exception?.description || message.params.exceptionDetails.text)
+      if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') this.exceptions.push(message.params.args.map(arg=>arg.description || arg.value).join(' '))
       if (!message.id) return
       const pending = this.pending.get(message.id)
       if (!pending) return
@@ -405,12 +408,18 @@ try {
       }
       if (screen.keyboardScenario) {
         await page.call('Runtime.evaluate', { expression: `(() => { const field=document.querySelector('.paragraph-input textarea'); field.focus(); const value='长正文回归检查\\n'.repeat(60); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(field,value); field.setSelectionRange(value.length,value.length); Object.defineProperty(window.visualViewport,'height',{configurable:true,value:500}); window.visualViewport.dispatchEvent(new Event('resize')); field.dispatchEvent(new Event('input',{bubbles:true,composed:true})); })()` })
-        await wait(600)
+        let caretVisible = false
+        for (let attempt=0; attempt<20; attempt++) {
+          await wait(150)
+          const visible=await page.call('Runtime.evaluate',{expression:`document.querySelector('.paragraph-input').getBoundingClientRect().bottom <= document.querySelector('.paper-toolbar').getBoundingClientRect().top - 8`,returnByValue:true})
+          if(visible.result.value) { caretVisible=true; break }
+        }
+        if(!caretVisible) throw new Error('Long-paragraph caret hidden: '+JSON.stringify(page.exceptions))
         const before = await page.call('Runtime.evaluate', { expression: 'window.scrollY', returnByValue: true })
         await page.call('Runtime.evaluate', { expression: `window.visualViewport.dispatchEvent(new Event('resize'))` })
         await wait(300)
-        const state = await page.call('Runtime.evaluate', { expression: `({scroll:window.scrollY,bottom:document.querySelector('.paper-toolbar').getBoundingClientRect().bottom})`, returnByValue: true })
-        if (Math.abs(state.result.value.scroll - before.result.value) > 1 || Math.abs(state.result.value.bottom - 500) > 2) throw new Error('Keyboard docking or repeated long-paragraph layout is unstable')
+        const state = await page.call('Runtime.evaluate', { expression: `({scroll:window.scrollY,bottom:document.querySelector('.paper-toolbar').getBoundingClientRect().bottom,caretBottom:document.querySelector('.paragraph-input').getBoundingClientRect().bottom,toolbarTop:document.querySelector('.paper-toolbar').getBoundingClientRect().top})`, returnByValue: true })
+        if (Math.abs(state.result.value.scroll - before.result.value) > 1 || Math.abs(state.result.value.bottom - 500) > 2 || state.result.value.caretBottom > state.result.value.toolbarTop - 8) throw new Error('Keyboard docking or repeated long-paragraph layout is unstable: '+JSON.stringify(state.result.value))
       }
       if (screen.ask) {
         const askResult = await page.call('Runtime.evaluate', {
