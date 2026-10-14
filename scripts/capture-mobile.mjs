@@ -234,6 +234,7 @@ const screens = [
   ...(paperId ? [{ name: 'editor-note-paper', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸' }] : []),
   ...(paperId ? [{ name: 'editor-note-paper-todo-checked', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', preClickSelector: '.todo-row uni-button' }] : []),
   ...(paperId ? [{ name: 'editor-note-paper-todo-flow', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', todoFlow: true }] : []),
+  ...(paperId ? [{ name: 'editor-note-paper-keyboard', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', keyboardScenario: true }] : []),
   ...(paperId ? [{ name: 'editor-note-paper-settings', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', click: '仅自己 · 设置', clicked: '灵感纸设置' }] : []),
   ...(paperId ? [{ name: 'editor-note-handwriting', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', click: '手写', clicked: '清空', drawSelector: '.pad-canvas' }] : []),
   { name: 'editor-note-format', path: '/pages/editor/editor?kind=note', ready: '标题', click: '格式', clicked: '备忘录格式' },
@@ -402,6 +403,15 @@ try {
         })
         if (!inkAudit.result.value || inkAudit.result.value.cornerInk || !inkAudit.result.value.totalInk) throw new Error('Handwriting drew stray origin lines or no ink')
       }
+      if (screen.keyboardScenario) {
+        await page.call('Runtime.evaluate', { expression: `(() => { const field=document.querySelector('.paragraph-input textarea'); field.focus(); const value='长正文回归检查\\n'.repeat(60); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(field,value); field.setSelectionRange(value.length,value.length); Object.defineProperty(window.visualViewport,'height',{configurable:true,value:500}); window.visualViewport.dispatchEvent(new Event('resize')); field.dispatchEvent(new Event('input',{bubbles:true,composed:true})); })()` })
+        await wait(600)
+        const before = await page.call('Runtime.evaluate', { expression: 'window.scrollY', returnByValue: true })
+        await page.call('Runtime.evaluate', { expression: `window.visualViewport.dispatchEvent(new Event('resize'))` })
+        await wait(300)
+        const state = await page.call('Runtime.evaluate', { expression: `({scroll:window.scrollY,bottom:document.querySelector('.paper-toolbar').getBoundingClientRect().bottom})`, returnByValue: true })
+        if (Math.abs(state.result.value.scroll - before.result.value) > 1 || Math.abs(state.result.value.bottom - 500) > 2) throw new Error('Keyboard docking or repeated long-paragraph layout is unstable')
+      }
       if (screen.ask) {
         const askResult = await page.call('Runtime.evaluate', {
           expression: `(() => { const field = document.querySelector('textarea'); if (!field) return false; const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set; setter?.call(field, ${JSON.stringify(screen.ask)}); field.dispatchEvent(new Event('input', { bubbles: true, composed: true })); field.dispatchEvent(new Event('change', { bubbles: true, composed: true })); return true })()`,
@@ -443,6 +453,7 @@ try {
       })
       await writeFile(join(outputDir, `${width}-${screen.name}.png`), Buffer.from(shot.data, 'base64'))
       report.push({ width, screen: screen.name, ...audit.result.value })
+      if (screen.keyboardScenario) await page.call('Runtime.evaluate', { expression: `delete window.visualViewport.height; window.visualViewport.dispatchEvent(new Event('resize'));` })
       if (screen.offlineSave) {
         await page.call('Network.setBlockedURLs', { urls: [] })
         await page.call('Page.navigate', { url: route('/pages/index/index', ++navigationNonce) })

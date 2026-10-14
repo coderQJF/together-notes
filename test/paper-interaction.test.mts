@@ -12,6 +12,8 @@ test('keyboard docking accounts for overlay, resize and partially resized viewpo
   assert.equal(paperScrollTarget(100, 500, 548, 80, 450), 198)
   assert.equal(paperScrollTarget(100, 40, 88, 80, 450), 60)
   assert.equal(paperScrollTarget(100, 200, 248, 80, 450), null)
+  assert.equal(paperScrollTarget(100, -300, 448, 80, 450), null)
+  assert.equal(paperScrollTarget(100, -300, 500, 80, 450), 150)
 })
 
 test('each handwriting batch resets its path to the previous touch, never the canvas origin', () => {

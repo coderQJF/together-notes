@@ -42,6 +42,7 @@ function keepFieldVisible() {
     const [field, toolbar, viewport] = results
     if (!field || !toolbar || !viewport) return
     const safeTop = Math.max(80, Number(uni.getSystemInfoSync().statusBarHeight || 0) + 60)
+    if (!caretAtEnd.value && field.bottom - field.top > toolbar.top - safeTop - 12) return
     // Tall paragraphs keep their current line visible without moving their start offscreen on focus.
     const bottom = caretAtEnd.value ? field.bottom : Math.min(field.bottom, field.top + 64)
     const target = paperScrollTarget(viewport.scrollTop || 0, field.top, bottom, safeTop, toolbar.top - 12)
