@@ -1,13 +1,14 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ checked?: boolean; label?: string; size?: 'default' | 'large' }>(), {
+withDefaults(defineProps<{ checked?: boolean; label?: string; size?: 'default' | 'large'; appearance?: 'filled' | 'outline' }>(), {
   checked: false,
   label: '',
   size: 'default',
+  appearance: 'filled',
 })
 </script>
 
 <template>
-  <view class="status-icon" :class="{ checked, large:size === 'large' }" role="img" :aria-label="label || (checked ? '已完成' : '待完成')">
+  <view class="status-icon" :class="{ checked, large:size === 'large', outline:appearance === 'outline' }" role="img" :aria-label="label || (checked ? '已完成' : '待完成')">
     <view v-if="checked" class="check-mark" />
   </view>
 </template>
@@ -19,4 +20,5 @@ withDefaults(defineProps<{ checked?: boolean; label?: string; size?: 'default' |
 .status-icon.large{width:26px;height:26px;flex-basis:26px;border-width:2px;border-color:#9c9487}
 .status-icon.large.checked{border-color:#b8953d;background:#f7e7ad}
 .status-icon.large .check-mark{width:6px;height:10px;border-right-width:2px;border-bottom-width:2px}
+.status-icon.outline,.status-icon.large.checked.outline{border-color:#494032;background:transparent}
 </style>

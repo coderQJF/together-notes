@@ -467,6 +467,23 @@ test('paper note handwriting and todo rows remain directly interactive on mobile
   assert.match(detail, /@toggle-todo="toggleNoteTodo"/)
 })
 
+test('paper spacing and outline save use shared primitives with unambiguous WeChat taps', async () => {
+  const header = await readFile('src/components/SubpageHeader.vue', 'utf8')
+  const editor = await readFile('src/components/StructuredNoteEditor.vue', 'utf8')
+  const content = await readFile('src/components/StructuredNoteContent.vue', 'utf8')
+  const status = await readFile('src/components/StatusIcon.vue', 'utf8')
+  const geometry = await readFile('src/styles/note-todo.css', 'utf8')
+  assert.match(header, /margin-bottom:12px/)
+  assert.match(header, /box-sizing:border-box/)
+  assert.match(editor, /appearance="outline" label="保存"/)
+  assert.match(status, /large\.checked\.outline\{border-color:#494032;background:transparent\}/)
+  for (const component of [editor, content]) assert.match(component, /src="\.\.\/styles\/note-todo\.css"/)
+  assert.match(geometry, /min-height:44px/)
+  assert.match(geometry, /\.full-page \.block\.block-todo\{margin:0;padding:0\}/)
+  assert.doesNotMatch(editor, /@tap\.stop/)
+  assert.match(editor, /:aria-pressed="Boolean\(block\.checked\)" @click\.stop="toggleTodo\(block\.id\)"/)
+})
+
 test('reader sheets lock the page and pagination labels are optically centered', async () => {
   const reader = await readFile('src/pages/reader/reader.vue', 'utf8')
   assert.match(reader, /<page-meta :page-style="panelPageStyle"/)

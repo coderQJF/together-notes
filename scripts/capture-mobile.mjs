@@ -234,6 +234,7 @@ const screens = [
   { name: 'editor-note-offline', path: '/pages/editor/editor?kind=note', ready: '标题', offline: true, offlineSave: '断网也能记下' },
   { name: 'editor-reminder-offline', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间', offline: true, offlineSave: '断网提醒' },
   { name: 'editor-paper-empty', path: '/pages/editor/editor?kind=note', ready: '标题', paperEmpty: true },
+  { name: 'editor-paper-new-todo-checked', path: '/pages/editor/editor?kind=note', ready: '标题', paperEmpty: true, newTodoChecked: true },
   ...(paperId ? [{ name: 'editor-note-paper', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸' }] : []),
   ...(paperId ? [{ name: 'editor-note-paper-todo-checked', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', preClickSelector: '.todo-row uni-button' }] : []),
   ...(paperId ? [{ name: 'editor-note-paper-todo-flow', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', todoFlow: true }] : []),
@@ -341,6 +342,16 @@ try {
         await waitForText(page, screen.offlineSave)
         await waitForText(page, '编辑')
       }
+      if (screen.newTodoChecked) {
+        await page.call('Runtime.evaluate', { expression: `document.querySelector('.paper-toolbar [aria-label="待办"]').click()` })
+        await wait(150)
+        await page.call('Runtime.evaluate', { expression: `document.querySelector('.todo-row [aria-label="切换待办状态"]').click()` })
+        await wait(150)
+        await page.call('Runtime.evaluate', { expression: `(() => { const field=document.querySelector('.todo-row input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'新建时勾选后仍可编辑'); field.dispatchEvent(new Event('input',{bubbles:true,composed:true})); })()` })
+        await wait(150)
+        const checked = await page.call('Runtime.evaluate', { expression: `(() => {const row=document.querySelector('.todo-row');return row.classList.contains('checked') && Boolean(row.querySelector('.status-icon.checked')) && row.querySelector('input').value==='新建时勾选后仍可编辑' && !row.querySelector('input').disabled;})()`, returnByValue: true })
+        if (!checked.result.value) throw new Error('New paper todo cannot be checked and edited')
+      }
       if (screen.preClickSelector) {
         const preClickResult = await page.call('Runtime.evaluate', {
           expression: `(() => { const node = document.querySelector(${JSON.stringify(screen.preClickSelector)}); if (!node) return false; node.click(); return true })()`,
@@ -436,6 +447,13 @@ try {
         await waitForText(page, screen.answered, 15000)
       }
       await wait(120)
+
+      if (screen.name.startsWith('editor-paper') || screen.name.startsWith('editor-note-paper')) {
+        const geometry = await page.call('Runtime.evaluate', { expression: `(() => { const row=document.querySelector('.todo-row');const icon=document.querySelector('.paper-save .status-icon'); return {rowHeight:row?.getBoundingClientRect().height,blockPadding:row?getComputedStyle(row.closest('.block')).paddingTop:null,saveBackground:icon?getComputedStyle(icon).backgroundColor:null}; })()`, returnByValue: true })
+        if (geometry.result.value.rowHeight && geometry.result.value.rowHeight !== 44) throw new Error('Paper todo row is not compact: '+JSON.stringify(geometry.result.value))
+        if (geometry.result.value.blockPadding && geometry.result.value.blockPadding !== '0px') throw new Error('Paper todo still has block padding')
+        if (geometry.result.value.saveBackground && geometry.result.value.saveBackground !== 'rgba(0, 0, 0, 0)') throw new Error('Save icon still has a filled background')
+      }
 
       const audit = await page.call('Runtime.evaluate', {
         expression: `(() => {

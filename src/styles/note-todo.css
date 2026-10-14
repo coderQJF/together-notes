@@ -1,0 +1,6 @@
+/* Shared compact geometry for paper-note editing and reading. */
+.todo-row,.todo{display:flex;min-height:44px;align-items:center;gap:7px;box-sizing:border-box}
+.block-todo,.content-todo{margin:0;padding:0}
+.full-page .block.block-todo{margin:0;padding:0}
+.todo-row input{height:44px;line-height:24px}
+.todo{padding:0}

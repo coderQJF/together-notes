@@ -374,7 +374,7 @@ onUnload(() => { active = false })
 <style scoped>
 .paper-shell{padding-bottom:0;color:#494032}
 .paper-page{min-height:calc(100vh - 100px)}
-.paper-title{display:block;width:100%;height:64px;margin:0;padding:0;border:0;background:transparent;color:#494032;font-size:30px;font-weight:650;line-height:1.4}
+.paper-title{display:block;width:100%;height:48px;margin:0;padding:0;border:0;background:transparent;color:#494032;font-size:30px;font-weight:650;line-height:1.4}
 .paper-meta{display:flex;align-items:center;gap:12px;margin-bottom:8px;color:#8b806e;font-size:12px}
 .paper-meta button{display:flex;align-items:center;justify-content:center;min-height:44px;margin:0;padding:0 12px;border:0;border-radius:12px;background:#f4efe2;color:#786d5b;font-size:12px}
 .paper-meta button::after{border:0}

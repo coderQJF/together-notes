@@ -243,7 +243,7 @@ onUnmounted(() => {
     <view v-for="(block, index) in blocks" :id="`paper-${block.id}`" :key="block.id" class="block" :class="[`block-${block.type}`, { 'sole-paragraph': blocks.length === 1 && block.type === 'paragraph' }]">
       <view v-if="block.type !== 'todo' && (!fullPage || block.type !== 'paragraph' || blocks.length > 1)" class="block-top"><text>{{ block.type === 'paragraph' ? '段落' : block.type === 'link' ? '链接' : block.type === 'drawing' ? '手写' : '图片' }}</text><button aria-label="移除这段内容" @click="removeBlock(block.id)">移除</button></view>
       <textarea v-if="block.type === 'paragraph'" class="block-input paragraph-input" :style="paragraphCss(block)" :value="block.text" :focus="focusedId === block.id" maxlength="10000" placeholder="输入正文…" placeholder-style="font-size:16px;line-height:24px" auto-height :adjust-position="!fullPage" :cursor-spacing="88" :show-confirm-bar="false" disable-default-padding @focus="fieldFocused(block.id,true)" @input="paragraphInput(block.id,$event)" @linechange="queueFieldVisibility" />
-      <view v-else-if="block.type === 'todo'" class="todo-row" :class="{checked:block.checked}" @click="toggleTodo(block.id)"><button aria-label="切换待办状态" @click.stop="toggleTodo(block.id)" @tap.stop><StatusIcon :checked="Boolean(block.checked)" size="large" /></button><input :value="block.text" :focus="focusedId === block.id" :adjust-position="!fullPage" :cursor-spacing="88" confirm-type="next" :confirm-hold="true" maxlength="500" placeholder="待办事项" @focus="fieldFocused(block.id)" @confirm="continueTodo(block.id,$event)" @click.stop @tap.stop @input="textInput(block.id,{text:eventValue($event)})" /><button class="todo-remove" aria-label="移除这条待办" @click.stop="removeBlock(block.id)" @tap.stop><view class="remove-icon" /></button></view>
+      <view v-else-if="block.type === 'todo'" class="todo-row" :class="{checked:block.checked}" @click="toggleTodo(block.id)"><button aria-label="切换待办状态" :aria-pressed="Boolean(block.checked)" @click.stop="toggleTodo(block.id)"><StatusIcon :checked="Boolean(block.checked)" size="large" /></button><input :value="block.text" :focus="focusedId === block.id" :adjust-position="!fullPage" :cursor-spacing="88" confirm-type="next" :confirm-hold="true" maxlength="500" placeholder="待办事项" @focus="fieldFocused(block.id)" @confirm="continueTodo(block.id,$event)" @click.stop @input="textInput(block.id,{text:eventValue($event)})" /><button class="todo-remove" aria-label="移除这条待办" @click.stop="removeBlock(block.id)"><view class="remove-icon" /></button></view>
       <view v-else-if="block.type === 'link'" class="link-fields"><input :value="block.text" :focus="focusedId === block.id" :adjust-position="!fullPage" :cursor-spacing="88" maxlength="500" placeholder="链接名称（选填）" @focus="fieldFocused(block.id)" @input="textInput(block.id,{text:eventValue($event)})" /><input :value="block.url" :adjust-position="!fullPage" :cursor-spacing="88" maxlength="2000" placeholder="https://…" @focus="fieldFocused(block.id)" @input="textInput(block.id,{url:eventValue($event)})" /></view>
       <ImageAttachmentGallery v-else-if="attachment(block.attachmentId)" inline :attachments="[attachment(block.attachmentId)!]" />
       <text v-else class="missing-file">图片已移除</text>
@@ -256,7 +256,7 @@ onUnmounted(() => {
 
     <view class="paper-toolbar">
       <button v-for="tool in tools" :key="tool.key" :disabled="busy || saving" :aria-label="tool.label" @click="useTool(tool.key)"><NoteToolIcon :kind="tool.key" /><text>{{ tool.label }}</text></button>
-      <button v-if="fullPage" class="paper-save" :disabled="busy || saving" aria-label="保存灵感纸" @click="emit('save')"><StatusIcon checked size="large" /><text>{{ saving ? '保存中' : '保存' }}</text></button>
+      <button v-if="fullPage" class="paper-save" :disabled="busy || saving" aria-label="保存灵感纸" @click="emit('save')"><StatusIcon checked size="large" appearance="outline" label="保存" /><text>{{ saving ? '保存中' : '保存' }}</text></button>
     </view>
 
     <view v-if="formatOpen" class="format-layer" @click="formatOpen=false">
@@ -297,8 +297,10 @@ onUnmounted(() => {
 .full-page .block-order{display:none}
 .full-page .paper-toolbar{position:fixed;left:50%;bottom:var(--paper-keyboard,0px);transform:translateX(-50%);width:100%;max-width:640px;grid-template-columns:repeat(6,minmax(0,1fr));margin:0;padding:8px 20px calc(8px + env(safe-area-inset-bottom));border-width:1px 0 0;border-radius:0;background:#faf8f2;box-shadow:0 -4px 20px rgba(64,54,40,.04);box-sizing:border-box}
 .full-page .paper-toolbar button{min-width:44px;min-height:54px}
-.full-page .paper-save{color:#83692e}
+.full-page .paper-save{color:#494032}
 .new-paragraph{display:flex;align-items:center;justify-content:center;min-height:44px;margin:8px 0;border-radius:12px;background:#f7e7ad;color:#494032}
 .colors button{width:44px;height:44px;min-height:44px}
 @media(max-width:360px){.full-page .paper-toolbar{padding-left:16px;padding-right:16px}}
 </style>
+
+<style scoped src="../styles/note-todo.css"></style>
