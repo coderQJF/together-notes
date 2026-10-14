@@ -449,10 +449,17 @@ try {
       await wait(120)
 
       if (screen.name.startsWith('editor-paper') || screen.name.startsWith('editor-note-paper')) {
-        const geometry = await page.call('Runtime.evaluate', { expression: `(() => { const row=document.querySelector('.todo-row');const icon=document.querySelector('.paper-save .status-icon'); return {rowHeight:row?.getBoundingClientRect().height,blockPadding:row?getComputedStyle(row.closest('.block')).paddingTop:null,saveBackground:icon?getComputedStyle(icon).backgroundColor:null}; })()`, returnByValue: true })
+        const geometry = await page.call('Runtime.evaluate', { expression: `(() => { const row=document.querySelector('.todo-row');const icon=document.querySelector('.paper-save .tool-icon');const circle=row?.querySelector('.status-icon');const hit=row?.querySelector('button');return {rowHeight:row?.getBoundingClientRect().height,blockPadding:row?getComputedStyle(row.closest('.block')).paddingTop:null,saveBackground:icon?getComputedStyle(icon).backgroundColor:null,saveWidth:icon?.getBoundingClientRect().width,saveHeight:icon?.getBoundingClientRect().height,saveBare:Boolean(icon?.querySelector('.save-check'))&&!document.querySelector('.paper-save .status-icon'),circleOffset:circle?circle.getBoundingClientRect().left-row.getBoundingClientRect().left:0,hitWidth:hit?.getBoundingClientRect().width,hitHeight:hit?.getBoundingClientRect().height}; })()`, returnByValue: true })
         if (geometry.result.value.rowHeight && geometry.result.value.rowHeight !== 44) throw new Error('Paper todo row is not compact: '+JSON.stringify(geometry.result.value))
         if (geometry.result.value.blockPadding && geometry.result.value.blockPadding !== '0px') throw new Error('Paper todo still has block padding')
         if (geometry.result.value.saveBackground && geometry.result.value.saveBackground !== 'rgba(0, 0, 0, 0)') throw new Error('Save icon still has a filled background')
+        const value = geometry.result.value
+        if (!value.saveBare || value.saveWidth !== 25 || value.saveHeight !== 25) throw new Error('Save must be a bare check in the shared 25px icon box')
+        if (Math.abs(value.circleOffset) > 1 || (value.hitWidth && value.hitWidth < 44) || (value.hitHeight && value.hitHeight < 44)) throw new Error('Todo circle alignment or hit area regressed: '+JSON.stringify(value))
+      }
+      if (screen.name.startsWith('detail-note-paper')) {
+        const alignment = await page.call('Runtime.evaluate', { expression: `(() => {const row=document.querySelector('.todo');const circle=row?.querySelector('.status-icon');return circle?circle.getBoundingClientRect().left-row.getBoundingClientRect().left:0})()`, returnByValue: true })
+        if (Math.abs(alignment.result.value) > 1) throw new Error('Reading todo circle is not left aligned')
       }
 
       const audit = await page.call('Runtime.evaluate', {

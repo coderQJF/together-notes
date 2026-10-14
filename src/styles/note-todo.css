@@ -3,4 +3,7 @@
 .block-todo,.content-todo{margin:0;padding:0}
 .full-page .block.block-todo{margin:0;padding:0}
 .todo-row input{height:44px;line-height:24px}
+/* Center the 26px circle in its 44px hit area, extending the hit area into the gutter. */
+.todo-row>button:first-child{margin-left:-9px}
 .todo{padding:0}
+.todo :deep(.status-icon){margin:0 9px 0 0;flex:0 0 auto}

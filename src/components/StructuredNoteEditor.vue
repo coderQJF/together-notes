@@ -256,7 +256,7 @@ onUnmounted(() => {
 
     <view class="paper-toolbar">
       <button v-for="tool in tools" :key="tool.key" :disabled="busy || saving" :aria-label="tool.label" @click="useTool(tool.key)"><NoteToolIcon :kind="tool.key" /><text>{{ tool.label }}</text></button>
-      <button v-if="fullPage" class="paper-save" :disabled="busy || saving" aria-label="保存灵感纸" @click="emit('save')"><StatusIcon checked size="large" appearance="outline" label="保存" /><text>{{ saving ? '保存中' : '保存' }}</text></button>
+      <button v-if="fullPage" class="paper-save" :disabled="busy || saving" aria-label="保存灵感纸" @click="emit('save')"><NoteToolIcon kind="save" /><text>{{ saving ? '保存中' : '保存' }}</text></button>
     </view>
 
     <view v-if="formatOpen" class="format-layer" @click="formatOpen=false">
