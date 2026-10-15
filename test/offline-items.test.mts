@@ -1,9 +1,72 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { offlineItems } from '../src/services/offline-items.ts'
+import { guestWorkspace, GUEST_ITEMS_KEY, guestUser } from '../src/services/guest-workspace.ts'
 import type { Item } from '../src/services/api.ts'
 
 const note: Item = { kind: 'note', title: '离线备忘', content: '正文', scope: 'mine', links: [] }
+
+test('guests can create, reopen, edit, complete and delete without an account outbox', () => {
+  const { storage } = fixture(), guest = guestWorkspace(storage)
+  assert.deepEqual(guest.items(), [])
+  const saved = guest.save(note)
+  assert.equal(saved.owner, guestUser.id)
+  assert.match(saved.id!, /^local-[a-f0-9]{8,16}-[a-f0-9]{1,16}$/)
+  assert.equal(saved.syncPending, false)
+  assert.equal(guestWorkspace(storage).items()[0].id, saved.id)
+  const edited = guest.save({ ...saved, title: '修改后', noteFormat: 'paper', blocks: [{ id: 't1', type: 'todo', text: '待办', checked: true }] })
+  assert.equal(guestWorkspace(storage).items()[0].blocks?.[0].checked, true)
+  assert.equal(edited.id, saved.id)
+  const reminder = guest.save({ ...note, kind: 'reminder', recipient: 'me', done: false })
+  guest.save({ ...reminder, done: true })
+  assert.equal(guest.items().find(value => value.id === reminder.id)?.done, true)
+  assert.deepEqual(offlineItems('account-a', storage).pending(), [])
+  assert.deepEqual(offlineItems(guestUser.id, storage).pending(), [])
+  guest.remove(saved.id!)
+  assert.equal(guest.items().length, 1)
+})
+
+test('guest records stay local until explicit import and import retains private stable ids and attachments', () => {
+  const { storage } = fixture(), guest = guestWorkspace(storage)
+  const file = { id: 'local-file-photo', name: 'photo.png', size: 12, localPath: 'saved/photo.png' }
+  const saved = guest.save({ ...note, attachments: [file], blocks: [{ id: 'image1', type: 'image', attachmentId: file.id }] })
+  // Opening an account does not move any guest records.
+  offlineItems('account-a', storage).merge([])
+  assert.equal(guest.items().length, 1)
+  assert.throws(() => guest.importInto(guestUser.id, offlineItems(guestUser.id, storage)))
+  assert.equal(guest.importInto('account-a', offlineItems('account-a', storage)), 1)
+  const target = offlineItems('account-a', storage).pending()[0]
+  assert.equal(target.id, saved.id)
+  assert.equal(target.create, true)
+  assert.equal(target.item?.owner, 'account-a')
+  assert.equal(target.item?.scope, 'mine')
+  assert.deepEqual(target.item?.attachments, [file])
+  assert.equal(guest.items().length, 0)
+  assert.equal(guest.importInto('account-a', offlineItems('account-a', storage)), 0)
+  assert.deepEqual(offlineItems('account-b', storage).pending(), [])
+})
+
+test('failed guest import preserves originals and can retry without duplicates', () => {
+  const { storage } = fixture(), guest = guestWorkspace(storage)
+  const first = guest.save(note), second = guest.save({ ...note, title: '第二条' })
+  let writes = 0
+  const interruptedStorage = { ...storage, write(key: string, value: unknown) {
+    if (key !== GUEST_ITEMS_KEY && ++writes === 2) throw new Error('disk full')
+    storage.write(key, value)
+  } }
+  assert.throws(() => guest.importInto('account-a', offlineItems('account-a', interruptedStorage)), /disk full/)
+  assert.equal(guest.items().length, 2)
+  assert.equal(guest.importInto('account-a', offlineItems('account-a', storage)), 2)
+  assert.deepEqual(offlineItems('account-a', storage).pending().map(value => value.id).sort(), [first.id, second.id].sort())
+})
+
+test('guest writes cannot share or overwrite an unknown item', () => {
+  const { storage } = fixture(), guest = guestWorkspace(storage)
+  assert.throws(() => guest.save({ ...note, scope: 'shared' }))
+  assert.throws(() => guest.save({ ...note, kind: 'reminder', recipient: 'partner' }))
+  assert.throws(() => guest.save({ ...note, id: 'someone-elses-id' }))
+  assert.deepEqual(guest.items(), [])
+})
 function fixture() {
   const values = new Map<string, unknown>()
   const storage = { read: (key: string) => structuredClone(values.get(key)), write: (key: string, value: unknown) => { values.set(key, structuredClone(value)) } }

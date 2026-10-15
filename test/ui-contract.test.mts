@@ -319,17 +319,30 @@ test('reminder messages open their detail and become read from the detail page',
 test('the home feed restores its account-scoped snapshot before refreshing in the background', async () => {
   const home = await readFile('src/pages/index/index.vue', 'utf8')
   const api = await readFile('src/services/api.ts', 'utf8')
-  assert.match(home, /restoreHomeSnapshot\(\);try/)
+  assert.match(home, /onLoad\(async\(options\)=>\{restoreHomeSnapshot\(\)/)
   assert.match(home, /if\(refreshing&&!force\)return refreshing/)
   assert.match(api, /cached\.session!==session/)
   assert.match(api, /saveHomeSnapshot/)
+})
+
+test('guest entry never gates local functions behind login and importing requires confirmation', async () => {
+  const home = await readFile('src/pages/index/index.vue', 'utf8')
+  const api = await readFile('src/services/api.ts', 'utf8')
+  assert.match(home, /authOpen=ref\(false\)/)
+  assert.match(home, /v-else-if="authOpen"/)
+  assert.doesNotMatch(home, /v-else-if="!user" class="login"/)
+  assert.match(home, /if\(accepted\)\{await importGuestItems\(\)/)
+  assert.match(home, /cancelText:'暂不同步'/)
+  assert.match(api, /if\(isGuestSession\(\)\)return \{user:guestUser/)
+  assert.match(api, /LOGIN_REQUIRED/)
+  assert.match(home, /if\(user\.value\.guest\)void syncHomeWidgetNotes\(items\.value\)/)
 })
 
 test('bulk deletion invalidates stale refreshes and filters local notification snapshots', async () => {
   const home = await readFile('src/pages/index/index.vue', 'utf8')
   assert.match(home, /mutationEpoch=0,refreshSequence=0/)
   assert.match(home, /performRefresh\(epoch=mutationEpoch\)/)
-  assert.match(home, /if\(epoch!==mutationEpoch\)return;user\.value=u;items\.value=i;messages\.value=m/)
+  assert.match(home, /if\(epoch!==mutationEpoch\|\|session!==String\(uni.getStorageSync\('session'\)\|\|''\)\)return;user\.value=u;items\.value=i;messages\.value=m/)
   assert.match(home, /function refresh\(force=false\)/)
   assert.match(home, /sequence=\+\+refreshSequence/)
   assert.match(home, /if\(refreshSequence===sequence\)refreshing=undefined/)

@@ -97,6 +97,7 @@ class Cdp {
     this.nextId = 1
     this.pending = new Map()
     this.exceptions = []
+    this.apiRequests = []
   }
 
   async open() {
@@ -106,6 +107,7 @@ class Cdp {
     })
     this.socket.on('message', raw => {
       const message = JSON.parse(String(raw))
+      if (message.method === 'Network.requestWillBeSent' && new URL(message.params.request.url).pathname.startsWith('/api/')) this.apiRequests.push(message.params.request.url)
       if (message.method === 'Runtime.exceptionThrown') this.exceptions.push(message.params.exceptionDetails.exception?.description || message.params.exceptionDetails.text)
       if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') this.exceptions.push(message.params.args.map(arg=>arg.description || arg.value).join(' '))
       if (!message.id) return
@@ -155,6 +157,7 @@ if (!baseUrl) {
   baseUrl = `http://127.0.0.1:${address.port}/`
   const auth = await apiRequest('/api/auth/test', 'POST', { name: '我' })
   session = auth.token
+  await apiRequest('/api/me/app-credentials', 'PUT', { username: 'guest-qa', password: 'Guest-QA-password-2026', acceptedTerms: true }, session)
   const qaImageFiles = ['book-active.png', 'note-active.png', 'heart-active.png']
   const attachments = []
   for (const [index, filename] of qaImageFiles.entries()) {
@@ -214,7 +217,15 @@ function route(path, nonce) {
 
 const screenNames = new Set((process.env.CAPTURE_SCREENS || '').split(',').map(value => value.trim()).filter(Boolean))
 const screens = [
-  { name: 'index-login', path: '/pages/index/index', ready: '以前用过微信小程序', anonymous: true },
+  { name: 'index-login', path: '/pages/index/index?login=1', ready: '以前用过微信小程序', anonymous: true },
+  { name: 'guest-index', path: '/pages/index/index', ready: '从第一件小事开始', anonymous: true, guest: true },
+  { name: 'guest-search', path: '/pages/index/index', ready: '游客本机搜索', anonymous: true, guest: true, guestSeed: true, click: '搜搜', clicked: '搜搜我们的小记', ask: '游客', answered: '相关内容' },
+  { name: 'guest-login-cancel', path: '/pages/index/index?login=1', ready: '以前用过微信小程序', anonymous: true, cancelLogin: true },
+  { name: 'guest-note-flow', path: '/pages/editor/editor?kind=note', ready: '标题', anonymous: true, guest: true, offlineSave: '游客本机小记', guestCrud: true },
+  { name: 'guest-reminder-flow', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间', anonymous: true, guest: true, offlineSave: '游客本机待办', guestCrud: true },
+  { name: 'guest-paper-todo', path: '/pages/editor/editor?kind=note', ready: '标题', anonymous: true, guest: true, paperEmpty: true, newTodoChecked: true },
+  { name: 'guest-import-accept', path: '/pages/index/index?login=1', ready: '以前用过微信小程序', anonymous: true, guestImport: 'accept' },
+  { name: 'guest-import-decline', path: '/pages/index/index?login=1', ready: '以前用过微信小程序', anonymous: true, guestImport: 'decline' },
   { name: 'index-notes', path: '/pages/index/index', ready: '周末一起去看展' },
   { name: 'index-notes-selection', path: '/pages/index/index', ready: '周末一起去看展', longPressSelector: '.feed-list .card' },
   { name: 'index-reminders', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事' },
@@ -302,6 +313,7 @@ try {
     await page.call('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
 
     for (const screen of screens) {
+      const apiRequestStart = page.apiRequests.length
       const remoteCountBefore = screen.offlineSave ? (await apiRequest('/api/items', 'GET', undefined, session)).filter(item => item.title === screen.offlineSave).length : 0
       await page.call('Network.setBlockedURLs', { urls: screen.offline ? ['*/api/*'] : [] })
       if (session && !screen.anonymous) {
@@ -313,9 +325,36 @@ try {
           expression: "localStorage.removeItem('session')",
         })
       }
+      if (screen.guest || screen.guestImport) await page.call('Runtime.evaluate', { expression: `localStorage.removeItem('guest-items-v1')` })
+      if (screen.guestSeed) await page.call('Runtime.evaluate',{expression:`localStorage.setItem('guest-items-v1',JSON.stringify({type:'object',data:[{id:'local-qa-search',owner:'local-guest',kind:'note',title:'游客本机搜索',content:'没有联网',scope:'mine',links:[]}]}))`})
+      if (screen.guestImport) await page.call('Runtime.evaluate', { expression: `localStorage.setItem('guest-items-v1',JSON.stringify({type:'object',data:[{id:'local-${Date.now().toString(16)}-${width.toString(16)}${screen.guestImport==='accept'?'a':'d'}',owner:'local-guest',kind:'note',title:'游客导入-${width}-${screen.guestImport}',content:'只在确认后同步',scope:'mine',links:[],syncPending:false}]}))` })
       await page.call('Page.navigate', { url: route(screen.path, ++navigationNonce) })
       await wait(500)
       await waitForText(page, screen.ready)
+      if (screen.cancelLogin) {
+        await page.call('Runtime.evaluate', { expression: `document.querySelector('.guest-back').click()` })
+        await waitForText(page, '随手记下')
+        const cancelled = await page.call('Runtime.evaluate', { expression: `!document.querySelector('.login-card')&&!localStorage.getItem('session')`, returnByValue: true })
+        if (!cancelled.result.value) throw new Error('Cancelling login did not restore guest access')
+      }
+      if (screen.guestImport) {
+        await page.call('Runtime.evaluate', { expression: `(() => { const fields=document.querySelectorAll('.auth-form input'); for(const [i,value] of ['guest-qa','Guest-QA-password-2026'].entries()){Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(fields[i],value);fields[i].dispatchEvent(new Event('input',{bubbles:true}))}document.querySelector('.consent').click();document.querySelector('.login-card .primary').click() })()` })
+        await waitForText(page, '同步本机游客记录？')
+        await page.call('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(screen.guestImport === 'accept' ? '.uni-modal__btn_primary' : '.uni-modal__btn_default')}).click()` })
+        await waitForText(page, '随手记下')
+        const title = `游客导入-${width}-${screen.guestImport}`
+        if (screen.guestImport === 'accept') {
+          await waitForText(page, title)
+          let imported = false
+          for(let i=0;i<50;i++){const records=await apiRequest('/api/items','GET',undefined,session);if(records.some(item=>item.title===title&&item.scope==='mine')){imported=true;break}await wait(150)}
+          if(!imported)throw new Error('Accepted guest import did not reach account')
+        } else {
+          const records=await apiRequest('/api/items','GET',undefined,session)
+          if(records.some(item=>item.title===title))throw new Error('Declined guest record was uploaded')
+          const kept=await page.call('Runtime.evaluate',{expression:`JSON.parse(localStorage.getItem('guest-items-v1')).data.some(item=>item.title===${JSON.stringify(title)})`,returnByValue:true})
+          if(!kept.result.value)throw new Error('Declined guest record was lost')
+        }
+      }
       if (screen.paperEmpty) {
         await page.call('Runtime.evaluate', { expression: `(() => { const buttons=[...document.querySelectorAll('uni-button')]; buttons.find(node=>node.textContent.trim()==='格式').click() })()` })
         await waitForText(page, '备忘录格式')
@@ -487,8 +526,37 @@ try {
       })
       await writeFile(join(outputDir, `${width}-${screen.name}.png`), Buffer.from(shot.data, 'base64'))
       report.push({ width, screen: screen.name, ...audit.result.value })
+      if (screen.guestCrud) {
+        await page.call('Runtime.evaluate',{expression:`document.querySelector('.actions .primary').click()`})
+        await waitForText(page,'标题')
+        await page.call('Runtime.evaluate',{expression:`(() => {const field=document.querySelector('.content-input textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(field,'游客修改后的正文');field.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.form .primary').click()})()`})
+        await waitForText(page,'已保存到本机')
+        await page.call('Page.reload',{ignoreCache:true})
+        await waitForText(page,'游客修改后的正文')
+        if (screen.path.includes('reminder')) {
+          await page.call('Page.navigate',{url:route('/pages/index/index',++navigationNonce)})
+          await waitForText(page,'随手记下')
+          await page.call('Runtime.evaluate',{expression:`[...document.querySelectorAll('.dock uni-button')].find(node=>node.textContent.trim()==='提醒').click()`})
+          await waitForText(page,screen.offlineSave)
+          await page.call('Runtime.evaluate',{expression:`document.querySelector('.feed-list .done').click()`})
+          await waitForText(page,'已完成')
+          await page.call('Page.reload',{ignoreCache:true})
+          await waitForText(page,'随手记下')
+          await page.call('Runtime.evaluate',{expression:`[...document.querySelectorAll('.dock uni-button')].find(node=>node.textContent.trim()==='提醒').click()`})
+          await waitForText(page,'已完成')
+          await page.call('Runtime.evaluate',{expression:`document.querySelector('.feed-list .card').click()`})
+          await waitForText(page,'编辑')
+        }
+        await page.call('Runtime.evaluate',{expression:`document.querySelector('.actions .danger').click()`})
+        await waitForText(page,'删除这条内容？')
+        await page.call('Runtime.evaluate',{expression:`document.querySelector('.uni-modal__btn_primary').click()`})
+        await waitForText(page,'已删除')
+        const remaining=await page.call('Runtime.evaluate',{expression:`(() => {const stored=JSON.parse(localStorage.getItem('guest-items-v1')||'[]');return (stored.data||stored).length})()`,returnByValue:true})
+        if(remaining.result.value!==0)throw new Error('Guest deletion did not persist')
+      }
+      if (screen.guest && page.apiRequests.length !== apiRequestStart) throw new Error('Guest flow contacted an API: '+JSON.stringify(page.apiRequests.slice(apiRequestStart)))
       if (screen.keyboardScenario) await page.call('Runtime.evaluate', { expression: `delete window.visualViewport.height; window.visualViewport.dispatchEvent(new Event('resize'));` })
-      if (screen.offlineSave) {
+      if (screen.offlineSave && !screen.anonymous) {
         await page.call('Network.setBlockedURLs', { urls: [] })
         await page.call('Page.navigate', { url: route('/pages/index/index', ++navigationNonce) })
         let synced = false

@@ -3,8 +3,9 @@ import { computed, ref } from 'vue'
 import { onLoad, onShareAppMessage, onShow, onUnload } from '@dcloudio/uni-app'
 import ImageAttachmentGallery from '../../components/ImageAttachmentGallery.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
+import GuestNotice from '../../components/GuestNotice.vue'
 import StructuredNoteContent from '../../components/StructuredNoteContent.vue'
-import { cachedHome, downloadFile, request, type Item, type User } from '../../services/api'
+import { cachedHome, downloadFile, request, openAccountLogin, type Item, type User } from '../../services/api'
 import { selectHomeWidgetNote, syncHomeWidgetNotes } from '../../services/home-widget'
 import { cancelLocalReminder } from '../../services/local-reminders'
 import { materializeNoteBlocks } from '../../services/note-blocks'
@@ -45,6 +46,17 @@ async function load() {
   if (!sharedRoute) {
     const cached = cachedHome()
     const local = cached?.items.find(value => value.id === itemId)
+    if (user.value && cached && user.value.id !== cached.user.id) {
+      const wasGuest = user.value.guest
+      item.value = null
+      user.value = cached.user
+      shareToken.value = ''
+      if (wasGuest && !local) {
+        loading.value = false
+        error.value = '这条游客记录尚未同步。可返回首页同步到当前账号，或退出登录后在游客模式继续使用。'
+        return
+      }
+    }
     if (local) { item.value = local; user.value = cached!.user }
   }
   loading.value = !item.value
@@ -74,7 +86,7 @@ async function load() {
 }
 
 async function prepareShare() {
-  if (!itemId || sharedRoute || shareToken.value || sharePreparing.value) return
+  if (!itemId || sharedRoute || user.value?.guest || shareToken.value || sharePreparing.value) return
   if (item.value?.syncPending) { shareError.value = ''; return }
   sharePreparing.value = true
   shareError.value = ''
@@ -215,6 +227,7 @@ onUnload(() => { active = false })
 <template>
   <view class="shell">
     <SubpageHeader label="详情" :action-label="widgetActionLabel" :action-disabled="Boolean(pending)" @action="showOnDesktop" />
+    <GuestNotice v-if="user?.guest" login @login="openAccountLogin" />
 
     <view v-if="loading" class="state">
       <view class="loading-dot" />
@@ -288,16 +301,17 @@ onUnload(() => { active = false })
       </view>
 
       <!-- #ifdef MP-WEIXIN -->
-      <button v-if="!sharedPreview" class="share-action" open-type="share" hover-class="none" :disabled="!shareToken || sharePreparing">
+      <button v-if="!sharedPreview && !user?.guest" class="share-action" open-type="share" hover-class="none" :disabled="!shareToken || sharePreparing">
         {{ item.syncPending ? '联网同步后可分享' : sharePreparing ? '正在准备分享…' : '分享给好友' }}
       </button>
       <!-- #endif -->
       <!-- #ifndef MP-WEIXIN -->
-      <button v-if="!sharedPreview" class="share-action" hover-class="none" :disabled="!shareToken || sharePreparing" @click="shareItem">
+      <button v-if="!sharedPreview && !user?.guest" class="share-action" hover-class="none" :disabled="!shareToken || sharePreparing" @click="shareItem">
         {{ item.syncPending ? '联网同步后可分享' : sharePreparing ? '正在准备分享…' : '分享给好友' }}
       </button>
       <!-- #endif -->
       <text v-if="shareError && !sharedPreview" class="share-error" @click="prepareShare">{{ shareError }}，点此重试</text>
+      <button v-if="user?.guest" class="share-action" @click="openAccountLogin">登录后同步与分享</button>
 
       <view v-if="!sharedPreview" class="actions">
         <button class="primary" hover-class="none" @click="edit">编辑</button>

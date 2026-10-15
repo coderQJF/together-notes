@@ -1,10 +1,11 @@
 import { offlineItems } from './offline-items'
+import { guestWorkspace, guestUser } from './guest-workspace'
 // #ifdef APP-PLUS
 import { copyAndroidImage } from './local-images'
 // #endif
 
 export interface Attachment {id:string;name:string;size:number;localPath?:string}
-export interface User {id:string;nickname:string;vip:boolean;vipExpiresAt?:string|null;partner:{id:string;nickname:string}|null}
+export interface User {id:string;nickname:string;vip:boolean;vipExpiresAt?:string|null;partner:{id:string;nickname:string}|null;guest?:boolean}
 export interface CloudNovelSummary {id:string;title:string;author:string;characterCount:number;createdAt:string;updatedAt:string}
 export interface CloudNovelChapterSummary {chapterIndex:number;title:string;characterCount:number}
 export interface CloudNovelCatalog {id:string;title:string;author:string;chapterCount:number;chapters:CloudNovelChapterSummary[];createdAt:string;updatedAt:string}
@@ -87,11 +88,24 @@ return new Promise((resolve, reject) => uni.request({
 }))
 }
 export function cachedHome() {
+ if(isGuestSession())return {user:guestUser,items:guestStore().items(),messages:[],savedAt:Date.now()} as HomeSnapshot
  const snapshot=readHomeSnapshot(String(uni.getStorageSync('session')||''))
  if(!snapshot)return null
  return {...snapshot,items:outbox(snapshot.user).merge(snapshot.items)}
 }
 const outbox=(user:User)=>offlineItems(user.id,{read:key=>uni.getStorageSync(key),write:(key,value)=>uni.setStorageSync(key,value)})
+const guestStore=()=>guestWorkspace({read:key=>uni.getStorageSync(key),write:(key,value)=>uni.setStorageSync(key,value)})
+export const isGuestSession=()=>!uni.getStorageSync('session')
+export const guestItemCount=()=>guestStore().items().length
+export function openAccountLogin(){uni.navigateTo({url:'/pages/index/index?login=1'})}
+export async function importGuestItems(){
+ const home=cachedHome()
+ if(!home||home.user.guest)throw new Error('请先登录账号')
+ const count=guestStore().importInto(home.user.id,outbox(home.user))
+ saveHomeSnapshot(String(uni.getStorageSync('session')),{...home,items:outbox(home.user).merge(home.items)})
+ void syncOfflineItems().catch(()=>{})
+ return count
+}
 export function hasPendingOfflineItems(){const home=cachedHome();return Boolean(home&&outbox(home.user).pending().length)}
 const syncJobs=new Map<string,Promise<void>>()
 async function prepareItemUploads(payload:Item){
@@ -140,6 +154,30 @@ export function syncOfflineItems():Promise<void>{
 }
 
 export async function request<T>(path:string,method:'GET'|'POST'|'PUT'|'DELETE'='GET',data?:unknown,options:{timeout?:number}={}):Promise<T>{
+ if(isGuestSession()&&!/^\/(?:auth\/|shared\/items\/|invites\/|health$)/.test(path)){
+  const store=guestStore(),localItems=store.items(),match=path.match(/^\/items\/([^/]+)$/)
+  if(method==='GET'&&path==='/me')return guestUser as T
+  if(method==='GET'&&path==='/items')return localItems as T
+  if(method==='GET'&&path==='/notifications')return [] as T
+  if(method==='GET'&&path==='/wechat/subscription/status')return {configured:false,templateId:null} as T
+  if(method==='GET'&&path==='/ai/status')return {configured:false,localSearch:true} as T
+  if(method==='POST'&&path==='/items')return store.save({...data as Item,id:undefined}) as T
+  if(match){
+   const id=decodeURIComponent(match[1]),item=localItems.find(value=>value.id===id)
+   if(!item)throw new ApiError('本机记录不存在',404,'ITEM_NOT_FOUND')
+   if(method==='GET')return item as T
+   if(method==='PUT')return store.save({...data as Item,id}) as T
+   if(method==='DELETE'){store.remove(id);return {ok:true} as T}
+  }
+  if(method==='POST'&&path==='/ai/search'){
+   const input=data as {query:string;scope?:string;strategy?:string}
+   if(input.strategy==='online')throw new ApiError('联网模型需要登录，本地搜索无需登录',401,'LOGIN_REQUIRED')
+   const query=String(input.query||'').trim().toLowerCase()
+   const found=['sports','news'].includes(input.scope||'')?[]:localItems.filter(item=>query&&`${item.title}\n${item.content}`.toLowerCase().includes(query))
+   return {answer:'',mode:found.length?'local':'empty',citations:found.map(item=>({id:item.id,type:item.kind,title:item.title,subtitle:item.updatedAt,route:`/pages/detail/detail?id=${encodeURIComponent(item.id!)}`})),model:'本机搜索',generatedAt:new Date().toISOString()} as T
+  }
+  throw new ApiError('此功能需要登录；你仍可继续使用本地小记和待办',401,'LOGIN_REQUIRED')
+ }
  const session=String(uni.getStorageSync('session')||''),snapshot=cachedHome()
  const itemRoute=/^\/items\/[^/]+$/.test(path),id=itemRoute?decodeURIComponent(path.split('/')[2]):''
  const existing=snapshot?.items.find(item=>item.id===id)

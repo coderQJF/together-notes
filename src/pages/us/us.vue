@@ -2,13 +2,14 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import LegalLinks from '../../components/LegalLinks.vue'
+import GuestNotice from '../../components/GuestNotice.vue'
 import PhoneBindingCard from '../../components/PhoneBindingCard.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 // #ifdef APP-PLUS
 import ComicMark from '../../features/comics/components/ComicMark.vue'
 import GameMark from '../../features/games/components/GameMark.vue'
 // #endif
-import { clearHomeSnapshot, request, type User } from '../../services/api'
+import { clearHomeSnapshot, request, openAccountLogin, type User } from '../../services/api'
 import { clearHomeWidgetNotes, isHomeWidgetPinSupported, requestHomeWidgetPin } from '../../services/home-widget'
 import { clearLocalReminders } from '../../services/local-reminders'
 
@@ -43,7 +44,7 @@ async function load() {
   try {
     user.value = await request<User>('/me')
     nickname.value = user.value.nickname
-    if (showAppCredentialSetup) appCredentialStatus.value = await request<AppCredentialStatus>('/me/app-credentials')
+    if (showAppCredentialSetup && !user.value.guest) appCredentialStatus.value = await request<AppCredentialStatus>('/me/app-credentials')
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '暂时无法打开小空间'
   } finally {
@@ -233,6 +234,7 @@ onShow(load)
       <text>{{ error || '登录状态已失效' }}</text>
       <button class="secondary" @click="load">重新加载</button>
     </view>
+    <view v-else-if="user.guest"><GuestNotice login @login="openAccountLogin" /><LegalLinks @open="openLegal" /></view>
     <template v-else>
       <view class="headline-row"><view class="headline"><text>我们的</text><text>小空间。</text></view><text class="version">v{{ appVersion }}</text></view>
       <text class="subtitle">有各自的小记，也有一起的日常。</text>

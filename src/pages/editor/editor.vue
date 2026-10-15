@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import FormTextareaField from '../../components/FormTextareaField.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
+import GuestNotice from '../../components/GuestNotice.vue'
 import StructuredNoteEditor from '../../components/StructuredNoteEditor.vue'
 import TimePickerField from '../../components/TimePickerField.vue'
 import { attachImages, cachedHome, request, type Item, type User } from '../../services/api'
@@ -142,8 +143,13 @@ async function addAttachment() {
 }
 
 function recipientChange(event: any) {
+  if (user.value?.guest && Number(event.detail.value)) { uni.showToast({ title: '登录并绑定另一半后可共享，当前仍仅保存在本机', icon: 'none' }); return }
   draft.value.recipient = ['me', 'partner', 'both'][Number(event.detail.value)]
   if (draft.value.recipient !== 'me') draft.value.scope = 'shared'
+}
+function scopeChange(event: any) {
+  if (user.value?.guest && Number(event.detail.value)) { uni.showToast({ title: '双人共享需要登录，当前仍仅保存在本机', icon: 'none' }); return }
+  draft.value.scope = Number(event.detail.value) ? 'shared' : 'mine'
 }
 
 async function requestWechatReminderAuthorization() {
@@ -212,7 +218,7 @@ async function save() {
     configureBackgroundReminderSync()
     if (localReminderScheduled) requestLocalReminderPermissions()
     closing = true
-    uni.showToast({ title: saved.wechatSubscribed ? '已保存，微信提醒已开启' : localReminderScheduled ? '已保存并设置本机提醒' : saved.syncPending ? '已保存到本机' : wechatAuthorizationRequested ? '已保存，微信提醒未授权' : '已保存', icon: 'success' })
+    uni.showToast({ title: saved.wechatSubscribed ? '已保存，微信提醒已开启' : localReminderScheduled ? '已保存并设置本机提醒' : user.value?.guest || saved.syncPending ? '已保存到本机' : wechatAuthorizationRequested ? '已保存，微信提醒未授权' : '已保存', icon: 'success' })
     returnToPrevious()
   } catch (e) {
     if (active) uni.showToast({ title: e instanceof Error ? e.message : '保存失败', icon: 'none' })
@@ -233,6 +239,7 @@ onUnload(() => { active = false })
 <template>
   <view class="shell" :class="{ 'paper-shell': isPaper }">
     <SubpageHeader :label="pageLabel" :action-label="headerActionLabel" @action="formatPickerOpen=true" />
+    <GuestNotice v-if="user?.guest" />
 
     <view v-if="loading" class="state">正在准备…</view>
     <view v-else-if="error" class="state">
@@ -279,7 +286,7 @@ onUnload(() => { active = false })
         <text>我们俩 · 共同编辑</text>
         <text class="muted small">创建者管理范围</text>
       </view>
-      <picker v-else :range="['仅自己', '我们俩']" :value="draft.scope === 'shared' ? 1 : 0" @change="draft.scope = Number($event.detail.value) ? 'shared' : 'mine'">
+      <picker v-else :range="['仅自己', '我们俩']" :value="draft.scope === 'shared' ? 1 : 0" @change="scopeChange">
         <view class="picker">
           <text>{{ draft.scope === 'shared' ? '我们俩 · 共同编辑' : '仅自己可见' }}</text>
           <view class="chevron-down" />
@@ -321,7 +328,7 @@ onUnload(() => { active = false })
         </picker>
         <!-- #ifdef MP-WEIXIN -->
         <text v-if="wechatStatus.configured" class="muted small hint">{{ canSubscribeSelf ? '保存时会同时为你申请一次微信服务通知，不需要另开开关。' : '当前提醒对象不包含你，微信通知需由接收者保存时确认。' }}{{ canSubscribeSelf && draft.recipient === 'both' ? '“我们俩”会分别使用双方尚未消费的授权，谁创建提醒都一样。' : '' }}{{ canSubscribeSelf && draft.repeat !== 'none' ? '重复提醒的后续周期需要新的授权。' : '' }}</text>
-        <text v-else class="muted small hint">站内提醒始终保留；微信服务通知暂时不可用。</text>
+        <text v-else class="muted small hint">{{user?.guest?'游客待办仅保存在本机，关闭小程序后不会发送微信通知；登录后可使用微信提醒。':'站内提醒始终保留；微信服务通知暂时不可用。'}}</text>
         <!-- #endif -->
         <!-- #ifdef H5 --><text class="muted small hint">当前提供站内消息，关闭页面后不会弹出系统通知。</text><!-- #endif -->
         <!-- #ifdef APP-PLUS --><text class="muted small hint">保存后会自动登记 App 本机提醒；微信因平台限制，会在小程序保存同一提醒时申请一次官方授权，无需另开设置按钮。</text><!-- #endif -->
@@ -346,7 +353,7 @@ onUnload(() => { active = false })
         <view class="format-picker-heading"><text>灵感纸设置</text><button aria-label="关闭设置" @click="settingsOpen=false"><view class="close-icon" /></button></view>
         <text class="label">可见范围</text>
         <view v-if="isGuestEditor" class="picker readonly">我们俩 · 共同编辑</view>
-        <picker v-else :range="['仅自己', '我们俩']" :value="draft.scope === 'shared' ? 1 : 0" @change="draft.scope = Number($event.detail.value) ? 'shared' : 'mine'"><view class="picker"><text>{{ draft.scope === 'shared' ? '我们俩 · 共同编辑' : '仅自己可见' }}</text><view class="chevron-down" /></view></picker>
+        <picker v-else :range="['仅自己', '我们俩']" :value="draft.scope === 'shared' ? 1 : 0" @change="scopeChange"><view class="picker"><text>{{ draft.scope === 'shared' ? '我们俩 · 共同编辑' : '仅自己可见' }}</text><view class="chevron-down" /></view></picker>
         <view class="setting pin-setting"><text>置顶这条备忘</text><switch color="#b28b35" :checked="draft.pinned" @change="setPinned" /></view>
       </view>
     </view>

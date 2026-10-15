@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad, onShareAppMessage, onUnload } from '@dcloudio/uni-app'
+import { onLoad, onShow, onShareAppMessage, onUnload } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
-import { login, request, type User } from '../../services/api'
+import GuestNotice from '../../components/GuestNotice.vue'
+import { openAccountLogin, request, type User } from '../../services/api'
 import { shareText } from '../../utils/platform'
 
 const mode = ref<'invite' | 'join'>('join')
@@ -87,21 +88,7 @@ async function acceptInvite() {
 }
 
 async function loginAndAccept() {
-  if (loading.value || !inviter.value) return
-  loading.value = true
-  error.value = ''
-  try {
-    await login()
-    hasSession.value = true
-    await request('/invite/accept', 'POST', { code: code.value })
-    if (!active) return
-    uni.showToast({ title: '注册并绑定成功', icon: 'success' })
-    uni.reLaunch({ url: '/pages/index/index' })
-  } catch (e) {
-    if (active) error.value = e instanceof Error ? e.message : '登录绑定失败'
-  } finally {
-    if (active) loading.value = false
-  }
+  openAccountLogin()
 }
 
 function copyCode() {
@@ -114,15 +101,17 @@ function shareInvite() {
 }
 
 function backToLogin() {
-  uni.reLaunch({ url: '/pages/index/index' })
+  openAccountLogin()
 }
+
+onShow(() => { const previous=hasSession.value;hasSession.value=Boolean(uni.getStorageSync('session'));if(!previous&&hasSession.value&&mode.value==='invite')void generateInvite() })
 
 onLoad(options => {
   mode.value = options?.mode === 'invite' ? 'invite' : 'join'
   // #ifdef MP-WEIXIN
   uni.hideShareMenu({ hideShareItems: ['shareAppMessage'] })
   // #endif
-  if (mode.value === 'invite') generateInvite()
+  if (mode.value === 'invite' && hasSession.value) generateInvite()
   else if (typeof options?.code === 'string' && options.code.trim()) {
     code.value = options.code.trim().toUpperCase()
     previewSharedInvite()
@@ -139,7 +128,8 @@ onUnload(() => { active = false })
   <view class="shell">
     <SubpageHeader :label="pageLabel" />
 
-    <template v-if="mode === 'invite'">
+    <GuestNotice v-if="!hasSession" login @login="openAccountLogin" />
+    <template v-else-if="mode === 'invite'">
       <view class="headline"><text>把小记，</text><text>分享给她。</text></view>
       <text class="subtitle">直接分享给另一半，对方打开后即可登录并绑定。</text>
 

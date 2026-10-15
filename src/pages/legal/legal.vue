@@ -18,9 +18,10 @@ onLoad(options => {
     <SubpageHeader :label="title" />
     <view class="document">
       <text class="headline">{{ title }}</text>
-      <text class="updated">更新日期：2026 年 10 月 13 日</text>
+      <text class="updated">更新日期：2026 年 10 月 15 日</text>
 
       <template v-if="document === 'terms'">
+        <view class="section"><text class="section-title">游客使用</text><text>无需登录即可在本机新建、编辑、保存和删除小记与待办。游客记录仅保存在当前设备，清除小程序数据、卸载或丢失设备可能导致记录丢失；微信通知、云端同步及双人共享需要主动登录。登录后仅在你确认导入时，才将游客记录同步到当前账号。</text></view>
         <view class="section"><text class="section-title">1. 服务说明</text><text>“小记”提供随记、提醒、双人共享、附件、资讯、搜索和本地文本阅读等功能。内测期间功能可能调整或暂时中断，请勿把本服务作为医疗、财务、安全等关键事项的唯一提醒方式。</text></view>
         <view class="section"><text class="section-title">2. 账号安全</text><text>请使用本人保管的账号和密码，不要向他人透露密码。因主动共享邀请码、账号或设备产生的访问风险，由用户自行承担；发现异常时请及时修改使用方式或联系维护者。</text></view>
         <view class="section"><text class="section-title">3. 内容与共享</text><text>私人内容仅账号本人可访问。标记为“我们俩”的内容会向已绑定的另一方开放查看和编辑，创建者仍负责删除和可见范围。导入书架的文本仅用于本机阅读；请只导入自己创作、已获授权或已进入公版领域的内容，并确保上传、记录和分享的其他内容合法且拥有必要权利。</text></view>
@@ -30,6 +31,7 @@ onLoad(options => {
       </template>
 
       <template v-else>
+        <view class="section"><text class="section-title">本地游客模式</text><text>未登录时，小记、待办和选择的图片仅保存在当前设备，本地搜索不向服务器发送内容。不会自动获取手机号、头像或昵称。你可随时删除本机记录。主动登录不会自动上传游客记录；只有确认“同步记录”后才导入当前账号，并保持仅自己可见。取消导入后，本机游客记录仍然保留。</text></view>
         <view class="section"><text class="section-title">1. 我们处理的信息</text><text>注册时处理账号、加盐后的密码摘要和昵称；使用过程中处理你主动创建的随记、提醒、共享关系、附件，以及维持登录所需的会话信息。你主动开启 Stock Platform 联动时，我们只保存手机号的不可逆摘要和末四位，不保存完整手机号，也不会向 Stock Platform 返回你的账号资料。你导入书架的书名、作者、正文、阅读进度和显示设置仅保存在当前设备，不会上传到业务服务器。密码原文不会保存到服务器。</text></view>
         <view class="section"><text class="section-title">2. 使用目的</text><text>这些信息用于登录鉴权、保存和同步内容、向绑定对象展示共享内容、生成站内提醒、按手机号摘要匹配并接收你主动开启的 Stock Platform 观察清单、提供搜索结果以及保障服务安全。私人小记不会被发送给联网模型用于搜索。</text></view>
         <view class="section"><text class="section-title">3. 权限与设备能力</text><text>在 App 中选择图片附件时，系统可能请求照片访问权限；导入 TXT 或你合法持有的 GBA 文件时会打开 Android 系统文件选择器，并只读取你主动选中的文件，不申请访问全部存储空间。GBA 文件会复制到 App 私有目录供本机离线运行，不会上传到业务服务器。本版本不会请求相机权限。启用本机提醒时会请求通知权限，并使用 Android 的闹钟与开机恢复能力。只有你主动使用对应功能时才会申请；拒绝不会影响其他基础功能，但划掉 App 后可能无法按时弹出提醒。</text></view>
