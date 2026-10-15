@@ -94,7 +94,7 @@ try {
   const frameTree = await page.call('Page.getFrameTree')
   const frameId = frameTree.frameTree.frame.id
 
-  for (const [sourceName, outputName, color] of icons) {
+  for (const [sourceName, outputName, color] of process.argv.includes('--covers-only') ? [] : icons) {
     const source = (await readFile(resolve(sourceDir, sourceName), 'utf8'))
       .replaceAll('currentColor', color)
       .replace('width="24" height="24"', 'width="72" height="72"')
@@ -109,11 +109,22 @@ try {
     await writeFile(resolve(outputDir, outputName), Buffer.from(shot.data, 'base64'))
   }
 
+  const shareDir = resolve(root, 'src/static/share')
+  await mkdir(shareDir, { recursive: true })
+  const noteIcon = `data:image/png;base64,${(await readFile(resolve(outputDir, 'note-active.png'))).toString('base64')}`
+  const coverHtml = (await readFile(resolve(root, 'scripts/share-cover.html'), 'utf8')).replace('__NOTE_ICON__', noteIcon)
+  for (const [name, width, height] of [['app-card.png', 1000, 800], ['app-timeline.png', 800, 800]]) {
+    await page.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false })
+    await page.call('Page.setDocumentContent', { frameId, html: coverHtml })
+    await wait(150)
+    const shot = await page.call('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width, height, scale: 1 } })
+    await writeFile(resolve(shareDir, name), Buffer.from(shot.data, 'base64'))
+  }
   const version = await getJson(`http://127.0.0.1:${remotePort}/json/version`)
   const browserPage = new Cdp(version.webSocketDebuggerUrl)
   await browserPage.open()
   await browserPage.call('Browser.close')
-  console.log(`Generated ${icons.length} UI icons in ${outputDir}`)
+  console.log(`Generated public share covers in ${shareDir}`)
 } finally {
   browser.kill()
   await wait(300)

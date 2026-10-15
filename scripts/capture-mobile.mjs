@@ -235,6 +235,7 @@ const screens = [
   { name: 'index-search-model', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '猪什么时候会飞', answered: '现实中的猪不会自主飞行' },
   { name: 'index-search-empty', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '不存在的外部事实 9988', answered: '没有找到相关数据' },
   { name: 'index-us', path: '/pages/us/us', ready: '有各自的小记' },
+  { name: 'guest-us', path: '/pages/us/us', ready: '推荐给朋友', anonymous: true, guest: true },
   { name: 'index-us-edit', path: '/pages/us/us', ready: '有各自的小记', click: '编辑', clicked: '保存' },
   { name: 'index-us-phone', path: '/pages/us/us', ready: 'Stock Platform 联动', click: '绑定', clicked: '中国大陆手机号' },
   { name: 'index-us-app-login', path: '/pages/us/us', ready: '在 Android App 登录', click: '设置', clicked: 'App 登录密码' },
@@ -486,6 +487,12 @@ try {
         await waitForText(page, screen.answered, 15000)
       }
       await wait(120)
+
+      if (screen.name === 'index-us' || screen.name === 'guest-us') {
+        const recommendation = await page.call('Runtime.evaluate', { expression: `(() => {const card=document.querySelector('.recommend-card');const button=card?.querySelector('.recommend-button');return {cards:document.querySelectorAll('.recommend-card').length,width:button?.getBoundingClientRect().width,height:button?.getBoundingClientRect().height}})()`,returnByValue:true })
+        const value = recommendation.result.value
+        if(value.cards!==1||value.width<44||value.height<44)throw new Error('Recommendation card is duplicated or has a small hit area: '+JSON.stringify(value))
+      }
 
       if (screen.name.startsWith('editor-paper') || screen.name.startsWith('editor-note-paper')) {
         const geometry = await page.call('Runtime.evaluate', { expression: `(() => { const row=document.querySelector('.todo-row');const icon=document.querySelector('.paper-save .tool-icon');const circle=row?.querySelector('.status-icon');const hit=row?.querySelector('button');return {rowHeight:row?.getBoundingClientRect().height,blockPadding:row?getComputedStyle(row.closest('.block')).paddingTop:null,saveBackground:icon?getComputedStyle(icon).backgroundColor:null,saveWidth:icon?.getBoundingClientRect().width,saveHeight:icon?.getBoundingClientRect().height,saveBare:Boolean(icon?.querySelector('.save-check'))&&!document.querySelector('.paper-save .status-icon'),circleOffset:circle?circle.getBoundingClientRect().left-row.getBoundingClientRect().left:0,hitWidth:hit?.getBoundingClientRect().width,hitHeight:hit?.getBoundingClientRect().height}; })()`, returnByValue: true })

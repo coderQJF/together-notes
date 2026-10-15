@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref,reactive,computed,onUnmounted,nextTick} from 'vue';
-import {onLoad,onShow,onHide} from '@dcloudio/uni-app';
+import {onLoad,onShow,onHide,onShareAppMessage,onShareTimeline} from '@dcloudio/uni-app';
+import {appFriendShare,appTimelineShare,enableAppShareMenu} from '../../services/app-share';
 import BulkSelectionBar from '../../components/BulkSelectionBar.vue';
 import JellyTabs from '../../components/JellyTabs.vue';
 import LegalLinks from '../../components/LegalLinks.vue';
@@ -149,10 +150,15 @@ async function deleteSelectedItems(){
 }
 function selectReminderCategory(value:string){if(value==='待办'){category.value=value;return}if(user.value?.guest){openLogin();return}if(value==='消息'){inbox();return}uni.navigateTo({url:value==='比赛'?'/pages/sports/sports':'/pages/news/news'})}
 async function toggle(i:Item){await act('toggle:'+i.id,async()=>{await request('/items/'+i.id,'PUT',{...i,done:!i.done});restoreHomeSnapshot();void refresh(true).catch(showInlineError)})}
-function openUs(){if(user.value?.guest){openLogin();return}uni.navigateTo({url:'/pages/us/us'})}
+function openUs(){uni.navigateTo({url:'/pages/us/us'})}
 function format(v?:string){return formatDateTime(v)}
 function inbox(){uni.navigateTo({url:'/pages/inbox/inbox'})}
 function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value&&!selectionMode.value)refresh().catch(()=>{})},30000)}
+// #ifdef MP-WEIXIN
+onShareAppMessage(appFriendShare);
+onShareTimeline(appTimelineShare);
+// #endif
+onShow(()=>enableAppShareMenu(true));
  onLoad(async(options)=>{restoreHomeSnapshot();authRoute=options?.login==='1';if(authRoute)openLogin();try{
  await refresh()}catch(e){showInlineError(e)}finally{ready.value=true}});onShow(()=>{today.value=formatDayHeading();restoreHomeSnapshot();start();if(ready.value)refresh().then(()=>{if(page.value==='search')void loadAiStatus()}).catch(showInlineError)});onHide(()=>{clearInterval(timer);exitSelectionMode()});onUnmounted(()=>clearInterval(timer));
 </script>

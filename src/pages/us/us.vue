@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow, onShareAppMessage } from '@dcloudio/uni-app'
+import { appFriendShare, enableAppShareMenu } from '../../services/app-share'
+import RecommendAppCard from '../../components/RecommendAppCard.vue'
 import LegalLinks from '../../components/LegalLinks.vue'
 import GuestNotice from '../../components/GuestNotice.vue'
 import PhoneBindingCard from '../../components/PhoneBindingCard.vue'
@@ -224,6 +226,10 @@ async function deleteAccount() {
 }
 
 onShow(load)
+onShow(() => enableAppShareMenu())
+// #ifdef MP-WEIXIN
+onShareAppMessage(appFriendShare)
+// #endif
 </script>
 
 <template>
@@ -234,7 +240,7 @@ onShow(load)
       <text>{{ error || '登录状态已失效' }}</text>
       <button class="secondary" @click="load">重新加载</button>
     </view>
-    <view v-else-if="user.guest"><GuestNotice login @login="openAccountLogin" /><LegalLinks @open="openLegal" /></view>
+    <view v-else-if="user.guest"><GuestNotice login @login="openAccountLogin" /><RecommendAppCard /><LegalLinks @open="openLegal" /></view>
     <template v-else>
       <view class="headline-row"><view class="headline"><text>我们的</text><text>小空间。</text></view><text class="version">v{{ appVersion }}</text></view>
       <text class="subtitle">有各自的小记，也有一起的日常。</text>
@@ -271,6 +277,7 @@ onShow(load)
         </view>
       </view>
 
+      <RecommendAppCard />
       <PhoneBindingCard />
 
       <!-- #ifndef APP-PLUS -->

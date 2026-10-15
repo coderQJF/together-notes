@@ -3,6 +3,27 @@ import test from 'node:test'
 import { access, readFile, readdir } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
+import { appFriendShare, appTimelineShare } from '../src/services/app-share.ts'
+
+test('app recommendations always use public artwork and a clean guest-capable home route', async () => {
+  assert.deepEqual(appFriendShare(), { title: '小记｜一个人记事，两个人共享', path: '/pages/index/index', imageUrl: '/static/share/app-card.png' })
+  assert.deepEqual(appTimelineShare(), { title: '小记｜一个人记事，两个人共享', query: '', imageUrl: '/static/share/app-timeline.png' })
+  for (const [name, width, height] of [['app-card.png', 1000, 800], ['app-timeline.png', 800, 800]] as const) {
+    const png = await readFile(`src/static/share/${name}`)
+    assert.equal(png.readUInt32BE(16), width)
+    assert.equal(png.readUInt32BE(20), height)
+  }
+  const home = await readFile('src/pages/index/index.vue', 'utf8')
+  const space = await readFile('src/pages/us/us.vue', 'utf8')
+  const card = await readFile('src/components/RecommendAppCard.vue', 'utf8')
+  assert.match(home, /onShareAppMessage\(appFriendShare\)/)
+  assert.match(home, /onShareTimeline\(appTimelineShare\)/)
+  assert.match(home, /enableAppShareMenu\(true\)/)
+  assert.match(space, /onShareAppMessage\(appFriendShare\)/)
+  assert.equal((space.match(/<RecommendAppCard\s*\/>/g) || []).length, 2)
+  assert.match(card, /open-type="share"/)
+  assert.doesNotMatch(await readFile('src/services/app-share.ts', 'utf8'), /cachedHome|getStorageSync|item\.title|user\./)
+})
 
 async function vueFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true })
