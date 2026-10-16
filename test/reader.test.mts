@@ -127,3 +127,47 @@ test('cloud reader books store only the catalog instead of the whole novel', () 
   assert.equal(book.chapters[0].content, '')
   assert.equal(book.chapters[1].remoteIndex, 1)
 })
+
+
+test('local and cloud parsers use the same bounded act headings', async () => {
+  const { parseNovelChapters } = await import('../server/novel-chapters.mjs')
+  const source = '题词。\n序 章\n开始。\n第一幕\n' + '正文。'.repeat(6000) + '\n第二幕\n结束。'
+  assert.deepEqual(parseReaderChapters(source), parseNovelChapters(source))
+  assert.ok(parseReaderChapters(source).every(chapter => chapter.content.length <= 6000))
+})
+
+test('replacing a cloud catalog relocates progress by title and clears stale pixel offsets', () => {
+  const storage = new Map<string, unknown>()
+  const target = globalThis as typeof globalThis & { uni?: unknown }
+  const original = target.uni
+  target.uni = { getStorageSync(key: string) { return storage.get(key) }, setStorageSync(key: string, value: unknown) { storage.set(key, value) } }
+  try {
+    const input = { id: 'repaired', title: '测试', author: '作者', createdAt: '', updatedAt: '' }
+    saveReaderBook(prepareCloudReaderBook({ ...input, chapters: [{chapterIndex: 0, title: '正文前', characterCount: 200000}, {chapterIndex: 1, title: '尾声', characterCount: 200}] }))
+    saveReaderProgress('cloud-repaired', 1, 500)
+    saveReaderBook(prepareCloudReaderBook({ ...input, chapters: [{chapterIndex: 0, title: '序章', characterCount: 200}, {chapterIndex: 1, title: '第一幕', characterCount: 3000}, {chapterIndex: 2, title: '尾声', characterCount: 200}] }))
+    assert.equal(getReaderBook('cloud-repaired')?.progress.chapterIndex, 2)
+    assert.equal(getReaderBook('cloud-repaired')?.progress.scrollTop, 0)
+    assert.deepEqual(getReaderBook('cloud-repaired')?.progress.readChapterIndexes, [])
+  } finally { if (original === undefined) delete target.uni; else target.uni = original }
+})
+
+
+test('legacy local imports repair embedded act headings once without dropping body text', () => {
+  const storage = new Map<string, unknown>()
+  const target = globalThis as typeof globalThis & { uni?: unknown }
+  const original = target.uni
+  target.uni = { getStorageSync(key: string) { return storage.get(key) }, setStorageSync(key: string, value: unknown) { storage.set(key, value) } }
+  try {
+    const now = new Date().toISOString()
+    storage.set('reader-library-v1', [{ id: 'legacy', title: '旧书', author: '作者', createdAt: now, updatedAt: now, progress: { chapterIndex: 1, scrollTop: 900, updatedAt: now }, chapters: [{ title: '正文前', content: '题词。\n序 章\n开始。\n第一幕\n内容。' }, { title: '尾声', content: '结束。' }] }])
+    const repaired = getReaderBook('legacy')!
+    assert.deepEqual(repaired.chapters.map(chapter => chapter.title), ['正文前', '序 章', '第一幕', '尾声'])
+    assert.equal(repaired.chapters[2].content, '内容。')
+    assert.equal(repaired.progress.chapterIndex, 3)
+    assert.equal(repaired.progress.scrollTop, 0)
+    saveReaderProgress('legacy', 2, 450)
+    assert.equal(getReaderBook('legacy')?.progress.scrollTop, 450)
+    assert.equal(getReaderBook('legacy')?.chapters.length, 4)
+  } finally { if (original === undefined) delete target.uni; else target.uni = original }
+})

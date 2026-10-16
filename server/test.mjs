@@ -150,6 +150,13 @@ test('operations API protects account data, manages VIP, and scopes novels to se
   const uploaded=await call('/operations/novels','POST',{title:'测试小说',author:'作者',filename:'test.txt',content:'第一章\n\n这是正文。',audience:'selected',userIds:[account.user.id]},'operations-secret');assert.equal(uploaded.status,201);assert.equal(uploaded.character_count,10);assert.equal(uploaded.audience,'selected');assert.equal(uploaded.allowedUserCount,1);
   const oversized=await call('/operations/novels','POST',{title:'超长小说',filename:'large.txt',content:'a'.repeat(MAX_NOVEL_CONTENT_CHARACTERS+1),audience:'all_vip'},'operations-secret');assert.equal(oversized.status,413);assert.equal(oversized.message,'单本内容不能超过 500 万字');
   const novels=await call('/novels','GET',undefined,account.token);assert.equal(novels.items.length,1);const catalog=await call('/novels/'+uploaded.id+'/chapters','GET',undefined,account.token);assert.equal(catalog.chapterCount,1);assert.equal(catalog.chapters[0].title,'第一章');assert.equal('content' in catalog.chapters[0],false);const chapter=await call('/novels/'+uploaded.id+'/chapters/0','GET',undefined,account.token);assert.equal(chapter.content,'这是正文。');const novel=await call('/novels/'+uploaded.id,'GET',undefined,account.token);assert.equal(novel.content,'第一章\n\n这是正文。');
+  // Simulate an already imported book with a stale, incorrect catalog.
+  app.db.prepare('UPDATE novels SET content=?,parser_version=0 WHERE id=?').run('序 章\n开始。\n第一幕\n内容。\n第二幕\n继续。',uploaded.id);
+  app.db.prepare('INSERT INTO novel_chapters VALUES(?,?,?,?,?)').run(uploaded.id,99,'旧尾声','旧正文',3);
+  const repaired=await call('/novels/'+uploaded.id+'/chapters','GET',undefined,account.token);
+  assert.deepEqual(repaired.chapters.map(chapter=>chapter.title),['序 章','第一幕','第二幕']);
+  assert.equal((await call('/novels/'+uploaded.id+'/chapters/1','GET',undefined,account.token)).content,'内容。');
+  assert.equal((await call('/novels/'+uploaded.id+'/chapters/99','GET',undefined,account.token)).status,404);
   assert.equal((await call('/novels','GET',undefined,other.token)).items.length,0);assert.equal((await call('/novels/'+uploaded.id,'GET',undefined,other.token)).status,404);assert.equal((await call('/novels/'+uploaded.id+'/chapters','GET',undefined,other.token)).status,404);
   assert.equal((await call('/operations/novels/'+uploaded.id,'DELETE',undefined,'operations-secret')).ok,true);assert.equal((await call('/novels/'+uploaded.id,'GET',undefined,account.token)).status,404);assert.equal(app.db.prepare('SELECT count(*) count FROM novel_chapters WHERE novel=?').get(uploaded.id).count,0);
  }finally{await new Promise(r=>app.server.close(r));app.db.close()}

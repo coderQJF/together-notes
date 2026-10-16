@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { createContentService, serializeContentError } from './content.mjs';
 import { createAiSearchService, serializeAiSearchError } from './ai-search.mjs';
 import { createWechatReminderService } from './wechat-reminders.mjs';
-import { parseNovelChapters } from './novel-chapters.mjs';
+import { parseNovelChapters, NOVEL_PARSER_VERSION } from './novel-chapters.mjs';
 const fail=(status,message)=>{throw Object.assign(new Error(message),{status})};
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const scryptAsync=promisify(scrypt);
@@ -76,6 +76,7 @@ export function createApp({dbPath='server/data/app.sqlite',gamesDir,testAuth=fal
  if(!db.prepare('PRAGMA table_info(users)').all().some(column=>column.name==='vip'))db.exec('ALTER TABLE users ADD COLUMN vip INTEGER NOT NULL DEFAULT 0');
  if(!db.prepare('PRAGMA table_info(users)').all().some(column=>column.name==='vip_expires_at'))db.exec('ALTER TABLE users ADD COLUMN vip_expires_at INTEGER');
  if(!db.prepare('PRAGMA table_info(novels)').all().some(column=>column.name==='audience'))db.exec("ALTER TABLE novels ADD COLUMN audience TEXT NOT NULL DEFAULT 'all_vip'");
+ if(!db.prepare('PRAGMA table_info(novels)').all().some(column=>column.name==='parser_version'))db.exec('ALTER TABLE novels ADD COLUMN parser_version INTEGER NOT NULL DEFAULT 0');
  if(!db.prepare('PRAGMA table_info(notifications)').all().some(column=>column.name==='item'))db.exec('ALTER TABLE notifications ADD COLUMN item TEXT');
  db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_item ON notifications(item); CREATE INDEX IF NOT EXISTS idx_wechat_reminder_item_status ON wechat_reminder_subscriptions(item,status);');
  db.exec("UPDATE wechat_reminder_subscriptions SET status='pending' WHERE status='sending'");
@@ -86,7 +87,20 @@ export function createApp({dbPath='server/data/app.sqlite',gamesDir,testAuth=fal
  const one=(s,...a)=>db.prepare(s).get(...a); const all=(s,...a)=>db.prepare(s).all(...a);const run=(s,...a)=>db.prepare(s).run(...a);
  for(const notification of all('SELECT id,user,title,due FROM notifications WHERE item IS NULL')){const notificationUser=one('SELECT couple FROM users WHERE id=?',notification.user);const match=all("SELECT id,owner,couple,data FROM items WHERE kind='reminder'").find(item=>{if(item.owner!==notification.user&&!(item.couple&&item.couple===notificationUser?.couple))return false;try{const data=JSON.parse(item.data);return data.title===notification.title&&data.nextAt===notification.due}catch{return false}});if(match)run('UPDATE notifications SET item=? WHERE id=?',match.id,notification.id)}
  const transaction=fn=>{db.exec('BEGIN IMMEDIATE');try{const r=fn();db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}};
- const ensureNovelChapters=novel=>{const count=Number(one('SELECT count(*) count FROM novel_chapters WHERE novel=?',novel.id)?.count||0);if(count)return count;const content=novel.content??one('SELECT content FROM novels WHERE id=?',novel.id)?.content;const chapters=parseNovelChapters(content);if(!chapters.length)fail(422,'小说没有可阅读的正文');transaction(()=>{chapters.forEach((chapter,index)=>run('INSERT OR REPLACE INTO novel_chapters(novel,chapter_index,title,content,character_count) VALUES(?,?,?,?,?)',novel.id,index,chapter.title,chapter.content,chapter.content.length))});return chapters.length};
+ const ensureNovelChapters=novel=>{
+  const stored=one('SELECT parser_version FROM novels WHERE id=?',novel.id);
+  const count=Number(one('SELECT count(*) count FROM novel_chapters WHERE novel=?',novel.id)?.count||0);
+  if(count&&stored?.parser_version===NOVEL_PARSER_VERSION)return count;
+  const content=novel.content??one('SELECT content FROM novels WHERE id=?',novel.id)?.content;
+  const chapters=parseNovelChapters(content);
+  if(!chapters.length)fail(422,'小说没有可阅读的正文');
+  transaction(()=>{
+   run('DELETE FROM novel_chapters WHERE novel=?',novel.id);
+   chapters.forEach((chapter,index)=>run('INSERT INTO novel_chapters(novel,chapter_index,title,content,character_count) VALUES(?,?,?,?,?)',novel.id,index,chapter.title,chapter.content,chapter.content.length));
+   run('UPDATE novels SET parser_version=? WHERE id=?',NOVEL_PARSER_VERSION,novel.id);
+  });
+  return chapters.length;
+ };
  const integrationToken=String(stockIntegrationToken||'').trim();
  const operationsToken=String(opsAdminToken||'').trim();
  const phoneDigest=phone=>{if(!integrationToken)fail(503,'Stock Platform 联动尚未配置');return createHmac('sha256',integrationToken).update(phone).digest('hex')};

@@ -1,3 +1,5 @@
+import { parseNovelChapters, NOVEL_PARSER_VERSION } from '../../server/novel-chapters.mjs'
+
 export type ReaderTheme = 'paper' | 'butter' | 'white'
 
 export interface ReaderChapter {
@@ -23,6 +25,7 @@ export interface ReaderBook {
   updatedAt: string
   progress: ReaderProgress
   source?: 'local' | 'cloud'
+  parserVersion?: number
   cloudId?: string
 }
 
@@ -38,54 +41,12 @@ const SETTINGS_KEY = 'reader-settings-v2'
 const PROGRESS_KEY = 'reader-progress-v1'
 
 const DEFAULT_SETTINGS: ReaderSettings = { fontSize: 21, lineHeight: 2.15, theme: 'butter', pageSound: true }
-const CHAPTER_HEADING = /^(?:第[0-9〇零一二三四五六七八九十百千万两]{1,12}[章节回卷篇部集](?:\s+|[：:、.-])?.{0,36}|序章|楔子|引子|前言|后记|尾声)$/
-
 function normalizedText(value: string) {
   return String(value || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').replace(/[\t\u00a0]+/g, ' ').trim()
 }
 
-function fallbackChapters(text: string, targetLength = 6_000): ReaderChapter[] {
-  const paragraphs = text.split(/\n{2,}/).map(item => item.trim()).filter(Boolean)
-  if (!paragraphs.length) return []
-  const groups: string[] = []
-  let current = ''
-  for (const paragraph of paragraphs) {
-    if (paragraph.length > targetLength) {
-      if (current) { groups.push(current); current = '' }
-      for (let offset = 0; offset < paragraph.length; offset += targetLength) groups.push(paragraph.slice(offset, offset + targetLength))
-      continue
-    }
-    if (current && current.length + paragraph.length + 2 > targetLength) {
-      groups.push(current)
-      current = paragraph
-    } else current = current ? `${current}\n\n${paragraph}` : paragraph
-  }
-  if (current) groups.push(current)
-  return groups.map((content, index) => ({ title: groups.length === 1 ? '正文' : `第 ${index + 1} 节`, content }))
-}
-
-export function parseReaderChapters(source: string): ReaderChapter[] {
-  const text = normalizedText(source)
-  if (!text) return []
-  const lines = text.split('\n')
-  const headings: number[] = []
-  lines.forEach((line, index) => {
-    const candidate = line.trim()
-    if (candidate.length <= 48 && !/[。！？!?；;]$/.test(candidate) && CHAPTER_HEADING.test(candidate)) headings.push(index)
-  })
-  if (!headings.length) return fallbackChapters(text)
-
-  const chapters: ReaderChapter[] = []
-  const preface = lines.slice(0, headings[0]).join('\n').trim()
-  if (preface) chapters.push({ title: '正文前', content: preface })
-  headings.forEach((lineIndex, headingIndex) => {
-    const nextLine = headings[headingIndex + 1] ?? lines.length
-    const title = lines[lineIndex].trim()
-    const content = lines.slice(lineIndex + 1, nextLine).join('\n').trim()
-    if (content) chapters.push({ title, content })
-  })
-  return chapters.length ? chapters : fallbackChapters(text)
-}
+// Cloud and local imports must use the same heading rules and render-size limits.
+export const parseReaderChapters = parseNovelChapters
 
 function isReaderBook(value: unknown): value is ReaderBook {
   const book = value as ReaderBook
@@ -127,6 +88,29 @@ export function loadReaderLibrary(): ReaderBook[] {
   books = withoutLegacySample
   if (import.meta.env?.VITE_QA_READER_SAMPLE === '1') books = [qaStarterBook(), ...books]
   const progress = loadProgressMap()
+  let migrated = false
+  books = books.map(book => {
+    if (book.source === 'cloud' || book.parserVersion === NOVEL_PARSER_VERSION) return book
+    const chapters: ReaderChapter[] = []
+    const offsets: number[] = []
+    for (const chapter of book.chapters) {
+      offsets.push(chapters.length)
+      const parts = parseReaderChapters(chapter.content)
+      chapters.push(...parts.map((part, index) => ({ ...part, title: part.title === '正文' || /^第 \d+ 节$/.test(part.title)
+        ? (parts.length === 1 ? chapter.title : `${chapter.title}（${index + 1}）`)
+        : part.title === '正文前' ? chapter.title : part.title })))
+    }
+    if (!chapters.length) return book
+    const saved = progress[book.id] || book.progress
+    const changed = chapters.length !== book.chapters.length || chapters.some((chapter, index) => chapter.title !== book.chapters[index]?.title)
+    if (changed) progress[book.id] = { ...saved, chapterIndex: offsets[saved.chapterIndex] || 0, scrollTop: 0, readChapterIndexes: [] }
+    migrated = true
+    return { ...book, chapters, parserVersion: NOVEL_PARSER_VERSION }
+  })
+  if (migrated) {
+    uni.setStorageSync(LIBRARY_KEY, books.filter(book => book.id !== 'starter-window-light'))
+    uni.setStorageSync(PROGRESS_KEY, progress)
+  }
   return books.map(book => {
     const saved = progress[book.id] || book.progress
     const chapterIndex = Math.max(0, Math.min(book.chapters.length - 1, Math.floor(saved.chapterIndex || 0)))
@@ -163,6 +147,7 @@ export function prepareReaderBook(input: { title: string; author?: string; text:
     title,
     author: author || '未署名',
     chapters,
+    parserVersion: NOVEL_PARSER_VERSION,
     createdAt: now,
     updatedAt: now,
     progress: { chapterIndex: 0, scrollTop: 0, updatedAt: now },
@@ -176,6 +161,7 @@ export function prepareCloudReaderBook(input: { id: string; title: string; autho
     id: `cloud-${input.id}`,
     cloudId: input.id,
     source: 'cloud',
+    parserVersion: NOVEL_PARSER_VERSION,
     title: input.title.trim().slice(0, 80),
     author: input.author.trim().slice(0, 60) || '未署名',
     chapters: input.chapters.map(chapter => ({
@@ -192,7 +178,16 @@ export function prepareCloudReaderBook(input: { id: string; title: string; autho
 
 export function saveReaderBook(book: ReaderBook) {
   const existing = loadReaderLibrary().find(item => item.id === book.id)
+  const changed = existing && (existing.chapters.length !== book.chapters.length || existing.chapters.some((chapter, index) => chapter.title !== book.chapters[index]?.title || chapter.characterCount !== book.chapters[index]?.characterCount))
   const saved = existing ? { ...book, progress: existing.progress } : book
+  if (existing && changed) {
+    const oldTitle = existing.chapters[existing.progress.chapterIndex]?.title
+    const matchingIndex = book.chapters.findIndex(chapter => chapter.title === oldTitle || chapter.title === `${oldTitle}（1）`)
+    saved.progress = { ...existing.progress, chapterIndex: Math.max(0, matchingIndex), scrollTop: 0, readChapterIndexes: [] }
+    const progress = loadProgressMap()
+    progress[book.id] = saved.progress
+    uni.setStorageSync(PROGRESS_KEY, progress)
+  }
   saveLibrary([saved, ...loadReaderLibrary().filter(item => item.id !== book.id)])
   return saved
 }
