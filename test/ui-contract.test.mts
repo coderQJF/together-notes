@@ -43,6 +43,11 @@ test('SubpageHeader exclusively owns subpage top safe-area spacing', async () =>
     const source = await readFile(file, 'utf8')
     if (!source.includes('<SubpageHeader')) continue
     subpages.push(file)
+    if (file.replace(/\\/g, '/').endsWith('/reader/reader.vue')) {
+      assert.match(source, /\.reader-shell\{[^}]*position:fixed[^}]*overflow:hidden/)
+      assert.match(source, /<ReaderPager/)
+      continue
+    }
     assert.match(source, /\.shell\{[^}]*\bpadding:0(?:\s|;)/, `${file} must not add top padding above SubpageHeader`)
     assert.doesNotMatch(source, /\.shell\{padding-top:[^}]+\}/, `${file} must leave safe-area spacing to SubpageHeader`)
   }
@@ -91,6 +96,25 @@ test('editor textareas keep long content inside their rounded frame', async () =
   assert.match(textarea, /\.size-content \.textarea-frame\{height:148px\}/)
   assert.match(textarea, /\.size-links \.textarea-frame\{height:88px\}/)
   assert.match(textarea, /\.textarea-control\{[^}]*height:100%[^}]*min-height:0[^}]*padding:0[^}]*line-height:24px[^}]*overflow-y:auto/)
+})
+
+test('classic note fields are rendered outside inert template elements on App', async () => {
+  const { parse } = await import('@vue/compiler-sfc')
+  const { baseParse } = await import('@vue/compiler-dom')
+  const editor = await readFile('src/pages/editor/editor.vue', 'utf8')
+  const source = parse(editor).descriptor.template!.content
+  let contentFields = 0
+  function visit(node: any, inert = false) {
+    const unqualifiedTemplate = node.type === 1 && node.tag === 'template' && !node.props.some((prop: any) => prop.type === 7)
+    const insideInert = inert || unqualifiedTemplate
+    if (node.type === 1 && node.tag === 'FormTextareaField') {
+      contentFields++
+      assert.equal(insideInert, false, 'An unconditional nested template hides native App input fields')
+    }
+    for (const child of node.children || []) visit(child, insideInert)
+  }
+  visit(baseParse(source))
+  assert.equal(contentFields, 2)
 })
 
 test('privacy policy describes salted password digests without the missing particle', async () => {
@@ -268,21 +292,26 @@ test('background native sync failures do not break the main data refresh', async
   assert.match(index, /showActionError/)
 })
 
-test('reader controls stay immersive and chapter read state is visible in the directory sheet', async () => {
+test('reader pages use one viewport pager with fixed controls and visible read state', async () => {
   const reader = await readFile('src/pages/reader/reader.vue', 'utf8')
+  const pager = await readFile('src/components/ReaderPager.vue', 'utf8')
   const progress = await readFile('src/services/reader.ts', 'utf8')
-  assert.match(reader, /class="reading-surface" @click="toggleControls"/)
+  const routes = await readFile('src/pages.json', 'utf8')
+  assert.match(reader, /<ReaderPager/)
   assert.match(reader, /v-if="controlsVisible" class="reader-chrome"/)
   assert.match(reader, /class="sheet directory-sheet"/)
   assert.match(reader, /readChapterIndexes\.has\(entry\.index\)/)
   assert.match(reader, /DIRECTORY_PAGE_SIZE = 10/)
-  assert.doesNotMatch(reader, /<StatusIcon/)
   assert.match(reader, /class="current-label">正在读/)
-  assert.match(reader, /\.chapter-row\.read\{color:#625744\}/)
   assert.match(reader, /\.directory-scroll\{height:auto;min-height:0;flex:1[^}]*\}/)
-  assert.match(reader, /@touchstart="onReadingTouchStart" @touchend="onReadingTouchEnd"/)
+  assert.match(reader, /toggleDayNight/)
+  assert.match(reader, /\.theme-night\{/)
   assert.match(reader, /playPageTurnSound/)
-  assert.match(progress, /readChapterIndexes/)
+  assert.match(pager, /@touchstart="onTouchStart"/)
+  assert.match(pager, /@touchmove\.stop\.prevent="onTouchMove"/)
+  assert.match(pager, /paginateReaderText/)
+  assert.match(progress, /characterOffset/)
+  assert.match(routes, /"navigationBarTitleText": "小说阅读", "disableScroll": true/)
 })
 
 test('Android home widget isolates text cards from its image carousel and keeps image payloads small', async () => {

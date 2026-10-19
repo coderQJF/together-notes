@@ -88,11 +88,11 @@ function goBack() {
 
 <style scoped>
 .subpage-header{position:sticky;z-index:20;top:0;display:flex;align-items:center;justify-content:space-between;min-height:calc(44px + var(--status-bar-height,0px));padding-top:var(--status-bar-height,0px);margin-bottom:12px;background:var(--subpage-background,#faf8f2);box-sizing:border-box}
-.back{display:inline-flex;align-items:center;gap:7px;width:auto;height:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:#786d5b;font-size:15px;line-height:1.4}
+.back{display:inline-flex;flex:0 0 auto;align-items:center;gap:7px;width:auto;min-width:44px;height:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:var(--subpage-muted,#786d5b);font-size:15px;line-height:1.4}
 .back::after{border:0}
 .back-icon{width:10px;height:10px;margin-left:3px;border-left:1.7px solid currentColor;border-bottom:1.7px solid currentColor;transform:rotate(45deg)}
-.header-trailing{display:flex;align-items:center;justify-content:flex-end;gap:6px;min-width:0}
-.header-action{display:inline-flex;align-items:center;justify-content:center;width:auto;height:44px;min-height:44px;margin:0;padding:0 8px;border:0;background:transparent;color:#786d5b;font-size:12px;line-height:1;white-space:nowrap}.header-action::after{border:0}.header-action[disabled]{opacity:.45}
-.page-mark{display:inline-flex;align-items:center;min-height:28px;padding:0 11px;border-radius:9px;background:#f7e7ad;color:#494032;font-size:12px;line-height:1;white-space:nowrap}
+.header-trailing{display:flex;align-items:center;justify-content:flex-end;gap:6px;min-width:0;max-width:calc(100% - 76px)}
+.header-action{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;width:auto;height:44px;min-height:44px;margin:0;padding:0 8px;border:0;background:transparent;color:var(--subpage-muted,#786d5b);font-size:12px;line-height:1;white-space:nowrap}.header-action::after{border:0}.header-action[disabled]{opacity:.45}
+.page-mark{display:block;min-width:0;min-height:28px;max-width:100%;padding:0 11px;overflow:hidden;border-radius:9px;background:var(--subpage-badge-background,#f7e7ad);color:var(--subpage-badge-text,#494032);font-size:12px;line-height:28px;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:360px){.header-trailing{gap:2px}.header-action{padding-left:5px;padding-right:5px}.page-mark{padding-left:9px;padding-right:9px}}
 </style>

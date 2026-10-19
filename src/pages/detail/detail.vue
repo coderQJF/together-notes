@@ -5,10 +5,12 @@ import ImageAttachmentGallery from '../../components/ImageAttachmentGallery.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import GuestNotice from '../../components/GuestNotice.vue'
 import StructuredNoteContent from '../../components/StructuredNoteContent.vue'
+import LedgerSummary from '../../components/LedgerSummary.vue'
 import { cachedHome, downloadFile, request, openAccountLogin, type Item, type User } from '../../services/api'
 import { selectHomeWidgetNote, syncHomeWidgetNotes } from '../../services/home-widget'
 import { cancelLocalReminder } from '../../services/local-reminders'
 import { materializeNoteBlocks } from '../../services/note-blocks'
+import { parseLedgerText } from '../../services/note-ledger'
 import { formatClock, formatCompactDateTime, formatDayHeading } from '../../utils/date'
 import { openExternalUrl, publicShareUrl, shareText } from '../../utils/platform'
 
@@ -33,6 +35,7 @@ let active = true
 
 const sharedPreview = computed(() => item.value?.scope === 'link')
 const structuredNote = computed(() => item.value?.kind === 'note' && item.value.noteFormat === 'paper')
+const classicLedgerSummary = computed(() => item.value?.kind === 'note' && !structuredNote.value ? parseLedgerText(item.value.content || '') : null)
 const scopeLabel = computed(() => sharedPreview.value ? '好友分享' : item.value?.scope === 'shared' ? '我们俩' : '仅自己')
 const repeatLabel = computed(() => ({ none: '单次', daily: '每天', weekly: '每周' } as Record<string, string>)[item.value?.repeat || 'none'])
 const imageAttachments = computed(() => (item.value?.attachments || []).filter(attachment => /\.(?:png|jpe?g|webp|gif)$/i.test(attachment.name)))
@@ -252,7 +255,10 @@ onUnload(() => { active = false })
 
       <text class="headline">{{ item.title }}</text>
       <StructuredNoteContent v-if="structuredNote" :item="item" :interactive="!sharedPreview && !pending" @toggle-todo="toggleNoteTodo" />
-      <text v-else class="body-text">{{ item.content || '暂无正文' }}</text>
+      <view v-else>
+        <LedgerSummary v-if="classicLedgerSummary" :summary="classicLedgerSummary" />
+        <text class="body-text">{{ item.content || '暂无正文' }}</text>
+      </view>
 
       <view v-if="sharedPreview" class="share-notice">
         <text class="share-notice-title">来自好友分享</text>

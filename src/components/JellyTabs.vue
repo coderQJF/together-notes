@@ -74,18 +74,18 @@ onBeforeUnmount(() => { if (jellyTimer) clearTimeout(jellyTimer) })
 </template>
 
 <style scoped>
-.jelly-tabs{position:relative;display:flex;align-items:stretch;width:100%;padding:4px;overflow:hidden;border:1px solid #e5dece;border-radius:16px;background:#fff;box-sizing:border-box}
+.jelly-tabs{position:relative;display:flex;align-items:stretch;width:100%;padding:4px;overflow:hidden;border:1px solid var(--tabs-border,#e5dece);border-radius:16px;background:var(--tabs-background,#fff);box-sizing:border-box}
 .indicator-track{position:absolute;z-index:0;top:4px;bottom:4px;left:4px;box-sizing:border-box;pointer-events:none;transition:transform 480ms cubic-bezier(.22,1.28,.36,1);will-change:transform}
-.indicator{width:100%;height:100%;border-radius:12px;background:#494032;box-shadow:0 4px 12px rgba(73,64,50,.12)}
+.indicator{width:100%;height:100%;border-radius:12px;background:var(--tabs-indicator,#494032);box-shadow:0 4px 12px rgba(73,64,50,.12)}
 .indicator.jelly-right{transform-origin:left center;animation:jelly-stretch 500ms cubic-bezier(.22,1,.36,1)}
 .indicator.jelly-left{transform-origin:right center;animation:jelly-stretch 500ms cubic-bezier(.22,1,.36,1)}
-.jelly-tabs button{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;min-width:0;height:46px;min-height:46px;flex:1;margin:0;padding:0 7px;border:0;border-radius:12px;background:transparent;color:#6f6555;font-size:13px;line-height:normal;box-sizing:border-box;transition:color 180ms ease}
+.jelly-tabs button{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;min-width:0;height:46px;min-height:46px;flex:1;margin:0;padding:0 7px;border:0;border-radius:12px;background:transparent;color:var(--tabs-text,#6f6555);font-size:13px;line-height:normal;box-sizing:border-box;transition:color 180ms ease}
 .jelly-tabs button::after{border:0}
 .jelly-tabs button text{display:block;overflow:hidden;line-height:20px;text-overflow:ellipsis;white-space:nowrap}
-.jelly-tabs button.active{background:transparent;color:#fff9e9}
+.jelly-tabs button.active{background:transparent;color:var(--tabs-active-text,#fff9e9)}
 .jelly-tabs button:active{opacity:.86}
 .jelly-tabs button[disabled]{opacity:.48}
-.jelly-tabs.compact button{height:40px;min-height:40px;font-size:12px}
-.jelly-tabs.compact .indicator-track{height:40px;bottom:auto}
+.jelly-tabs.compact button{height:44px;min-height:44px;font-size:12px}
+.jelly-tabs.compact .indicator-track{height:44px;bottom:auto}
 @keyframes jelly-stretch{0%{transform:scaleX(1) scaleY(1)}38%{transform:scaleX(1.2) scaleY(.9)}68%{transform:scaleX(.94) scaleY(1.04)}84%{transform:scaleX(1.03) scaleY(.98)}100%{transform:scaleX(1) scaleY(1)}}
 </style>

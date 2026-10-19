@@ -35,7 +35,7 @@
     },
     {
       "path": "pages/reader/reader",
-      "style": { "navigationStyle": "custom", "navigationBarTitleText": "小说阅读", "disableScroll": false }
+      "style": { "navigationStyle": "custom", "navigationBarTitleText": "小说阅读", "disableScroll": true, "app-plus": { "bounce": "none" } }
     },
     {
       "path": "pages/games/games",

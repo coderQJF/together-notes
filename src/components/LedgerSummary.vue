@@ -9,7 +9,7 @@ const netLabel = computed(() => `${props.summary.net > 0 ? '+' : props.summary.n
 
 <template>
   <view class="ledger-summary">
-    <view class="ledger-heading"><text>智能记账</text><text>已识别 {{ summary.recordCount }} 条</text></view>
+    <view class="ledger-heading"><text>记账汇总</text><text>已识别 {{ summary.recordCount }} 条记录</text></view>
     <view class="ledger-values">
       <view><text>支出</text><text class="negative">-¥{{ formatLedgerAmount(summary.expense) }}</text></view>
       <view><text>收入</text><text class="positive">+¥{{ formatLedgerAmount(summary.income) }}</text></view>

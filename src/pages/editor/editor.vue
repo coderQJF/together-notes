@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import FormTextareaField from '../../components/FormTextareaField.vue'
+import LedgerSummary from '../../components/LedgerSummary.vue'
+import NoteSettingsFields from '../../components/NoteSettingsFields.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import GuestNotice from '../../components/GuestNotice.vue'
 import StructuredNoteEditor from '../../components/StructuredNoteEditor.vue'
@@ -9,7 +11,8 @@ import TimePickerField from '../../components/TimePickerField.vue'
 import { attachImages, cachedHome, request, type Item, type User } from '../../services/api'
 import { syncHomeWidgetNotes } from '../../services/home-widget'
 import { configureBackgroundReminderSync, requestLocalReminderPermissions, scheduleLocalReminderForUser } from '../../services/local-reminders'
-import { materializeNoteBlocks } from '../../services/note-blocks'
+import { classicToPaperBlocks, materializeNoteBlocks } from '../../services/note-blocks'
+import { parseLedgerText } from '../../services/note-ledger'
 import { dateInputValue, timeInputValue } from '../../utils/date'
 
 const empty = (kind: 'note' | 'reminder'): Item => ({
@@ -38,8 +41,8 @@ const error = ref('')
 const editingExisting = ref(false)
 const wechatStatus = ref<{ configured: boolean; templateId: string | null }>({ configured: false, templateId: null })
 const formatPickerOpen = ref(false)
-const settingsOpen = ref(false)
 const isPaper = computed(() => draft.value.kind === 'note' && draft.value.noteFormat === 'paper')
+const classicLedgerSummary = computed(() => draft.value.kind === 'note' && !isPaper.value ? parseLedgerText(draft.value.content || '') : null)
 let active = true
 let closing = false
 
@@ -66,11 +69,8 @@ function selectNoteFormat(format: 'classic' | 'paper') {
   formatPickerOpen.value = false
   if (draft.value.noteFormat === format) return
   if (format === 'paper') {
-    const blocks = [...(draft.value.blocks || [])]
-    if (!blocks.some(block => block.type === 'paragraph')) blocks.unshift({ id: noteBlockId(), type: 'paragraph', text: draft.value.content, style: { align: 'left', list: 'none', color: '#3e382d' } })
-    for (const attachment of draft.value.attachments || []) if (!blocks.some(block => block.attachmentId === attachment.id)) blocks.push({ id: noteBlockId(), type: 'image', attachmentId: attachment.id })
-    for (const link of draft.value.links || []) if (!blocks.some(block => block.type === 'link' && block.url === link)) blocks.push({ id: noteBlockId(), type: 'link', text: '', url: link })
-    draft.value.blocks = blocks
+    draft.value.links = linkText.value.split('\n').map(value => value.trim()).filter(Boolean)
+    draft.value.blocks = classicToPaperBlocks(draft.value.content, draft.value.links, draft.value.attachments || [], draft.value.blocks || [], noteBlockId)
   } else materializePaper()
   draft.value.noteFormat = format
   if (format === 'classic') linkText.value = (draft.value.links || []).join('\n')
@@ -147,9 +147,10 @@ function recipientChange(event: any) {
   draft.value.recipient = ['me', 'partner', 'both'][Number(event.detail.value)]
   if (draft.value.recipient !== 'me') draft.value.scope = 'shared'
 }
-function scopeChange(event: any) {
-  if (user.value?.guest && Number(event.detail.value)) { uni.showToast({ title: '双人共享需要登录，当前仍仅保存在本机', icon: 'none' }); return }
-  draft.value.scope = Number(event.detail.value) ? 'shared' : 'mine'
+function scopeChange(scope: 'mine' | 'shared') {
+  if (isGuestEditor.value) return
+  if (user.value?.guest && scope === 'shared') { uni.showToast({ title: '双人共享需要登录，当前仍仅保存在本机', icon: 'none' }); return }
+  draft.value.scope = scope
 }
 
 async function requestWechatReminderAuthorization() {
@@ -163,10 +164,6 @@ async function requestWechatReminderAuthorization() {
   } catch {}
   // #endif
   return accepted
-}
-
-function setPinned(event: any) {
-  draft.value.pinned = Boolean(event.detail.value)
 }
 
 function returnToPrevious() {
@@ -249,7 +246,7 @@ onUnload(() => { active = false })
 
     <view v-else-if="isPaper" class="paper-page">
       <input v-model="draft.title" class="paper-title" :adjust-position="false" :cursor-spacing="88" maxlength="100" placeholder="标题" />
-      <view class="paper-meta"><text>灵感纸</text><button @click="settingsOpen=true">{{ draft.scope === 'shared' ? '我们俩' : '仅自己' }} · 设置</button></view>
+      <view class="paper-meta"><text>灵感纸</text><NoteSettingsFields compact :scope="draft.scope" v-model:pinned="draft.pinned" :scope-readonly="isGuestEditor" @scope-change="scopeChange" /></view>
       <StructuredNoteEditor full-page :blocks="draft.blocks || []" :attachments="draft.attachments || []" :saving="pending === 'save'" @save="save" @update:blocks="draft.blocks=$event" @update:attachments="draft.attachments=$event" />
     </view>
 
@@ -259,40 +256,26 @@ onUnload(() => { active = false })
       <text class="label">标题</text>
       <input v-model="draft.title" maxlength="100" placeholder="想记下什么？" />
 
-      <template>
-        <FormTextareaField v-model="draft.content" class="content-input" label="内容" :maxlength="50000" placeholder="文字、清单，或者想对她说的话…" size="content" />
+      <FormTextareaField v-model="draft.content" class="content-input" label="内容" :maxlength="50000" placeholder="文字、清单，或者想对她说的话…" size="content" />
+      <LedgerSummary v-if="classicLedgerSummary" :summary="classicLedgerSummary" />
 
-        <FormTextareaField v-model="linkText" class="links-input" label="链接（每行一个）" :maxlength="2000" placeholder="https://…" size="links" />
+      <FormTextareaField v-model="linkText" class="links-input" label="链接（每行一个）" :maxlength="2000" placeholder="https://…" size="links" />
 
-        <text class="label">图片</text>
-        <view v-for="(attachment, index) in draft.attachments" :key="attachment.id" class="setting">
-          <view class="setting-copy">
-            <text class="setting-title">{{ attachment.name }}</text>
-            <text class="muted small">{{ Math.max(1, Math.round(attachment.size / 1024)) }} KB</text>
-          </view>
-          <button class="remove-file" @click="draft.attachments?.splice(index, 1)">移除</button>
+      <text class="label">图片</text>
+      <view v-for="(attachment, index) in draft.attachments" :key="attachment.id" class="setting">
+        <view class="setting-copy">
+          <text class="setting-title">{{ attachment.name }}</text>
+          <text class="muted small">{{ Math.max(1, Math.round(attachment.size / 1024)) }} KB</text>
         </view>
-        <button class="attachment-button" :disabled="Boolean(pending)" @click="addAttachment">
-          <view v-if="pending === 'attachment'" class="spinner" />
-          <view v-else class="mini-plus" />
-          <text>{{ pending === 'attachment' ? '添加中…' : '选择图片（可多选）' }}</text>
-        </button>
-        <text class="muted small hint">单张最大 12MB，最多 10 张；桌面小组件会自动轮播所选小记的图片。</text>
-      </template>
-
-
-      <text class="label">可见范围</text>
-      <view v-if="isGuestEditor" class="picker readonly">
-        <text>我们俩 · 共同编辑</text>
-        <text class="muted small">创建者管理范围</text>
+        <button class="remove-file" @click="draft.attachments?.splice(index, 1)">移除</button>
       </view>
-      <picker v-else :range="['仅自己', '我们俩']" :value="draft.scope === 'shared' ? 1 : 0" @change="scopeChange">
-        <view class="picker">
-          <text>{{ draft.scope === 'shared' ? '我们俩 · 共同编辑' : '仅自己可见' }}</text>
-          <view class="chevron-down" />
-        </view>
-      </picker>
-      <text v-if="!isGuestEditor && !user?.partner" class="muted small hint">绑定另一半后可以共享。</text>
+      <button class="attachment-button" :disabled="Boolean(pending)" @click="addAttachment">
+        <view v-if="pending === 'attachment'" class="spinner" />
+        <view v-else class="mini-plus" />
+        <text>{{ pending === 'attachment' ? '添加中…' : '选择图片（可多选）' }}</text>
+      </button>
+      <text class="muted small hint">单张最大 12MB，最多 10 张；桌面小组件会自动轮播所选小记的图片。</text>
+      <NoteSettingsFields :scope="draft.scope" v-model:pinned="draft.pinned" :scope-readonly="isGuestEditor" :show-pin="draft.kind === 'note'" :scope-hint="!user?.partner ? '绑定另一半后可以共享。' : ''" @scope-change="scopeChange" />
 
       <template v-if="draft.kind === 'reminder'">
         <text class="label">提醒时间</text>
@@ -334,28 +317,10 @@ onUnload(() => { active = false })
         <!-- #ifdef APP-PLUS --><text class="muted small hint">保存后会自动登记 App 本机提醒；微信因平台限制，会在小程序保存同一提醒时申请一次官方授权，无需另开设置按钮。</text><!-- #endif -->
       </template>
 
-      <view v-else class="setting pin-setting">
-        <view>
-          <text class="setting-title">置顶这条备忘</text>
-          <text class="muted small">在列表最前面显示</text>
-        </view>
-        <switch color="#b28b35" :checked="draft.pinned" @change="setPinned" />
-      </view>
-
       <button class="primary" :disabled="Boolean(pending)" @click="save">
         <view v-if="pending === 'save'" class="spinner" />
         <text>{{ pending === 'save' ? '保存中…' : '保存' }}</text>
       </button>
-    </view>
-
-    <view v-if="settingsOpen" class="format-picker-layer" @click="settingsOpen=false" @touchmove.stop.prevent>
-      <view class="format-picker paper-settings" @click.stop>
-        <view class="format-picker-heading"><text>灵感纸设置</text><button aria-label="关闭设置" @click="settingsOpen=false"><view class="close-icon" /></button></view>
-        <text class="label">可见范围</text>
-        <view v-if="isGuestEditor" class="picker readonly">我们俩 · 共同编辑</view>
-        <picker v-else :range="['仅自己', '我们俩']" :value="draft.scope === 'shared' ? 1 : 0" @change="scopeChange"><view class="picker"><text>{{ draft.scope === 'shared' ? '我们俩 · 共同编辑' : '仅自己可见' }}</text><view class="chevron-down" /></view></picker>
-        <view class="setting pin-setting"><text>置顶这条备忘</text><switch color="#b28b35" :checked="draft.pinned" @change="setPinned" /></view>
-      </view>
     </view>
 
     <view v-if="formatPickerOpen" class="format-picker-layer" @click="formatPickerOpen=false" @touchmove.stop.prevent>
@@ -382,8 +347,6 @@ onUnload(() => { active = false })
 .paper-shell{padding-bottom:0;color:#494032}
 .paper-page{min-height:calc(100vh - 100px)}
 .paper-title{display:block;width:100%;height:48px;margin:0;padding:0;border:0;background:transparent;color:#494032;font-size:30px;font-weight:650;line-height:1.4}
-.paper-meta{display:flex;align-items:center;gap:12px;margin-bottom:8px;color:#8b806e;font-size:12px}
-.paper-meta button{display:flex;align-items:center;justify-content:center;min-height:44px;margin:0;padding:0 12px;border:0;border-radius:12px;background:#f4efe2;color:#786d5b;font-size:12px}
-.paper-meta button::after{border:0}
-.paper-settings .label{margin-top:10px}
+.paper-meta{display:flex;align-items:center;gap:10px;min-height:44px;margin-bottom:8px;color:#8b806e;font-size:12px}
+.paper-meta>text{flex:none;white-space:nowrap}
 </style>

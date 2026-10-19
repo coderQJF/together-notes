@@ -1,6 +1,6 @@
 import { parseNovelChapters, NOVEL_PARSER_VERSION } from '../../server/novel-chapters.mjs'
 
-export type ReaderTheme = 'paper' | 'butter' | 'white'
+export type ReaderTheme = 'paper' | 'butter' | 'white' | 'night'
 
 export interface ReaderChapter {
   title: string
@@ -12,6 +12,8 @@ export interface ReaderChapter {
 export interface ReaderProgress {
   chapterIndex: number
   scrollTop: number
+  /** Original chapter character offset; independent of font and viewport size. */
+  characterOffset?: number
   updatedAt: string
   readChapterIndexes?: number[]
 }
@@ -33,6 +35,7 @@ export interface ReaderSettings {
   fontSize: number
   lineHeight: number
   theme: ReaderTheme
+  dayTheme?: Exclude<ReaderTheme, 'night'>
   pageSound: boolean
 }
 
@@ -103,7 +106,7 @@ export function loadReaderLibrary(): ReaderBook[] {
     if (!chapters.length) return book
     const saved = progress[book.id] || book.progress
     const changed = chapters.length !== book.chapters.length || chapters.some((chapter, index) => chapter.title !== book.chapters[index]?.title)
-    if (changed) progress[book.id] = { ...saved, chapterIndex: offsets[saved.chapterIndex] || 0, scrollTop: 0, readChapterIndexes: [] }
+    if (changed) progress[book.id] = { ...saved, chapterIndex: offsets[saved.chapterIndex] || 0, scrollTop: 0, characterOffset: 0, readChapterIndexes: [] }
     migrated = true
     return { ...book, chapters, parserVersion: NOVEL_PARSER_VERSION }
   })
@@ -183,7 +186,7 @@ export function saveReaderBook(book: ReaderBook) {
   if (existing && changed) {
     const oldTitle = existing.chapters[existing.progress.chapterIndex]?.title
     const matchingIndex = book.chapters.findIndex(chapter => chapter.title === oldTitle || chapter.title === `${oldTitle}（1）`)
-    saved.progress = { ...existing.progress, chapterIndex: Math.max(0, matchingIndex), scrollTop: 0, readChapterIndexes: [] }
+    saved.progress = { ...existing.progress, chapterIndex: Math.max(0, matchingIndex), scrollTop: 0, characterOffset: 0, readChapterIndexes: [] }
     const progress = loadProgressMap()
     progress[book.id] = saved.progress
     uni.setStorageSync(PROGRESS_KEY, progress)
@@ -209,7 +212,7 @@ export function removeReaderBook(id: string) {
   }
 }
 
-export function saveReaderProgress(id: string, chapterIndex: number, scrollTop: number) {
+export function saveReaderProgress(id: string, chapterIndex: number, scrollTop: number, characterOffset?: number) {
   const book = loadReaderLibrary().find(item => item.id === id)
   if (!book) return null
   const progress = loadProgressMap()
@@ -223,6 +226,7 @@ export function saveReaderProgress(id: string, chapterIndex: number, scrollTop: 
     updatedAt: new Date().toISOString(),
     readChapterIndexes,
   }
+  if (characterOffset !== undefined) next.characterOffset = Math.max(0, Math.floor(Number(characterOffset) || 0))
   progress[id] = next
   uni.setStorageSync(PROGRESS_KEY, progress)
   return next
@@ -232,9 +236,10 @@ export function loadReaderSettings(): ReaderSettings {
   const value = uni.getStorageSync(SETTINGS_KEY) as Partial<ReaderSettings> | undefined
   const fontSize = Math.max(15, Math.min(26, Number(value?.fontSize) || DEFAULT_SETTINGS.fontSize))
   const lineHeight = Math.max(1.7, Math.min(2.4, Number(value?.lineHeight) || DEFAULT_SETTINGS.lineHeight))
-  const theme: ReaderTheme = ['paper', 'butter', 'white'].includes(String(value?.theme)) ? value?.theme as ReaderTheme : DEFAULT_SETTINGS.theme
+  const theme: ReaderTheme = ['paper', 'butter', 'white', 'night'].includes(String(value?.theme)) ? value?.theme as ReaderTheme : DEFAULT_SETTINGS.theme
+  const dayTheme = ['paper', 'butter', 'white'].includes(String(value?.dayTheme)) ? value!.dayTheme! : theme === 'night' ? 'butter' : theme
   const pageSound = value?.pageSound !== false
-  return { fontSize, lineHeight, theme, pageSound }
+  return { fontSize, lineHeight, theme, dayTheme, pageSound }
 }
 
 export function saveReaderSettings(settings: ReaderSettings) {

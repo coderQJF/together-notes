@@ -10,9 +10,75 @@ import {
   removeReaderBook,
   saveReaderBook,
   saveReaderProgress,
+  loadReaderSettings,
+  saveReaderSettings,
 } from '../src/services/reader.ts'
 import { decodeReaderText, readerTitleFromFileName } from '../src/services/reader-import.ts'
 import { chapterStepFromSwipe } from '../src/services/reader-gesture.ts'
+import { paginateReaderText, readerPageAtOffset, readerOffsetFromLegacyScroll } from '../src/services/reader-pagination.ts'
+
+test('fixed reading pages preserve every source character and fit the available line area at mobile sizes', () => {
+  const content = ('\t初见。When you feel most lonely and desperate, there will be a door open for you.\n\n\n\n路明非看着窗外的灯，慢慢合上书。😀\n\n' + '长'.repeat(72) + '\n').repeat(16)
+  for (const width of [280, 342, 382]) {
+    for (const fontSize of [15, 21, 26]) {
+      for (const lineHeight of [1.8, 2.15, 2.3]) {
+        const layout = { width, height: 655, fontSize, lineHeight }
+        const pages = paginateReaderText(content, layout)
+        assert.ok(pages.length > 1)
+        assert.equal(pages.map(page => content.slice(page.start, page.end)).join(''), content)
+        for (const [index, page] of pages.entries()) {
+          if (index) assert.equal(page.start, pages[index - 1].end)
+          assert.ok(page.lines.length > 0)
+          assert.ok(page.lines.reduce((sum, line) => sum + line.height, 0) <= layout.height)
+          assert.ok(page.lines.every(line => !/^[\uDC00-\uDFFF]/.test(line.text)), 'Never split a surrogate pair across pages')
+        }
+      }
+    }
+  }
+})
+
+test('TXT blank separators become paragraph gaps instead of empty pages and tabs use rendered widths', () => {
+  const compact = '第一段。\n第二段。\n第三段。'
+  const spaced = compact.replace(/\n/g, '\n\n\n\n\n')
+  const layout = { width: 280, height: 220, fontSize: 21, lineHeight: 2 }
+  const pages = paginateReaderText(spaced, layout)
+  assert.deepEqual(pages.map(page => page.lines.map(line => line.text)), paginateReaderText(compact, layout).map(page => page.lines.map(line => line.text)))
+  assert.equal(pages.map(page => spaced.slice(page.start, page.end)).join(''), spaced)
+  const seen: string[] = []
+  paginateReaderText('\t缩进内容', { ...layout, measureCharacter: character => { seen.push(character); return 10 } })
+  assert.ok(seen.includes(' '))
+  assert.ok(!seen.includes('\t'))
+  const punctuation = paginateReaderText('甲乙丙丁戊己庚辛，壬癸（天地）黄。'.repeat(10), layout)
+  assert.ok(punctuation.flatMap(page => page.lines).every(line => !/^[，。）》]/.test(line.text)))
+})
+
+test('character position restores the same passage after font/viewport changes and resolves page boundaries', () => {
+  const content = '这一页的文字应在改变字号后继续读下去。'.repeat(600)
+  const original = paginateReaderText(content, { width: 342, height: 660, fontSize: 21, lineHeight: 2.15 })
+  const position = original[7].start
+  const resized = paginateReaderText(content, { width: 280, height: 560, fontSize: 26, lineHeight: 2.3 })
+  const restored = resized[readerPageAtOffset(resized, position)]
+  assert.ok(restored.start <= position && restored.end > position)
+  assert.equal(readerPageAtOffset(original, original[7].start), 7)
+  assert.equal(readerPageAtOffset(original, content.length), original.length - 1)
+  assert.equal(readerOffsetFromLegacyScroll(original, 2_000, 660), original[3].start)
+})
+
+test('reader persists a character anchor and remembers the daytime background after night mode', () => {
+  const storage = new Map<string, unknown>()
+  const target = globalThis as typeof globalThis & { uni?: unknown }
+  const original = target.uni
+  target.uni = { getStorageSync(key: string) { return storage.get(key) }, setStorageSync(key: string, value: unknown) { storage.set(key, value) } }
+  try {
+    const book = createReaderBook({ title: '分页位置', text: '第一章\n' + '内容'.repeat(900) })
+    saveReaderProgress(book.id, 0, 0, 478)
+    assert.equal(getReaderBook(book.id)?.progress.characterOffset, 478)
+    saveReaderSettings({ fontSize: 26, lineHeight: 2.3, theme: 'night', dayTheme: 'paper', pageSound: false })
+    assert.deepEqual(loadReaderSettings(), { fontSize: 26, lineHeight: 2.3, theme: 'night', dayTheme: 'paper', pageSound: false })
+    storage.set('reader-settings-v2', { fontSize: 21, lineHeight: 2.15, theme: 'white', pageSound: false })
+    assert.equal(loadReaderSettings().dayTheme, 'white', 'Older daytime settings remain the return target after night mode')
+  } finally { if (original === undefined) delete target.uni; else target.uni = original }
+})
 
 test('reader swipe gesture maps left to next and right to previous without stealing vertical scroll', () => {
   const at = 1_000
@@ -144,10 +210,11 @@ test('replacing a cloud catalog relocates progress by title and clears stale pix
   try {
     const input = { id: 'repaired', title: '测试', author: '作者', createdAt: '', updatedAt: '' }
     saveReaderBook(prepareCloudReaderBook({ ...input, chapters: [{chapterIndex: 0, title: '正文前', characterCount: 200000}, {chapterIndex: 1, title: '尾声', characterCount: 200}] }))
-    saveReaderProgress('cloud-repaired', 1, 500)
+    saveReaderProgress('cloud-repaired', 1, 500, 350)
     saveReaderBook(prepareCloudReaderBook({ ...input, chapters: [{chapterIndex: 0, title: '序章', characterCount: 200}, {chapterIndex: 1, title: '第一幕', characterCount: 3000}, {chapterIndex: 2, title: '尾声', characterCount: 200}] }))
     assert.equal(getReaderBook('cloud-repaired')?.progress.chapterIndex, 2)
     assert.equal(getReaderBook('cloud-repaired')?.progress.scrollTop, 0)
+    assert.equal(getReaderBook('cloud-repaired')?.progress.characterOffset, 0)
     assert.deepEqual(getReaderBook('cloud-repaired')?.progress.readChapterIndexes, [])
   } finally { if (original === undefined) delete target.uni; else target.uni = original }
 })

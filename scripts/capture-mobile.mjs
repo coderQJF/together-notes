@@ -11,6 +11,9 @@ const outputDir = resolve(process.env.CAPTURE_DIR || 'artifacts/mobile-audit')
 let session = process.env.QA_SESSION || ''
 let itemId = process.env.QA_ITEM_ID || ''
 let paperId = process.env.QA_PAPER_ID || ''
+let ledgerId = process.env.QA_LEDGER_ID || ''
+const classicBodyText = '经典备忘正文可以输入、编辑并在重新打开后保留。\n这是一段用于检查 App 和网页正文输入框的文字。'
+const classicLinkText = 'https://example.com/classic-input'
 const widths = (process.env.CAPTURE_WIDTHS || '320,375,390,430').split(',').map(Number).filter(Boolean)
 const remotePort = Number(process.env.CDP_PORT || 9231)
 const sportsCompetition = process.env.QA_SPORTS_COMPETITION || ''
@@ -173,6 +176,10 @@ if (!baseUrl) {
     pinned: true,
   }, session)
   itemId = note.id
+  const ledger = await apiRequest('/api/items', 'POST', {
+    kind: 'note', title: '旅行记账', content: await readFile(resolve('test/fixtures/travel-ledger.txt'), 'utf8'), links: [], scope: 'mine', noteFormat: 'classic',
+  }, session)
+  ledgerId = ledger.id
   const paper = await apiRequest('/api/items', 'POST', {
     kind: 'note', title: '旅行灵感纸', content: '出发前清单\n买120+80 赢50\n带上相机', links: ['https://example.com/trip'], attachments: [attachments[0]], scope: 'mine', pinned: false, noteFormat: 'paper',
     blocks: [
@@ -241,8 +248,10 @@ const screens = [
   { name: 'index-us-app-login', path: '/pages/us/us', ready: '在 Android App 登录', click: '设置', clicked: 'App 登录密码' },
   ...(itemId ? [{ name: 'detail-note', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '周末一起去看展' }] : []),
   ...(itemId ? [{ name: 'detail-note-gallery', path: `/pages/detail/detail?id=${encodeURIComponent(itemId)}`, ready: '附件', preClickSelector: '.thumbnail' }] : []),
+  ...(ledgerId ? [{ name: 'detail-note-ledger', path: `/pages/detail/detail?id=${encodeURIComponent(ledgerId)}`, ready: '记账汇总', ledgerSummary: true }] : []),
   ...(paperId ? [{ name: 'detail-note-paper', path: `/pages/detail/detail?id=${encodeURIComponent(paperId)}`, ready: '旅行灵感纸' }] : []),
-  { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题' },
+  { name: 'editor-note', path: '/pages/editor/editor?kind=note', ready: '标题', classicBody: true },
+  ...(ledgerId ? [{ name: 'editor-note-ledger', path: `/pages/editor/editor?id=${encodeURIComponent(ledgerId)}`, ready: '记账汇总', ledgerSummary: true }] : []),
   { name: 'editor-note-offline', path: '/pages/editor/editor?kind=note', ready: '标题', offline: true, offlineSave: '断网也能记下' },
   { name: 'editor-reminder-offline', path: '/pages/editor/editor?kind=reminder', ready: '提醒时间', offline: true, offlineSave: '断网提醒' },
   { name: 'editor-paper-empty', path: '/pages/editor/editor?kind=note', ready: '标题', paperEmpty: true },
@@ -251,7 +260,7 @@ const screens = [
   ...(paperId ? [{ name: 'editor-note-paper-todo-checked', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', preClickSelector: '.todo-row uni-button' }] : []),
   ...(paperId ? [{ name: 'editor-note-paper-todo-flow', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', todoFlow: true }] : []),
   ...(paperId ? [{ name: 'editor-note-paper-keyboard', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', keyboardScenario: true }] : []),
-  ...(paperId ? [{ name: 'editor-note-paper-settings', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', click: '仅自己 · 设置', clicked: '灵感纸设置' }] : []),
+  ...(paperId ? [{ name: 'editor-note-paper-settings', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', paperSettings: true }] : []),
   ...(paperId ? [{ name: 'editor-note-handwriting', path: `/pages/editor/editor?id=${encodeURIComponent(paperId)}`, ready: '灵感纸', click: '手写', clicked: '清空', drawSelector: '.pad-canvas' }] : []),
   { name: 'editor-note-format', path: '/pages/editor/editor?kind=note', ready: '标题', click: '格式', clicked: '备忘录格式' },
   ...(paperId ? [{ name: 'detail-note-paper-todo-checked', path: `/pages/detail/detail?id=${encodeURIComponent(paperId)}`, ready: '旅行灵感纸', preClickSelector: '.todo' }] : []),
@@ -364,6 +373,7 @@ try {
       }
       if (screen.offlineSave) {
         await page.call('Runtime.evaluate', { expression: `(() => { const input=document.querySelector('.form input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(screen.offlineSave)}); input.dispatchEvent(new Event('input',{bubbles:true})); })()` })
+        await page.call('Runtime.evaluate', { expression: `(() => { for (const [selector,value] of [['.content-input textarea',${JSON.stringify(classicBodyText)}],['.links-input textarea',${JSON.stringify(classicLinkText)}]]) { const field=document.querySelector(selector); if(!field || field.getBoundingClientRect().height<44) throw new Error('Classic textarea is absent or not editable: '+selector); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(field,value);field.dispatchEvent(new Event('input',{bubbles:true,composed:true})); } })()` })
         await wait(100)
         await page.call('Runtime.evaluate', { expression: `document.querySelector('.form .primary').click()` })
         await waitForText(page, '已保存到本机')
@@ -381,6 +391,65 @@ try {
         await page.call('Runtime.evaluate', { expression: `(() => { [...document.querySelectorAll('.feed-list .card')].find(node=>node.textContent.includes(${JSON.stringify(screen.offlineSave)})).click() })()` })
         await waitForText(page, screen.offlineSave)
         await waitForText(page, '编辑')
+        await waitForText(page, classicBodyText.split('\n')[0])
+        await waitForText(page, classicLinkText)
+      }
+      if (screen.classicBody) {
+        const classicInput = await page.call('Runtime.evaluate', { expression: `(() => {const field=document.querySelector('.content-input textarea'); const frame=document.querySelector('.content-input .textarea-frame'); const links=document.querySelector('.links-input textarea'); if(!field||!frame||!links)return null; const rect=field.getBoundingClientRect(); const outer=frame.getBoundingClientRect(); field.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(field,${JSON.stringify(classicBodyText)});field.dispatchEvent(new Event('input',{bubbles:true,composed:true})); return {width:rect.width,height:rect.height,frameHeight:outer.height,inside:rect.top>=outer.top && rect.bottom<=outer.bottom,linksHeight:links.getBoundingClientRect().height,focused:document.activeElement===field};})()`, returnByValue: true })
+        const value = classicInput.result.value
+        if (!value || value.width < 100 || value.height < 44 || value.frameHeight !== 148 || !value.inside || value.linksHeight < 44 || !value.focused) throw new Error('Classic note body or links are absent, clipped, or unfocusable: '+JSON.stringify(value))
+        await page.call('Runtime.evaluate', { expression: 'document.activeElement?.blur()' })
+      }
+      if (screen.paperSettings) {
+        const before = await apiRequest(`/api/items/${encodeURIComponent(paperId)}`, 'GET', undefined, session)
+        await page.call('Runtime.evaluate', { expression: `document.querySelector('.paper-meta .pin-setting').click()` })
+        for (const scope of ['我们俩', '仅自己']) {
+          await page.call('Runtime.evaluate', { expression: `document.querySelector('.paper-meta uni-picker').click()` })
+          await wait(150)
+          await page.call('Runtime.evaluate', { expression: `(() => {[...document.querySelectorAll('.uni-picker-select .uni-picker-item')].find(node=>node.textContent.trim()===${JSON.stringify(scope)}).click()})()` })
+          await wait(150)
+          const selected = await page.call('Runtime.evaluate', { expression: `document.querySelector('.paper-meta .scope-field').textContent.trim()`, returnByValue: true })
+          if (selected.result.value !== scope) throw new Error('Inline paper visibility did not update: '+selected.result.value)
+        }
+        for (const format of ['经典备忘', '灵感纸']) {
+          await page.call('Runtime.evaluate', { expression: `(() => {[...document.querySelectorAll('uni-button')].find(node=>node.textContent.trim()==='格式').click()})()` })
+          await waitForText(page, '备忘录格式')
+          await page.call('Runtime.evaluate', { expression: `(() => {[...document.querySelectorAll('.format-picker > uni-button')].find(node=>node.textContent.includes(${JSON.stringify(format)})).click()})()` })
+          await waitForText(page, format === '经典备忘' ? '可见范围' : '灵感纸')
+        }
+        await page.call('Runtime.evaluate', { expression: `document.querySelector('.paper-save').click()` })
+        await waitForText(page, '已保存')
+        const saved = await apiRequest(`/api/items/${encodeURIComponent(paperId)}`, 'GET', undefined, session)
+        if (saved.scope !== 'mine' || saved.pinned !== !before.pinned || JSON.stringify(saved.blocks) !== JSON.stringify(before.blocks) || JSON.stringify(saved.links) !== JSON.stringify(before.links) || JSON.stringify(saved.attachments) !== JSON.stringify(before.attachments)) throw new Error('Inline settings or note content failed to survive format switching and saving')
+        await page.call('Page.navigate', { url: route(screen.path, ++navigationNonce) })
+        await waitForText(page, '灵感纸')
+        const inline = await page.call('Runtime.evaluate', { expression: `(() => {const row=document.querySelector('.paper-meta'),scope=row?.querySelector('.scope-field'),pin=row?.querySelector('.pin-setting');return {scopeHeight:scope?.getBoundingClientRect().height,pinHeight:pin?.getBoundingClientRect().height,pinWidth:pin?.getBoundingClientRect().width,contained:pin?.getBoundingClientRect().right<=innerWidth,modal:Boolean(document.querySelector('.format-picker-layer')),checked:Boolean(pin?.querySelector('.uni-switch-input-checked'))};})()`, returnByValue: true })
+        const value = inline.result.value
+        if (!value || value.scopeHeight < 44 || value.pinHeight < 44 || value.pinWidth < 44 || !value.contained || value.modal || value.checked !== saved.pinned) throw new Error('Paper settings are not directly usable inline after reopening: '+JSON.stringify(value))
+        await page.call('Runtime.evaluate', { expression: `(() => {[...document.querySelectorAll('uni-button')].find(node=>node.textContent.trim()==='格式').click()})()` })
+        await waitForText(page, '备忘录格式')
+        await page.call('Runtime.evaluate', { expression: `(() => {[...document.querySelectorAll('.format-picker > uni-button')].find(node=>node.textContent.includes('经典备忘')).click()})()` })
+        await waitForText(page, '可见范围')
+        const editedBody = await page.call('Runtime.evaluate', { expression: `(() => {const field=document.querySelector('.content-input textarea');const text=field.value+'\\n经典模式追加的正文必须保留';Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(field,text);field.dispatchEvent(new Event('input',{bubbles:true,composed:true}));return text})()`, returnByValue: true })
+        await page.call('Runtime.evaluate', { expression: `(() => {[...document.querySelectorAll('uni-button')].find(node=>node.textContent.trim()==='格式').click()})()` })
+        await waitForText(page, '备忘录格式')
+        await page.call('Runtime.evaluate', { expression: `(() => {[...document.querySelectorAll('.format-picker > uni-button')].find(node=>node.textContent.includes('灵感纸')).click()})()` })
+        await waitForText(page, '灵感纸')
+        const editedTextVisible = await page.call('Runtime.evaluate', { expression: `[...document.querySelectorAll('.paragraph-input textarea')].some(field=>field.value.includes('经典模式追加的正文必须保留'))`, returnByValue: true })
+        if (!editedTextVisible.result.value) throw new Error('Switching back to paper silently discarded the edited classic body')
+        await page.call('Runtime.evaluate', { expression: `document.querySelector('.paper-save').click()` })
+        await waitForText(page, '已保存')
+        const editedSaved = await apiRequest(`/api/items/${encodeURIComponent(paperId)}`, 'GET', undefined, session)
+        if (editedSaved.content !== editedBody.result.value || JSON.stringify(editedSaved.links) !== JSON.stringify(saved.links) || JSON.stringify(editedSaved.attachments) !== JSON.stringify(saved.attachments)) throw new Error('Edited classic body, attachments, or links failed to survive saving as paper')
+        // Keep the shared todo fixture intact for the remaining viewport checks.
+        await apiRequest(`/api/items/${encodeURIComponent(paperId)}`, 'PUT', saved, session)
+        await page.call('Runtime.evaluate', { expression: `localStorage.removeItem('home-snapshot-v1')` })
+        await page.call('Page.navigate', { url: route(screen.path, ++navigationNonce) })
+        await waitForText(page, '灵感纸')
+      }
+      if (screen.ledgerSummary) {
+        const ledger = await page.call('Runtime.evaluate', { expression: `document.querySelector('.ledger-summary')?.innerText`, returnByValue: true })
+        if (!ledger.result.value?.includes('已识别 16 条记录') || !ledger.result.value.includes('-¥9,545')) throw new Error('Travel ledger summary missing from classic note: '+ledger.result.value)
       }
       if (screen.newTodoChecked) {
         await page.call('Runtime.evaluate', { expression: `document.querySelector('.paper-toolbar [aria-label="待办"]').click()` })
