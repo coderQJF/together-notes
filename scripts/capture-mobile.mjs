@@ -317,9 +317,10 @@ function route(path, nonce) {
 const screenNames = new Set((process.env.CAPTURE_SCREENS || '').split(',').map(value => value.trim()).filter(Boolean))
 const screens = [
   { name: 'water-empty', path: '/pages/water/water', ready: '喝一杯，冒个泡', anonymous: true, water: 'empty' },
-  { name: 'water-flow', path: '/pages/index/index', ready: '饮水记录', anonymous: true, water: 'flow' },
+  { name: 'water-flow', path: '/pages/index/index', ready: '随手记下', anonymous: true, water: 'flow' },
   { name: 'water-cloud', path: '/pages/water/water', ready: '喝一杯，冒个泡', water: 'cloud' },
-  { name: 'water-share', path: '/pages/water-share/water-share', ready: '别忘了喝口水', anonymous: true },
+  { name: 'water-share', path: '/pages/water/water', ready: '喝一杯，冒个泡', anonymous: true },
+  { name: 'water-share-legacy', path: '/pages/water-share/water-share', ready: '喝一杯，冒个泡', anonymous: true },
   { name: 'index-login', path: '/pages/index/index?login=1', ready: '以前用过微信小程序', anonymous: true },
   { name: 'guest-index', path: '/pages/index/index', ready: '从第一件小事开始', anonymous: true, guest: true },
   { name: 'guest-search', path: '/pages/index/index', ready: '游客本机搜索', anonymous: true, guest: true, guestSeed: true, click: '搜搜', clicked: '搜搜我们的小记', ask: '游客', answered: '相关内容' },
@@ -481,12 +482,11 @@ try {
             await writeFile(join(outputDir,`${width}-water-undo.png`),Buffer.from(shot.data,'base64'))
           }
           if(screen.water==='flow'){
-            // Confirm the invitation flow works without adding to the recipient's log.
+            // Sharing should open the share UI and stay on the current log.
             await page.call('Runtime.evaluate',{expression:`document.querySelector('.header-action').click()`})
-            await waitForText(page,'有人把一杯小小的关心')
-            await page.call('Runtime.evaluate',{expression:`document.querySelector('.primary').click()`})
-            await waitForText(page,'今天已经喝了')
             await wait(200)
+            const shared=await page.call('Runtime.evaluate',{expression:`({route:location.hash,cups:Number(document.querySelector('.count').textContent),badge:!!document.querySelector('.header-action-badge'),label:document.querySelector('.page-mark')?.textContent})`,returnByValue:true})
+            if(!shared.result.value.route.includes('/pages/water/water')||shared.result.value.cups!==3||!shared.result.value.badge||shared.result.value.label)throw new Error('Direct sharing changed route/count or retained the redundant badge')
           }
         } else {
           await page.call('Page.reload', { ignoreCache: true })

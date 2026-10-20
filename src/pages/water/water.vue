@@ -8,7 +8,7 @@ import { waterDay } from '../../services/water'
 import { currentWaterStore, syncWater } from '../../services/water-sync'
 import { WATER_CUP_ML } from '../../services/water-mood'
 import { enableAppShareMenu } from '../../services/app-share'
-import { waterFriendShare, waterTimelineShare } from '../../services/water-share'
+import { shareWaterReminder, waterFriendShare, waterTimelineShare } from '../../services/water-share'
 import { cachedHome, request } from '../../services/api'
 
 const day = ref(waterDay()), cups = ref(0), active = ref(false), error = ref(''), revision = ref(0), feedback = ref<'add' | 'undo' | ''>('')
@@ -41,7 +41,12 @@ function undo() {
     store.remove(entry.id);read();error.value='';feedback.value='undo';revision.value++;void sync()
   } catch(e) { fail(e) }
 }
-function share() { uni.navigateTo({url:'/pages/water-share/water-share'}) }
+function share() {
+  // The WeChat button opens its native share sheet via open-type.
+  // #ifndef MP-WEIXIN
+  shareWaterReminder()
+  // #endif
+}
 function stop() { active.value=false;loadEpoch++;clearInterval(timer) }
 onShow(async()=>{active.value=true;const epoch=++loadEpoch;enableAppShareMenu(true);try{if(uni.getStorageSync('session')&&!cachedHome())await request('/me');if(!active.value||epoch!==loadEpoch)return;read();error.value=''}catch(e){fail(e)}if(!active.value||epoch!==loadEpoch)return;void sync();clearInterval(timer);timer=setInterval(()=>{try{read()}catch(e){fail(e)}},15000)})
 onHide(stop);onUnmounted(stop)
@@ -51,7 +56,7 @@ onShareAppMessage(waterFriendShare);onShareTimeline(waterTimelineShare)
 </script>
 <template>
   <view class="shell">
-    <SubpageHeader label="喝一杯" action-label="提醒朋友" @action="share" />
+    <SubpageHeader action-label="提醒朋友" action-appearance="badge" action-open-type="share" @action="share" />
     <view class="heading"><text class="eyebrow">A LITTLE SIP, A LITTLE JOY</text><text class="headline">喝一杯，冒个泡。</text><text class="subtitle">喝完一杯，碰一下你的小水杯。</text></view>
     <text v-if="error" class="error" role="alert">{{error}}</text>
     <WaterCup :cups="cups" :active="active" :revision="revision" :feedback="feedback" @drink="drink" />

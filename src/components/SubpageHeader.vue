@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 
-const props = withDefaults(defineProps<{ label?: string; fallback?: string; actionLabel?: string; actionDisabled?: boolean }>(), {
+const props = withDefaults(defineProps<{ label?: string; fallback?: string; actionLabel?: string; actionDisabled?: boolean; actionAppearance?: 'plain' | 'badge'; actionOpenType?: 'share' }>(), {
   label: '',
   fallback: '/pages/index/index',
   actionLabel: '',
   actionDisabled: false,
+  actionAppearance: 'plain',
 })
 const emit = defineEmits<{ action: [] }>()
 
@@ -80,13 +81,14 @@ function goBack() {
       <text>返回</text>
     </button>
     <view class="header-trailing">
-      <button v-if="actionLabel" class="header-action" :disabled="actionDisabled" @click.stop="emit('action')">{{ actionLabel }}</button>
+      <button v-if="actionLabel" class="header-action" :class="{'header-action-badge':actionAppearance==='badge'}" :open-type="actionOpenType" :disabled="actionDisabled" @click.stop="emit('action')"><text class="header-action-label">{{ actionLabel }}</text></button>
       <text v-if="label" class="page-mark">{{ label }}</text>
     </view>
   </view>
 </template>
 
 <style scoped>
+.header-action.header-action-badge{min-width:44px;padding:0}.header-action-badge .header-action-label{display:block;min-height:28px;padding:0 11px;border-radius:9px;background:var(--subpage-badge-background,#f7e7ad);color:var(--subpage-badge-text,#494032);line-height:28px}
 .subpage-header{position:sticky;z-index:20;top:0;display:flex;align-items:center;justify-content:space-between;min-height:calc(44px + var(--status-bar-height,0px));padding-top:var(--status-bar-height,0px);margin-bottom:12px;background:var(--subpage-background,#faf8f2);box-sizing:border-box}
 .back{display:inline-flex;flex:0 0 auto;align-items:center;gap:7px;width:auto;min-width:44px;height:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:var(--subpage-muted,#786d5b);font-size:15px;line-height:1.4}
 .back::after{border:0}

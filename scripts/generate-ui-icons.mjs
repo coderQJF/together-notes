@@ -12,6 +12,7 @@ const edge = process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\
 const remotePort = Number(process.env.ICON_CDP_PORT || 9232)
 const profileDir = await mkdtemp(join(tmpdir(), 'together-notes-icons-'))
 const icons = [
+  ['water-cup.svg', 'water-cup.png', '#494032'],
   ['note.svg', 'note-inactive.png', '#fff9e9'],
   ['note.svg', 'note-active.png', '#494032'],
   ['bell.svg', 'bell-inactive.png', '#fff9e9'],

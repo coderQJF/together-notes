@@ -1,6 +1,6 @@
 import { publicShareUrl, shareText } from '../utils/platform'
 export const WATER_SHARE_TITLE = '忙归忙，别忘了喝口水。'
-export const WATER_SHARE_ROUTE = '/pages/water-share/water-share'
+export const WATER_SHARE_ROUTE = '/pages/water/water'
 export const WATER_SHARE_IMAGE = '/static/share/water-card.png'
 // A public invitation never contains a sender id, count, date or private log.
 export function waterFriendShare() { return {title:WATER_SHARE_TITLE,path:WATER_SHARE_ROUTE,imageUrl:WATER_SHARE_IMAGE} }
