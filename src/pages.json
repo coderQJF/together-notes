@@ -9,6 +9,10 @@
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "饮水记录" }
     },
     {
+      "path": "pages/water-share/water-share",
+      "style": { "navigationStyle": "custom", "navigationBarTitleText": "提醒朋友喝水" }
+    },
+    {
       "path": "pages/detail/detail",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "详情" }
     },

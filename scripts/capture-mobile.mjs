@@ -316,8 +316,10 @@ function route(path, nonce) {
 
 const screenNames = new Set((process.env.CAPTURE_SCREENS || '').split(',').map(value => value.trim()).filter(Boolean))
 const screens = [
-  { name: 'water-empty', path: '/pages/water/water', ready: '今天喝了多少水', anonymous: true, water: 'empty' },
+  { name: 'water-empty', path: '/pages/water/water', ready: '喝一杯，冒个泡', anonymous: true, water: 'empty' },
   { name: 'water-flow', path: '/pages/index/index', ready: '饮水记录', anonymous: true, water: 'flow' },
+  { name: 'water-cloud', path: '/pages/water/water', ready: '喝一杯，冒个泡', water: 'cloud' },
+  { name: 'water-share', path: '/pages/water-share/water-share', ready: '别忘了喝口水', anonymous: true },
   { name: 'index-login', path: '/pages/index/index?login=1', ready: '以前用过微信小程序', anonymous: true },
   { name: 'guest-index', path: '/pages/index/index', ready: '从第一件小事开始', anonymous: true, guest: true },
   { name: 'guest-search', path: '/pages/index/index', ready: '游客本机搜索', anonymous: true, guest: true, guestSeed: true, click: '搜搜', clicked: '搜搜我们的小记', ask: '游客', answered: '相关内容' },
@@ -439,29 +441,58 @@ try {
       await wait(500)
       await waitForText(page, screen.ready)
       if (screen.water) {
-        await page.call('Runtime.evaluate', { expression: `localStorage.removeItem('water-v1:local-guest')` })
-        if (screen.water === 'flow') {
-          await page.call('Runtime.evaluate', { expression: `document.querySelector('.water-entry').click()` })
-          await waitForText(page, '今天喝了多少水')
-          await page.call('Runtime.evaluate', { expression: `document.querySelectorAll('.presets uni-button')[1].click()` })
+        if(screen.water!=='cloud')await page.call('Runtime.evaluate', { expression: `localStorage.removeItem('water-v1:local-guest')` })
+        if(screen.water==='flow'){
+          await page.call('Runtime.evaluate',{expression:`document.querySelector('.water-entry').click()`})
+          await waitForText(page,'喝一杯，冒个泡')
+        }
+        if (screen.water !== 'empty') {
+          const before=await page.call('Runtime.evaluate',{expression:`Number(document.querySelector('.count').textContent)`,returnByValue:true})
+          await page.call('Runtime.evaluate',{expression:`document.querySelector('.cup-hit').click()`})
           await wait(150)
-          await page.call('Runtime.evaluate', { expression: `(() => { const field=document.querySelector('.custom input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'330');field.dispatchEvent(new Event('input',{bubbles:true})) })()` })
-          await wait(100)
-          await page.call('Runtime.evaluate', { expression: `document.querySelector('.custom uni-button').click()` })
+          if(screen.water==='flow'){
+            await page.call('Runtime.evaluate',{expression:`document.querySelector('.cup-hit').click();document.querySelector('.cup-hit').click();document.querySelector('.cup-hit').click()`})
+            await wait(200)
+          }
+          const expected=screen.water==='flow'?4:before.result.value+1
+          if(screen.water==='cloud'){
+            let uploaded=false
+            for(let attempt=0;attempt<60;attempt++){const records=await apiRequest('/api/water/entries','GET',undefined,session);if(records.filter(entry=>!entry.deleted).length>=expected){uploaded=true;break}await wait(100)}
+            if(!uploaded)throw new Error('Water event was not synced to the account')
+          }
           await page.call('Page.reload', { ignoreCache: true })
-          await waitForText(page, '今天喝了多少水')
-          const total = await page.call('Runtime.evaluate', { expression: `document.querySelector('.number').textContent`, returnByValue: true })
-          if (total.result.value !== '580') throw new Error('Water entries did not survive reload')
-          await page.call('Runtime.evaluate', { expression: `document.querySelector('.entry .row-action').click()` })
-          await waitForText(page, '删除这笔')
-          await page.call('Runtime.evaluate', { expression: `document.querySelector('.uni-modal__btn_primary').click()` })
+          await waitForText(page, '喝一杯，冒个泡')
+          await wait(600)
+          const total = await page.call('Runtime.evaluate', { expression: `Number(document.querySelector('.count').textContent)`, returnByValue: true })
+          if (total.result.value !== expected) throw new Error('Water entries did not survive reload')
+          if(screen.water==='flow')await waitForText(page,'鼓起来了')
+          if(screen.water==='flow'){
+            await wait(600)
+            const shot=await page.call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false})
+            await writeFile(join(outputDir,`${width}-water-overflow.png`),Buffer.from(shot.data,'base64'))
+          }
+          await page.call('Runtime.evaluate', { expression: `document.querySelector('.undo').click()` })
+          await waitForText(page,'瘪嘴了')
           await wait(200)
-          const remaining = await page.call('Runtime.evaluate', { expression: `document.querySelector('.number').textContent`, returnByValue: true })
-          if (!['250', '330'].includes(remaining.result.value)) throw new Error('Deleting a water entry did not update total')
+          const remaining = await page.call('Runtime.evaluate', { expression: `Number(document.querySelector('.count').textContent)`, returnByValue: true })
+          if (remaining.result.value !== expected-1) throw new Error('Undo did not update cup count')
+          if(screen.water==='flow'){
+            const shot=await page.call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false})
+            await writeFile(join(outputDir,`${width}-water-undo.png`),Buffer.from(shot.data,'base64'))
+          }
+          if(screen.water==='flow'){
+            // Confirm the invitation flow works without adding to the recipient's log.
+            await page.call('Runtime.evaluate',{expression:`document.querySelector('.header-action').click()`})
+            await waitForText(page,'有人把一杯小小的关心')
+            await page.call('Runtime.evaluate',{expression:`document.querySelector('.primary').click()`})
+            await waitForText(page,'今天已经喝了')
+            await wait(200)
+          }
         } else {
           await page.call('Page.reload', { ignoreCache: true })
-          await waitForText(page, '这一天还没有记录')
+          await waitForText(page, '干巴巴')
         }
+        await wait(1000)
       }
       if (screen.cancelLogin) {
         await page.call('Runtime.evaluate', { expression: `document.querySelector('.guest-back').click()` })

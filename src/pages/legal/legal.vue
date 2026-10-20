@@ -31,8 +31,8 @@ onLoad(options => {
       </template>
 
       <template v-else>
-        <view class="section"><text class="section-title">本地游客模式</text><text>未登录时，小记、待办和选择的图片仅保存在当前设备，本地搜索不向服务器发送内容。不会自动获取手机号、头像或昵称。你可随时删除本机记录。主动登录不会自动上传游客记录；只有确认“同步记录”后才导入当前账号，并保持仅自己可见。取消导入后，本机游客记录仍然保留。</text></view>
-        <view class="section"><text class="section-title">1. 我们处理的信息</text><text>注册时处理账号、加盐后的密码摘要和昵称；使用过程中处理你主动创建的随记、提醒、共享关系、附件，以及维持登录所需的会话信息。你主动开启 Stock Platform 联动时，我们只保存手机号的不可逆摘要和末四位，不保存完整手机号，也不会向 Stock Platform 返回你的账号资料。你导入书架的书名、作者、正文、阅读进度和显示设置仅保存在当前设备，不会上传到业务服务器。密码原文不会保存到服务器。</text></view>
+        <view class="section"><text class="section-title">本地游客模式</text><text>未登录时，小记、待办和选择的图片仅保存在当前设备，本地搜索不向服务器发送内容。不会自动获取手机号、头像或昵称。你可随时删除本机记录。饮水记录按账号分别保存，登录账号的饮水记录会同步至服务器，游客饮水记录只在本机保存且不自动导入。饮水分享页仅包含公开问候，不包含私人饮水记录。主动登录不会自动上传游客记录；只有确认“同步记录”后才导入当前账号，并保持仅自己可见。取消导入后，本机游客记录仍然保留。</text></view>
+        <view class="section"><text class="section-title">1. 我们处理的信息</text><text>注册时处理账号、加盐后的密码摘要和昵称；使用过程中处理你主动创建的随记、提醒、共享关系、附件、饮水记录（日期、时间、杯数和固定杯容量），以及维持登录所需的会话信息。你主动开启 Stock Platform 联动时，我们只保存手机号的不可逆摘要和末四位，不保存完整手机号，也不会向 Stock Platform 返回你的账号资料。你导入书架的书名、作者、正文、阅读进度和显示设置仅保存在当前设备，不会上传到业务服务器。密码原文不会保存到服务器。</text></view>
         <view class="section"><text class="section-title">2. 使用目的</text><text>这些信息用于登录鉴权、保存和同步内容、向绑定对象展示共享内容、生成站内提醒、按手机号摘要匹配并接收你主动开启的 Stock Platform 观察清单、提供搜索结果以及保障服务安全。私人小记不会被发送给联网模型用于搜索。</text></view>
         <view class="section"><text class="section-title">3. 权限与设备能力</text><text>在 App 中选择图片附件时，系统可能请求照片访问权限；导入 TXT 或你合法持有的 GBA 文件时会打开 Android 系统文件选择器，并只读取你主动选中的文件，不申请访问全部存储空间。GBA 文件会复制到 App 私有目录供本机离线运行，不会上传到业务服务器。本版本不会请求相机权限。启用本机提醒时会请求通知权限，并使用 Android 的闹钟与开机恢复能力。只有你主动使用对应功能时才会申请；拒绝不会影响其他基础功能，但划掉 App 后可能无法按时弹出提醒。</text></view>
         <view class="section"><text class="section-title">4. App 运行框架</text><text>本产品基于 DCloud uni-app（5+ App）开发。App 运行期间，DCloud App 引擎可能处理设备标识、应用启动数据和异常错误日志，以保障基础运行并分析性能。详情可查看 DCloud App 引擎隐私政策。</text></view>

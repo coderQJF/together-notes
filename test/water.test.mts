@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { waterDay, waterStore } from '../src/services/water.ts'
+import { waterMood, waterPraise, WATER_CUP_ML } from '../src/services/water-mood.ts'
+import { readFile } from 'node:fs/promises'
 
 test('water records persist, stay isolated by owner, and sum per local calendar day', () => {
   const data = new Map<string, unknown>()
@@ -26,4 +28,68 @@ test('storage failures are surfaced rather than reported as successful saves', (
   assert.throws(() => store.add(waterDay(), 250), /storage full/)
   const broken = waterStore('a', { read: () => 'broken', write: () => assert.fail('must not overwrite unreadable data') })
   assert.throws(() => broken.add(waterDay(), 250), /读取失败/)
+})
+
+test('calendar-ready daily totals preserve past days and exclude undo tombstones', () => {
+  const data=new Map<string,unknown>(),storage={read:(key:string)=>data.get(key),write:(key:string,value:unknown)=>{data.set(key,value)}}
+  const yesterday=new Date(2026,9,19,23,59),today=new Date(2026,9,20,0,1),store=waterStore('a',storage)
+  store.add(waterDay(yesterday),500,yesterday)
+  const entry=store.add(waterDay(today),500,today)
+  store.add(waterDay(today),500,today)
+  store.remove(entry.id)
+  assert.deepEqual(waterStore('a',storage).dailyTotals(),[{day:'2026-10-20',cups:1,amount:500},{day:'2026-10-19',cups:1,amount:500}])
+})
+
+test('offline retries preserve a deletion made while its add is in flight', async () => {
+  const data=new Map<string,unknown>(),storage={read:(key:string)=>data.get(key),write:(key:string,value:unknown)=>{data.set(key,value)}}
+  const store=waterStore('a',storage),entry=store.add(waterDay(),500),seen:string[]=[]
+  await assert.rejects(store.flush(async()=>{throw new Error('offline')}),/offline/)
+  assert.equal(store.entries().length,1)
+  await store.flush(async op=>{seen.push(op.entry?'add':'delete');if(op.entry)store.remove(entry.id)})
+  assert.deepEqual(seen,['add','delete'])
+  assert.equal(store.pending().length,0)
+  assert.equal(store.entries().length,0)
+})
+
+test('cloud merging retains pending local changes and converges after acknowledgement', async () => {
+  const data=new Map<string,unknown>(),storage={read:(key:string)=>data.get(key),write:(key:string,value:unknown)=>{data.set(key,value)}}
+  const store=waterStore('a',storage),local=store.add(waterDay(),500)
+  store.merge([{id:'remote',day:waterDay(),amount:500,createdAt:new Date().toISOString()}])
+  assert.equal(store.entries().length,2)
+  store.remove('remote')
+  store.merge([{id:'remote',day:waterDay(),amount:500,createdAt:new Date().toISOString()}])
+  assert.deepEqual(store.entries().map(e=>e.id),[local.id])
+  await store.flush(async()=>{})
+  store.merge([{...local,deleted:true}])
+  assert.equal(store.entries().length,0)
+})
+
+test('millilitre-era logs migrate without changing dates or losing amounts', async () => {
+  const legacy=[{id:'old',day:'2026-10-19',amount:330,createdAt:'2026-10-19T12:00:00.000Z'}]
+  let value:unknown=legacy
+  const store=waterStore('a',{read:()=>value,write:(_key,next)=>{value=next}})
+  assert.deepEqual(store.entries(),legacy)
+  await store.flush(async op=>{assert.equal(op.entry?.amount,330)})
+  assert.equal(store.dailyTotals()[0].amount,330)
+  assert.equal(store.pending().length,0)
+})
+
+test('fixed cup mood progression and overflow feedback stop encouraging more water', () => {
+  assert.equal(WATER_CUP_ML,500)
+  assert.deepEqual([0,1,2,3,4].map(waterMood),['dry','waking','happy','satisfied','stuffed'])
+  assert.equal(waterMood(100),'stuffed')
+  assert.match(waterPraise(4,1),/别为了哄我继续喝/)
+})
+
+test('water invitation is public, routes to its own page and never embeds a private log', async () => {
+  const source=await readFile('src/services/water-share.ts','utf8'),page=await readFile('src/pages/water-share/water-share.vue','utf8')
+  assert.match(source,/WATER_SHARE_ROUTE = '\/pages\/water-share\/water-share'/)
+  assert.doesNotMatch(source,/cachedHome|currentWaterStore|getStorageSync|owner:|cups:/)
+  assert.match(page,/open-type="share"/)
+  assert.match(page,/:interactive="false"/)
+  assert.match(page,/onShareAppMessage\(waterFriendShare\)/)
+  const image=await readFile('src/static/share/water-card.png')
+  assert.equal(image.readUInt32BE(16),1000);assert.equal(image.readUInt32BE(20),800)
+  const waterPage=await readFile('src/pages/water/water.vue','utf8')
+  assert.doesNotMatch(waterPage,/<details|referenceCopy|storage-note|<picker|<input/)
 })

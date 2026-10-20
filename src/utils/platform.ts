@@ -38,6 +38,9 @@ export function shareText({ title, content, href = '' }: { title: string; conten
 export function publicShareUrl(route: string) {
   const configured = String(import.meta.env.VITE_PUBLIC_BASE_URL || '').trim().replace(/\/$/, '')
   const apiBase = String(import.meta.env.VITE_API_BASE || '').trim().replace(/\/$/, '')
-  const origin = configured || (/^https?:\/\//i.test(apiBase) ? apiBase.replace(/\/api$/i, '') : '')
+  let origin = configured || (/^https?:\/\//i.test(apiBase) ? apiBase.replace(/\/api$/i, '') : '')
+  // #ifdef H5
+  if (!origin && /^https?:$/.test(window.location.protocol)) origin = window.location.origin
+  // #endif
   return origin && /^\/pages\//.test(route) ? `${origin}/#${route}` : ''
 }

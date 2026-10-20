@@ -201,7 +201,7 @@ export async function request<T>(path:string,method:'GET'|'POST'|'PUT'|'DELETE'=
   const body=itemWrite?await prepareItemUploads(payload):data
   const response=await remoteRequest<T>(path,method,body,options)
   const result=itemWrite?retainLocalImages(response as Item,payload) as T:response
-  if(path==='/me'&&method==='DELETE'&&snapshot)uni.removeStorageSync(`offline-items-v1:${snapshot.user.id}`)
+  if(path==='/me'&&method==='DELETE'&&snapshot){uni.removeStorageSync(`offline-items-v1:${snapshot.user.id}`);uni.removeStorageSync(`water-v1:${snapshot.user.id}`)}
   if(session!==String(uni.getStorageSync('session')||''))throw new ApiError('账号已切换，请重新打开内容',409,'SESSION_CHANGED')
   if(path==='/items'&&method==='GET'&&snapshot){const latest=cachedHome();return outbox(snapshot.user).merge((result as Item[]).map(item=>retainLocalImages(item,latest?.items.find(value=>value.id===item.id)))) as T}
   if(path==='/me'&&method==='GET')saveHomeSnapshot(session,{user:result as User,items:cachedHome()?.items||[],messages:cachedHome()?.messages||[]})
