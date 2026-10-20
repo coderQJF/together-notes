@@ -5,6 +5,10 @@
       "style": { "navigationStyle": "custom", "enablePullDownRefresh": false }
     },
     {
+      "path": "pages/water/water",
+      "style": { "navigationStyle": "custom", "navigationBarTitleText": "饮水记录" }
+    },
+    {
       "path": "pages/detail/detail",
       "style": { "navigationStyle": "custom", "navigationBarTitleText": "详情" }
     },

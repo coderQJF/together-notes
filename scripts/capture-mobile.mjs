@@ -316,6 +316,8 @@ function route(path, nonce) {
 
 const screenNames = new Set((process.env.CAPTURE_SCREENS || '').split(',').map(value => value.trim()).filter(Boolean))
 const screens = [
+  { name: 'water-empty', path: '/pages/water/water', ready: '今天喝了多少水', anonymous: true, water: 'empty' },
+  { name: 'water-flow', path: '/pages/index/index', ready: '饮水记录', anonymous: true, water: 'flow' },
   { name: 'index-login', path: '/pages/index/index?login=1', ready: '以前用过微信小程序', anonymous: true },
   { name: 'guest-index', path: '/pages/index/index', ready: '从第一件小事开始', anonymous: true, guest: true },
   { name: 'guest-search', path: '/pages/index/index', ready: '游客本机搜索', anonymous: true, guest: true, guestSeed: true, click: '搜搜', clicked: '搜搜我们的小记', ask: '游客', answered: '相关内容' },
@@ -436,6 +438,31 @@ try {
       await page.call('Page.navigate', { url: route(screen.path, ++navigationNonce) })
       await wait(500)
       await waitForText(page, screen.ready)
+      if (screen.water) {
+        await page.call('Runtime.evaluate', { expression: `localStorage.removeItem('water-v1:local-guest')` })
+        if (screen.water === 'flow') {
+          await page.call('Runtime.evaluate', { expression: `document.querySelector('.water-entry').click()` })
+          await waitForText(page, '今天喝了多少水')
+          await page.call('Runtime.evaluate', { expression: `document.querySelectorAll('.presets uni-button')[1].click()` })
+          await wait(150)
+          await page.call('Runtime.evaluate', { expression: `(() => { const field=document.querySelector('.custom input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'330');field.dispatchEvent(new Event('input',{bubbles:true})) })()` })
+          await wait(100)
+          await page.call('Runtime.evaluate', { expression: `document.querySelector('.custom uni-button').click()` })
+          await page.call('Page.reload', { ignoreCache: true })
+          await waitForText(page, '今天喝了多少水')
+          const total = await page.call('Runtime.evaluate', { expression: `document.querySelector('.number').textContent`, returnByValue: true })
+          if (total.result.value !== '580') throw new Error('Water entries did not survive reload')
+          await page.call('Runtime.evaluate', { expression: `document.querySelector('.entry .row-action').click()` })
+          await waitForText(page, '删除这笔')
+          await page.call('Runtime.evaluate', { expression: `document.querySelector('.uni-modal__btn_primary').click()` })
+          await wait(200)
+          const remaining = await page.call('Runtime.evaluate', { expression: `document.querySelector('.number').textContent`, returnByValue: true })
+          if (!['250', '330'].includes(remaining.result.value)) throw new Error('Deleting a water entry did not update total')
+        } else {
+          await page.call('Page.reload', { ignoreCache: true })
+          await waitForText(page, '这一天还没有记录')
+        }
+      }
       if (screen.cancelLogin) {
         await page.call('Runtime.evaluate', { expression: `document.querySelector('.guest-back').click()` })
         await waitForText(page, '随手记下')
