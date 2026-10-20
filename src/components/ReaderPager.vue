@@ -40,7 +40,7 @@ const pages = computed(() => paginateReaderText(props.content, pageLayout.value)
 const visiblePage = computed(() => pages.value[pageIndex.value] || pages.value[0])
 const previewPage = computed(() => pages.value[previewIndex.value])
 const copyStyle = computed(() => ({ fontSize: `${props.fontSize}px`, lineHeight: `${props.fontSize * props.lineHeight}px` }))
-const leafStyle = computed(() => dragX.value ? { transform: `translate3d(${dragX.value}px,0,0)` } : {})
+const leafStyle = computed(() => dragX.value ? { transform: `translate3d(${dragX.value}px,0,0) rotateY(${dragX.value / Math.max(1, layout.value.width) * 8}deg)` } : {})
 const readyToRead = computed(() => layout.value.width > 0 && layout.value.height > 0)
 
 function announce() {
@@ -84,7 +84,9 @@ function prepareMeasurement() {
 
 function measureViewport() {
   nextTick(() => {
-    uni.createSelectorQuery().in(instance?.proxy).select('.reader-page-viewport').boundingClientRect((rect: any) => {
+    // Measure the untransformed current body, never the preview leaf. Header,
+    // footer and page margins travel with the sheet but don't hold body text.
+    uni.createSelectorQuery().in(instance?.proxy).select('.reader-leaf-current .reader-page-viewport').boundingClientRect((rect: any) => {
       if (rect?.width > 0 && rect?.height > 0) layout.value = { width: rect.width, height: rect.height }
     }).exec()
   })
@@ -200,25 +202,29 @@ defineExpose({ turn, measureViewport })
 </script>
 
 <template>
-  <view class="reader-pager" @touchmove.stop.prevent>
-    <view class="pager-header"><slot name="header" /></view>
-    <view class="reader-page-viewport" @click="tap" @touchstart="onTouchStart" @touchmove.stop.prevent="onTouchMove" @touchend="onTouchEnd" @touchcancel="cancelTouch">
-      <view v-if="previewPage && (turning || dragX)" class="reader-leaf reader-leaf-preview reader-copy" :style="copyStyle" aria-hidden="true">
-        <text v-for="line in previewPage.lines" :key="line.start" class="reader-line" :class="{ indented: line.indent }" :style="{ height: `${line.height}px` }">{{ line.text.replace(/\t/g, '  ') || '\u00a0' }}</text>
+  <view class="reader-pager" @click="tap" @touchstart="onTouchStart" @touchmove.stop.prevent="onTouchMove" @touchend="onTouchEnd" @touchcancel="cancelTouch">
+      <view v-if="previewPage && (turning || dragX)" class="reader-leaf reader-leaf-preview" aria-hidden="true">
+        <view class="pager-header"><slot name="header" :index="previewIndex" :count="pages.length" /></view>
+        <view class="reader-page-viewport reader-copy" :style="copyStyle">
+          <text v-for="line in previewPage.lines" :key="line.start" class="reader-line" :class="{ indented: line.indent }" :style="{ height: `${line.height}px` }">{{ line.text.replace(/\t/g, '  ') || '\u00a0' }}</text>
+        </view>
+        <view class="pager-footer"><text class="tap-hint">左右滑动翻页 · 轻触显示操作</text><text class="page-counter">{{ previewIndex + 1 }} / {{ pages.length }} 页</text></view>
       </view>
-      <view class="reader-leaf reader-copy" :class="[turning, { dragging: dragX !== 0 }]" :style="[copyStyle, leafStyle]" :data-page="pageIndex + 1" :data-pages="pages.length" :data-start="visiblePage.start" :data-end="visiblePage.end">
-        <template v-if="readyToRead && content">
-          <text v-for="line in visiblePage.lines" :key="line.start" class="reader-line" :class="{ indented: line.indent }" :style="{ height: `${line.height}px` }">{{ line.text.replace(/\t/g, '  ') || '\u00a0' }}</text>
-        </template>
-        <slot v-else />
+      <view class="reader-leaf reader-leaf-current" :class="[turning, { dragging: dragX !== 0, 'drag-previous': dragX > 0 }]" :style="leafStyle" :data-page="pageIndex + 1" :data-pages="pages.length" :data-start="visiblePage.start" :data-end="visiblePage.end">
+        <view class="pager-header"><slot name="header" :index="pageIndex" :count="pages.length" /></view>
+        <view class="reader-page-viewport reader-copy" :style="copyStyle">
+          <template v-if="readyToRead && content">
+            <text v-for="line in visiblePage.lines" :key="line.start" class="reader-line" :class="{ indented: line.indent }" :style="{ height: `${line.height}px` }">{{ line.text.replace(/\t/g, '  ') || '\u00a0' }}</text>
+          </template>
+          <slot v-else />
+        </view>
+        <view class="pager-footer"><text class="tap-hint">左右滑动翻页 · 轻触显示操作</text><text class="page-counter">{{ pageIndex + 1 }} / {{ pages.length }} 页</text></view>
         <view v-if="turning || dragX" class="page-curl-shade" />
       </view>
-    </view>
-    <view class="pager-footer"><text class="tap-hint">左右滑动翻页 · 轻触显示操作</text><text class="page-counter">{{ pageIndex + 1 }} / {{ pages.length }} 页</text></view>
     <canvas canvas-id="reader-measure" id="reader-measure" class="reader-measure" aria-hidden="true" />
   </view>
 </template>
 
 <style scoped>
-.reader-pager{display:flex;width:100%;height:100%;min-height:0;flex-direction:column;overflow:hidden;touch-action:none;overscroll-behavior:none}.pager-header{flex:0 0 auto;padding-bottom:18px}.reader-page-viewport{position:relative;min-height:0;flex:1;overflow:hidden;perspective:1400px;touch-action:none;contain:layout paint}.reader-leaf{position:absolute;z-index:2;inset:0;overflow:hidden;backface-visibility:hidden;background:var(--reader-background,#faf8f2);background-image:var(--reader-texture,none);color:var(--reader-text,#3e382d);transform-origin:left center}.reader-copy{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;letter-spacing:.4px}.reader-line{display:block;max-width:100%;overflow:visible;white-space:pre;word-break:normal}.reader-line.indented{text-indent:2em}.reader-leaf-preview{z-index:1}.reader-leaf.dragging{box-shadow:12px 0 22px rgba(30,24,18,.18)}.page-curl-shade{position:absolute;top:0;right:0;bottom:0;width:30px;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(73,64,50,.06) 40%,rgba(73,64,50,.2) 80%,rgba(255,255,255,.2));border-right:1px solid rgba(73,64,50,.12)}.curl-next{animation:curlNext 280ms cubic-bezier(.25,.7,.2,1) forwards;box-shadow:12px 0 28px rgba(30,24,18,.22)}.curl-previous{transform-origin:right center;animation:curlPrevious 280ms cubic-bezier(.25,.7,.2,1) forwards;box-shadow:-12px 0 28px rgba(30,24,18,.22)}.curl-previous .page-curl-shade{right:auto;left:0;transform:scaleX(-1)}.pager-footer{display:flex;min-height:35px;flex:0 0 35px;align-items:flex-end;justify-content:space-between;gap:8px;color:var(--reader-muted,#8a7b61);font-size:10px;line-height:18px}.tap-hint{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.page-counter{flex:0 0 auto;white-space:nowrap}.reader-measure{position:fixed;left:-100px;top:-100px;width:1px;height:1px;opacity:0;pointer-events:none}@keyframes curlNext{0%{transform:translateX(0) rotateY(0)}55%{transform:translateX(-45%) rotateY(-12deg)}100%{transform:translateX(-103%) rotateY(-18deg)}}@keyframes curlPrevious{0%{transform:translateX(0) rotateY(0)}55%{transform:translateX(45%) rotateY(12deg)}100%{transform:translateX(103%) rotateY(18deg)}}@media(prefers-reduced-motion:reduce){.curl-next,.curl-previous{animation-duration:1ms}}
+.reader-pager{position:relative;width:100%;height:100%;min-height:0;overflow:hidden;perspective:1400px;touch-action:none;overscroll-behavior:none}.pager-header{flex:0 0 auto;padding-bottom:18px}.reader-page-viewport{position:relative;min-height:0;flex:1;overflow:hidden;touch-action:none;contain:layout paint}.reader-leaf{position:absolute;z-index:2;inset:0;display:flex;flex-direction:column;padding:14px calc(24px + env(safe-area-inset-right)) 12px calc(24px + env(safe-area-inset-left));box-sizing:border-box;overflow:hidden;backface-visibility:hidden;background:var(--reader-background,#faf8f2);background-image:var(--reader-texture,none);color:var(--reader-text,#3e382d);transform-origin:left center}.reader-copy{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;letter-spacing:.4px}.reader-line{display:block;max-width:100%;overflow:visible;white-space:pre;word-break:normal}.reader-line.indented{text-indent:2em}.reader-leaf-preview{z-index:1}.reader-leaf.dragging{box-shadow:12px 0 22px rgba(30,24,18,.18)}.reader-leaf.drag-previous{transform-origin:right center;box-shadow:-12px 0 22px rgba(30,24,18,.18)}.page-curl-shade{position:absolute;top:0;right:0;bottom:0;width:30px;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(73,64,50,.06) 40%,rgba(73,64,50,.2) 80%,rgba(255,255,255,.2));border-right:1px solid rgba(73,64,50,.12)}.curl-next{animation:curlNext 280ms cubic-bezier(.25,.7,.2,1) forwards;box-shadow:12px 0 28px rgba(30,24,18,.22)}.curl-previous{transform-origin:right center;animation:curlPrevious 280ms cubic-bezier(.25,.7,.2,1) forwards;box-shadow:-12px 0 28px rgba(30,24,18,.22)}.curl-previous .page-curl-shade,.drag-previous .page-curl-shade{right:auto;left:0;transform:scaleX(-1)}.pager-footer{display:flex;min-height:35px;flex:0 0 35px;align-items:flex-end;justify-content:space-between;gap:8px;color:var(--reader-muted,#8a7b61);font-size:10px;line-height:18px}.tap-hint{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.page-counter{flex:0 0 auto;white-space:nowrap}.reader-measure{position:fixed;left:-100px;top:-100px;width:1px;height:1px;opacity:0;pointer-events:none}@keyframes curlNext{0%{transform:translateX(0) rotateY(0)}55%{transform:translateX(-45%) rotateY(-12deg)}100%{transform:translateX(-103%) rotateY(-18deg)}}@keyframes curlPrevious{0%{transform:translateX(0) rotateY(0)}55%{transform:translateX(45%) rotateY(12deg)}100%{transform:translateX(103%) rotateY(18deg)}}@media(max-width:360px){.reader-leaf{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}}@media(prefers-reduced-motion:reduce){.curl-next,.curl-previous{animation-duration:1ms}}
 </style>

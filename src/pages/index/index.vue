@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import {ref,reactive,computed,onUnmounted,nextTick} from 'vue';
+import {ref,reactive,computed,onMounted,onUnmounted,nextTick,watch} from 'vue';
 import {onLoad,onShow,onHide,onShareAppMessage,onShareTimeline} from '@dcloudio/uni-app';
 import {appFriendShare,appTimelineShare,enableAppShareMenu} from '../../services/app-share';
 import BulkSelectionBar from '../../components/BulkSelectionBar.vue';
+import BulkSelectionToolbar from '../../components/BulkSelectionToolbar.vue';
+import SelectableCard from '../../components/SelectableCard.vue';
+import {cancelPendingHolds} from '../../services/hold-gesture';
 import JellyTabs from '../../components/JellyTabs.vue';
 import LegalLinks from '../../components/LegalLinks.vue';
 import StatusIcon from '../../components/StatusIcon.vue';
@@ -59,12 +62,14 @@ const quickPrompts=['明天是什么日子？','这周我们有哪些安排？',
 const list=computed(()=>items.value.filter(i=>i.kind===(page.value==='reminders'?'reminder':'note')&&(scope.value==='all'||i.scope===scope.value)&&(!query.value||(i.title+' '+i.content).includes(query.value))).sort((a,b)=>Number(!!b.pinned)-Number(!!a.pinned)||(b.updatedAt||'').localeCompare(a.updatedAt||'')));
 const selectedIdSet=computed(()=>new Set(selectedItemIds.value));
 const selectedCount=computed(()=>selectedItemIds.value.length);
+const selectableItems=computed(()=>list.value.filter(canDeleteItem));
+const allItemsSelected=computed(()=>Boolean(selectableItems.value.length)&&selectableItems.value.every(isItemSelected));
 const unread=computed(()=>messages.value.filter(m=>!m.seen).length);
 const aiCanSearch=computed(()=>Boolean(aiQuery.value.trim()&&!aiSearching.value));
 const aiStrategyHint=computed(()=>aiStrategies.find(item=>item.key===aiStrategy.value)?.hint||'');
 const aiWebSearchEnabled=computed(()=>Boolean(aiStatus.value?.configured&&(aiStatus.value?.webSearchEnabled??aiStatus.value?.webSearch)));
 const aiOnlineIssue=computed(()=>aiResult.value?.mode==='empty'&&Boolean(aiResult.value.fallbackCode)&&!['AI_UNCONFIGURED','AI_WEB_SEARCH_DISABLED'].includes(aiResult.value.fallbackCode||''));
-let timer:ReturnType<typeof setInterval>|undefined,refreshing:Promise<void>|undefined,mutationEpoch=0,refreshSequence=0,suppressedCardId='',suppressCardClickUntil=0;
+let timer:ReturnType<typeof setInterval>|undefined,refreshing:Promise<void>|undefined,mutationEpoch=0,refreshSequence=0,selectionSession='';
 function showInlineError(e:unknown){error.value=errorMessage(e,'暂时无法加载，请稍后重试')}
 function showActionError(e:unknown){uni.showToast({title:errorMessage(e,'操作没有完成，请稍后重试'),icon:'none'})}
 function toUiError(e:unknown,fallback='请求失败'):UiError{const value=e as {code?:string};return{message:errorMessage(e,fallback),code:value?.code}}
@@ -93,9 +98,12 @@ function detail(item:Item){if(!item.id)return;uni.navigateTo({url:`/pages/detail
 function canDeleteItem(item:Item){return Boolean(item.id&&user.value?.id&&item.owner===user.value.id)}
 function isItemSelected(item:Item){return Boolean(item.id&&selectedIdSet.value.has(item.id))}
 function lockedItemLabel(item:Item){return item.owner?'对方创建':'不可删除'}
-function exitSelectionMode(){selectionMode.value=false;selectedItemIds.value=[];suppressedCardId='';suppressCardClickUntil=0}
+function exitSelectionMode(){cancelPendingHolds();selectionMode.value=false;selectedItemIds.value=[];selectionSession=''}
+function toggleAllItems(){if(bulkDeleting.value)return;selectedItemIds.value=allItemsSelected.value?[]:selectableItems.value.map(item=>item.id!)}
+watch(()=>user.value?.id,(next,previous)=>{if(previous&&next!==previous)exitSelectionMode()});
 function reconcileSelection(nextItems:Item[]){
  if(!selectionMode.value)return;
+ if(selectionSession!==String(uni.getStorageSync('session')||'')){exitSelectionMode();return}
  const selectableIds=new Set(nextItems.filter(canDeleteItem).map(item=>item.id!));
  selectedItemIds.value=selectedItemIds.value.filter(id=>selectableIds.has(id));
 }
@@ -107,15 +115,13 @@ function toggleItemSelection(item:Item){
  selectedItemIds.value=selectedIdSet.value.has(id)?selectedItemIds.value.filter(value=>value!==id):[...selectedItemIds.value,id];
 }
 function startItemSelection(item:Item){
- if(bulkDeleting.value)return;
+ if(bulkDeleting.value||selectionMode.value)return;
+ selectionSession=String(uni.getStorageSync('session')||'');
  selectionMode.value=true;keyboardOpen.value=false;uni.hideKeyboard();
- suppressedCardId=item.id||'';suppressCardClickUntil=Date.now()+800;
  if(canDeleteItem(item)&&item.id&&!selectedIdSet.value.has(item.id))selectedItemIds.value=[...selectedItemIds.value,item.id];
  else if(!canDeleteItem(item))explainLockedItem(item);
 }
 function handleCardClick(item:Item){
- if(item.id&&item.id===suppressedCardId&&Date.now()<=suppressCardClickUntil){suppressedCardId='';suppressCardClickUntil=0;return}
- suppressedCardId='';suppressCardClickUntil=0;
  if(selectionMode.value){toggleItemSelection(item);return}
  detail(item);
 }
@@ -160,11 +166,18 @@ onShareTimeline(appTimelineShare);
 // #endif
 onShow(()=>enableAppShareMenu(true));
  onLoad(async(options)=>{restoreHomeSnapshot();authRoute=options?.login==='1';if(authRoute)openLogin();try{
- await refresh()}catch(e){showInlineError(e)}finally{ready.value=true}});onShow(()=>{today.value=formatDayHeading();restoreHomeSnapshot();start();if(ready.value)refresh().then(()=>{if(page.value==='search')void loadAiStatus()}).catch(showInlineError)});onHide(()=>{clearInterval(timer);exitSelectionMode()});onUnmounted(()=>clearInterval(timer));
+ await refresh()}catch(e){showInlineError(e)}finally{ready.value=true}});onShow(()=>{today.value=formatDayHeading();restoreHomeSnapshot();start();if(ready.value)refresh().then(()=>{if(page.value==='search')void loadAiStatus()}).catch(showInlineError)});onHide(()=>{clearInterval(timer);cancelPendingHolds()});onUnmounted(()=>{clearInterval(timer);cancelPendingHolds()});
+// System panels can interrupt a finger without completing the touch. Only transient
+// press feedback is cancelled; selected items remain until an explicit action.
+// #ifdef H5 || APP-PLUS
+function cancelHiddenPress(){if(document.visibilityState==='hidden')cancelPendingHolds()}
+onMounted(()=>{if(typeof window!=='undefined')window.addEventListener('blur',cancelPendingHolds);if(typeof document!=='undefined')document.addEventListener('visibilitychange',cancelHiddenPress)});
+onUnmounted(()=>{if(typeof window!=='undefined')window.removeEventListener('blur',cancelPendingHolds);if(typeof document!=='undefined')document.removeEventListener('visibilitychange',cancelHiddenPress)});
+// #endif
 </script>
 <template>
 <view class="shell" :class="{ 'feed-shell': Boolean(user) && !authOpen && ['notes','reminders'].includes(page) }">
- <view class="header"><BulkSelectionBar v-if="selectionMode" class="header-selection" :selected-count="selectedCount" :deleting="bulkDeleting" @cancel="exitSelectionMode" @delete="deleteSelectedItems"/><view v-else class="brand-lockup"><button v-if="user" class="profile-trigger" hover-class="profile-pressed" :aria-label="user.partner?`进入我们的小空间，已与${user.partner.nickname}绑定`:'进入我们的小空间'" @click="openUs"><text class="profile-face">{{user.nickname.slice(0,1)}}</text></button><view class="wordmark"><text class="brand">小记</text><text class="brand-sub">TOGETHER</text></view></view></view>
+ <view class="header"><BulkSelectionBar v-if="selectionMode" class="header-selection" :selected-count="selectedCount" :deleting="bulkDeleting" @cancel="exitSelectionMode"/><view v-else class="brand-lockup"><button v-if="user" class="profile-trigger" hover-class="profile-pressed" :aria-label="user.partner?`进入我们的小空间，已与${user.partner.nickname}绑定`:'进入我们的小空间'" @click="openUs"><text class="profile-face">{{user.nickname.slice(0,1)}}</text></button><view class="wordmark"><text class="brand">小记</text><text class="brand-sub">TOGETHER</text></view></view></view>
  <view v-if="!ready" class="empty">正在打开小记…</view>
   <view v-else-if="authOpen" class="login">
    <button class="guest-back" :disabled="pending.login" @click="closeLogin">{{user?.guest?'暂不登录，继续本地使用':'返回小记'}}</button>
@@ -201,21 +214,28 @@ onShow(()=>enableAppShareMenu(true));
     <JellyTabs v-if="page==='notes'" :model-value="scope" class="page-tabs" :options="noteScopeTabs" aria-label="筛选小记" @change="selectNoteScope" />
     <JellyTabs v-else class="page-tabs" :model-value="category" :options="reminderTabs" aria-label="提醒分类" @change="selectReminderCategory" />
    </view>
-  <scroll-view class="feed-scroll scrollbar-hidden" scroll-y enhanced :show-scrollbar="false">
+  <scroll-view class="feed-scroll scrollbar-hidden" scroll-y enhanced :show-scrollbar="false" @scroll="cancelPendingHolds">
    <view class="feed-list">
     <view v-if="!list.length" class="empty"><text class="section-title">{{query?'没有找到相关内容':'从第一件小事开始'}}</text><text class="muted block">{{query?'换个关键词试试。':'点击右下角，记下你想记住的。'}}</text></view>
-     <view
+     <SelectableCard
       v-for="i in list"
       :key="i.id"
       class="card"
-      :class="{butter:i.pinned,completed:i.done,'selection-active':selectionMode,'selected-card':isItemSelected(i),'selection-locked':selectionMode&&!canDeleteItem(i)}"
-      @longpress.stop.prevent="startItemSelection(i)"
-      @click="handleCardClick(i)"
+      :class="{butter:i.pinned,completed:i.done}"
+      :selecting="selectionMode"
+      :selected="isItemSelected(i)"
+      :locked="!canDeleteItem(i)"
+      :disabled="bulkDeleting"
+      :selection-label="canDeleteItem(i)?(isItemSelected(i)?'取消选择':'选择这条内容'):(i.owner?'对方创建，仅创建者可删除':'无法确认创建者，暂不可删除')"
+      @hold="startItemSelection(i)"
+      @activate="handleCardClick(i)"
+      @toggle="toggleItemSelection(i)"
      >
-      <view class="card-meta"><view class="meta-tags"><text class="meta-tag">{{i.scope==='shared'?'我们俩':'仅自己'}}</text><text v-if="i.pinned" class="meta-tag pin-tag">置顶</text><text v-if="selectionMode&&!canDeleteItem(i)" class="meta-tag locked-tag">{{lockedItemLabel(i)}}</text></view><text class="card-time">{{i.kind==='reminder'?format(i.nextAt):format(i.updatedAt)}}</text></view>
-      <view class="row" :class="{'selection-row':selectionMode}"><button v-if="selectionMode" class="selection-toggle" :class="{locked:!canDeleteItem(i)}" :aria-pressed="isItemSelected(i)" :aria-disabled="!canDeleteItem(i)" :aria-label="canDeleteItem(i)?(isItemSelected(i)?'取消选择':'选择这条内容'):(i.owner?'对方创建，仅创建者可删除':'无法确认创建者，暂不可删除')" @longpress.stop @click.stop="toggleItemSelection(i)"><StatusIcon :checked="isItemSelected(i)" :label="isItemSelected(i)?'已选择':'未选择'" /></button><text class="card-title">{{i.title}}</text><button v-if="i.kind==='reminder'&&!selectionMode" class="done" :disabled="pending['toggle:'+i.id]" :aria-label="i.done?'标记为待办':'标记为完成'" @longpress.stop @click.stop="toggle(i)"><view v-if="pending['toggle:'+i.id]" class="button-spinner status-spinner"/><StatusIcon :checked="Boolean(i.done)" /></button></view>
+      <template #meta><view class="card-meta"><view class="meta-tags"><text class="meta-tag">{{i.scope==='shared'?'我们俩':'仅自己'}}</text><text v-if="i.pinned" class="meta-tag pin-tag">置顶</text><text v-if="selectionMode&&!canDeleteItem(i)" class="meta-tag locked-tag">{{lockedItemLabel(i)}}</text></view><text class="card-time">{{i.kind==='reminder'?format(i.nextAt):format(i.updatedAt)}}</text></view></template>
+      <view class="row"><text class="card-title">{{i.title}}</text></view>
       <text v-if="i.content" class="excerpt">{{i.content}}</text><text class="muted small block">{{i.kind==='note'?(i.links.length?'附 '+i.links.length+' 个链接':'文字备忘'):(i.done?'已完成':({none:'单次',daily:'每天',weekly:'每周'} as any)[i.repeat||'none'])}}<!-- #ifdef APP-PLUS --> · 本机系统提醒<!-- #endif --><!-- #ifndef APP-PLUS --> · 站内提醒<!-- #endif --></text>
-     </view>
+      <template #action><button v-if="i.kind==='reminder'" class="done" :disabled="pending['toggle:'+i.id]" :aria-label="i.done?'标记为待办':'标记为完成'" @touchstart.stop @click.stop="toggle(i)"><view v-if="pending['toggle:'+i.id]" class="button-spinner status-spinner"/><StatusIcon :checked="Boolean(i.done)" /></button></template>
+     </SelectableCard>
    </view>
   </scroll-view>
  </view>
@@ -247,7 +267,8 @@ onShow(()=>enableAppShareMenu(true));
   <template v-else><view class="section-row"><text class="section-title">可以这样问</text><text class="muted small">点一下填入</text></view><button v-for="(prompt,index) in quickPrompts" :key="prompt" class="prompt-card" @click="choosePrompt(prompt)"><text class="prompt-index">0{{index+1}}</text><text>{{prompt}}</text><view class="prompt-arrow"/></button></template>
   <view class="model-card" :class="{unavailable:aiStatusError||aiOnlineIssue}"><view class="model-top"><view><text class="model-label">搜索能力</text><text class="section-title">{{aiStatusLoading?'正在检查联网配置':aiWebSearchEnabled?`本地搜索 + ${aiStatus?.model||'联网模型'}`:'本地搜索可用'}}</text></view><text class="model-status">{{aiStatusLoading?'检查中':aiOnlineIssue?'联网异常':aiWebSearchEnabled?'联网已配置':'仅本地'}}</text></view><view class="model-points"><text>本地搜索始终可用，不依赖模型连接</text><text>{{aiOnlineIssue?'最近一次联网没有成功，本地搜索不受影响':aiWebSearchEnabled?'本地没有结果时仅发送当前问题联网':'联网不可用时显示没有相关数据'}}</text><text>私人小记不会作为联网搜索内容发送</text></view><text v-if="aiStatusError" class="status-error">联网配置状态暂时无法检查，本地搜索不受影响。</text><button v-if="aiStatusError" class="model-action" @click="loadAiStatus">重新检查联网<view class="chevron-icon"/></button></view>
  </view>
- <view v-if="['notes','reminders','search'].includes(page)&&!keyboardOpen" class="floating"><view class="dock"><button v-for="t in tabs" :key="t.key" :aria-label="t.name+(t.key==='reminders'&&unread?'，'+unread+' 条未读':'')" :aria-current="page===t.key?'page':undefined" :class="{selected:page===t.key}" @click="switchPage(t.key)"><view class="tab-icon-wrap"><image class="nav-icon" :src="page===t.key?t.activeIcon:t.icon" mode="aspectFit"/><text v-if="t.key==='reminders'&&unread" class="nav-badge">{{unread>99?'99+':unread}}</text></view><text class="nav-label">{{t.name}}</text></button></view><button v-if="!selectionMode" class="add" aria-label="新建" @click="edit()"><view class="plus-icon"/></button></view>
+ <BulkSelectionToolbar v-if="selectionMode" :selected-count="selectedCount" :selectable-count="selectableItems.length" :all-selected="allItemsSelected" :deleting="bulkDeleting" @delete="deleteSelectedItems" @select-all="toggleAllItems"/>
+ <view v-else-if="['notes','reminders','search'].includes(page)&&!keyboardOpen" class="floating"><view class="dock"><button v-for="t in tabs" :key="t.key" :aria-label="t.name+(t.key==='reminders'&&unread?'，'+unread+' 条未读':'')" :aria-current="page===t.key?'page':undefined" :class="{selected:page===t.key}" @click="switchPage(t.key)"><view class="tab-icon-wrap"><image class="nav-icon" :src="page===t.key?t.activeIcon:t.icon" mode="aspectFit"/><text v-if="t.key==='reminders'&&unread" class="nav-badge">{{unread>99?'99+':unread}}</text></view><text class="nav-label">{{t.name}}</text></button></view><button class="add" aria-label="新建" @click="edit()"><view class="plus-icon"/></button></view>
  </template><text v-if="error" class="error">{{error}}</text>
 </view>
 </template>
@@ -267,7 +288,8 @@ onShow(()=>enableAppShareMenu(true));
 .subnav{display:flex;align-items:center;justify-content:space-between;min-height:44px;margin-bottom:16px}.back{display:inline-flex;align-items:center;gap:7px;width:auto;height:44px;min-height:44px;padding:0;margin:0 0 16px;border:0;background:transparent;line-height:1.4}.subnav .back{margin:0}.back::after{border:0}.back-icon{width:9px;height:9px;border-left:1.5px solid #867b68;border-bottom:1.5px solid #867b68;transform:rotate(45deg);margin-left:3px}.badge{display:inline-flex;align-items:center;height:28px;padding:0 11px;line-height:1;border-radius:8px}.detail-page>.headline,.editor-page>.headline,.simple-page>.headline,.us-page>.headline{margin-top:0}
 .form input,.search{height:50px;min-height:50px;padding:0 14px;line-height:1.5}.form textarea{padding:14px;line-height:1.6}.form input,.form textarea,.picker{overflow-wrap:anywhere}.picker{display:flex;align-items:center;min-height:50px}.picker-readonly{justify-content:space-between;background:#f4f0e7;color:#494032}.chevron-down{width:8px;height:8px;flex:0 0 8px;border-right:1.5px solid #786d5b;border-bottom:1.5px solid #786d5b;transform:rotate(45deg);margin:-4px 3px 0 12px}.attachment-button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:48px;min-height:48px;margin:0;padding:0 16px;border:1px solid #ece5d6;background:#fff;line-height:1.4}.mini-plus-icon{width:14px;height:14px;position:relative}.mini-plus-icon::before,.mini-plus-icon::after{content:'';position:absolute;left:1px;top:6px;width:12px;height:1.5px;border-radius:2px;background:#494032}.mini-plus-icon::after{transform:rotate(90deg)}.editor-page .setting text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.editor-page .setting button{flex:0 0 auto;min-width:44px;height:44px;margin:0}
  .check{position:relative;width:20px;height:20px}.check.checked::after{content:'';position:absolute;left:50%;top:48%;width:5px;height:10px;border-right:2px solid #494032;border-bottom:2px solid #494032;transform:translate(-50%,-50%) rotate(45deg)}.done{display:flex;align-items:center;justify-content:center;width:44px;min-width:44px;height:44px;min-height:44px;margin:-8px -8px -8px 0;padding:0}.done::after{border:0}
-.selection-active{transition:border-color .16s ease,box-shadow .16s ease,opacity .16s ease}.selection-active.completed{opacity:.82}.selected-card{border-color:#b8953d;box-shadow:0 0 0 1px rgba(184,149,61,.34)}.selection-locked{background:#f7f4ed}.selection-locked.butter{background:#f3e5ba}.selection-row{justify-content:flex-start;gap:8px}.selection-row .card-title{flex:1;min-width:0}.selection-toggle{display:flex;align-items:center;justify-content:center;width:44px;min-width:44px;height:44px;min-height:44px;margin:-8px 0 -8px -8px;padding:0;border:0;background:transparent}.selection-toggle::after{border:0}.selection-toggle.locked{opacity:.36}.locked-tag{max-width:78px;overflow:hidden;border-color:#e4d8ca;background:#f4eee7;color:#8c675c;text-overflow:ellipsis}
+.locked-tag{max-width:78px;overflow:hidden;border-color:#e4d8ca;background:#f4eee7;color:#8c675c;text-overflow:ellipsis}
+.card-meta{gap:6px}.meta-tags{max-width:100%;overflow:hidden}.meta-tag{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}.card-time{max-width:50%;overflow:hidden;text-overflow:ellipsis}.done{margin:0!important}
 .button-spinner{width:16px;height:16px;flex:0 0 16px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:button-spin .7s linear infinite}.status-spinner{margin-right:0;color:#a4873e}@keyframes button-spin{to{transform:rotate(360deg)}}
 .notice{min-height:48px;align-items:center}.notice-action,.setting-value{display:flex;align-items:center;gap:8px}.link{overflow-wrap:anywhere}.card-title{line-height:1.45}.setting{min-height:56px;padding:16px 0}.profile-form .label{margin:18px 0 8px}.nickname-save{display:flex;align-items:center;justify-content:center;width:100%;height:48px;min-height:48px;margin:12px 0 0;border:1px solid #ece5d6;border-radius:14px;background:#fff;line-height:1.4}.us-page .couple{gap:18px;margin:28px 0}.us-page .avatar{width:56px;height:56px;font-size:22px}.us-page .pair-card{padding:18px}.bound-title{display:flex;align-items:center;gap:8px}.bound-title image{display:block;width:18px;height:18px}.logout{display:flex;align-items:center;justify-content:center;width:100%;height:44px;min-height:44px;margin:20px 0 8px;border:1px solid #ece5d6;background:transparent;line-height:1.4}.simple-page>.primary{margin-top:16px}.invite-code{font-variant-numeric:tabular-nums}.actions button:not(.primary),.danger{border:1px solid #ece5d6;background:#fff}
  .page-tabs{margin:16px 0 22px}.ask-page{padding-bottom:16px}.ask-kicker{display:flex;align-items:center;gap:7px;color:#786d5b;font-size:11px}.preview-dot{width:7px;height:7px;border-radius:50%;background:#9a7626;box-shadow:0 0 0 4px #f7e7ad}.ask-headline{margin-top:18px}.ask-subtitle{max-width:520px}.strategy-control{margin-top:20px}.strategy-hint{display:block;margin:8px 3px 0;color:#998d79;font-size:10px}.ask-composer{margin-top:17px;padding:16px 16px 12px;border:1px solid #ded5c4;border-radius:22px;background:#fff;box-shadow:0 8px 25px rgba(73,64,50,.05);transition:border-color .2s,box-shadow .2s}.ask-composer.focused{border-color:#b99a45;box-shadow:0 10px 30px rgba(137,108,40,.12)}.ask-composer textarea{display:block;width:100%;min-height:76px;padding:0;background:transparent;color:#3e382d;font-size:16px;line-height:1.7}.composer-footer{display:flex;align-items:center;justify-content:space-between;margin-top:9px;color:#a09480;font-size:10px}.composer-footer button{display:flex;align-items:center;justify-content:center;width:42px;height:42px;min-height:42px;margin:0;padding:0;border:0;border-radius:14px;background:#494032}.send-arrow{position:relative;width:16px;height:16px}.send-arrow::before{content:'';position:absolute;left:2px;top:7px;width:12px;height:1.5px;border-radius:2px;background:#fff9e9}.send-arrow::after{content:'';position:absolute;right:2px;top:4px;width:6px;height:6px;border-top:1.5px solid #fff9e9;border-right:1.5px solid #fff9e9;transform:rotate(45deg)}.scope-scroll{width:calc(100% + 48px);margin:14px -24px 0;white-space:nowrap}.scope-row{display:inline-flex;gap:8px;min-width:100%;padding:0 24px;box-sizing:border-box}.scope-row button{display:flex;align-items:center;justify-content:center;width:auto;height:38px;min-height:38px;flex:0 0 auto;margin:0;padding:0 15px;border:1px solid #e5dece;border-radius:19px;background:#fff;color:#786d5b;font-size:12px}.scope-row button.active{border-color:#494032;background:#494032;color:#fff9e9}.privacy-note{display:flex;align-items:flex-start;gap:10px;margin:15px 2px 0;color:#786d5b;font-size:11px;line-height:1.65}.lock-icon{position:relative;width:18px;height:18px;flex:0 0 18px;margin-top:1px}.lock-icon::before{content:'';position:absolute;z-index:0;left:5px;top:0;width:8px;height:9px;box-sizing:border-box;border:1.5px solid #9a7626;border-bottom:0;border-radius:5px 5px 0 0}.lock-icon::after{content:'';position:absolute;z-index:1;left:2px;bottom:1px;width:14px;height:11px;box-sizing:border-box;border:1.5px solid #9a7626;border-radius:3px;background:#faf8f2}.lock-keyhole{position:absolute;z-index:2;left:8px;bottom:5px;width:2px;height:4px;border-radius:2px;background:#9a7626}.section-row{display:flex;align-items:center;justify-content:space-between;margin:28px 2px 10px}.prompt-card{display:flex;align-items:center;gap:13px;width:100%;height:auto;min-height:62px;margin:9px 0;padding:12px 15px;border:1px solid #ece5d6;border-radius:17px;background:#fff;color:#494032;text-align:left;line-height:1.5}.prompt-card>text:nth-child(2){min-width:0;flex:1}.prompt-index{color:#ad8425;font-size:10px;font-weight:700}.prompt-arrow{width:8px;height:8px;flex:0 0 8px;margin-right:3px;border-top:1.5px solid #9b8d75;border-right:1.5px solid #9b8d75;transform:rotate(45deg)}.answer-preview{margin-top:25px;padding:20px;border:1px solid #efd98d;border-radius:22px;background:#fff9e9}.answer-heading{display:flex;align-items:center;gap:12px}.spark-mark{display:flex;align-items:center;justify-content:center;width:42px;height:42px;flex:0 0 42px;border-radius:14px;background:#f7e7ad;color:#80611c;font-size:19px}.answer-heading .block{margin:3px 0 0}.answer-copy{display:block;margin-top:16px;color:#6f6555;line-height:1.8}.answer-anatomy{margin-top:17px;border:1px solid #eadfbf;border-radius:15px;background:rgba(255,255,255,.66);overflow:hidden}.answer-anatomy>view{display:flex;align-items:center;gap:12px;min-height:46px;padding:0 14px;border-bottom:1px solid #eee4c8}.answer-anatomy>view:last-child{border-bottom:0}.answer-anatomy>view text:first-child{color:#ad8425;font-size:9px;font-weight:700}.model-card{margin-top:29px;padding:20px;border-radius:22px;background:#f1ede3}.model-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.model-label{display:block;margin-bottom:4px;color:#786d5b;font-size:11px}.model-status{display:inline-flex;align-items:center;height:27px;padding:0 9px;border-radius:9px;background:#f7e7ad;color:#765c20;font-size:10px;white-space:nowrap}.model-points{display:flex;flex-direction:column;gap:7px;margin:16px 0;color:#786d5b;font-size:11px}.model-points text{position:relative;padding-left:14px}.model-points text::before{content:'';position:absolute;left:1px;top:6px;width:5px;height:5px;border-radius:50%;background:#9a7626}.model-action{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:44px;min-height:44px;margin:0;border:1px solid #ded5c4;border-radius:14px;background:#fff;color:#494032;font-size:12px}

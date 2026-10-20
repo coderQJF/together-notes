@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onHide, onShow, onUnload } from '@dcloudio/uni-app'
 import SubpageHeader from '../../components/SubpageHeader.vue'
 import ActionListRow from '../../components/ActionListRow.vue'
-import { getCloudNovelCatalog, listCloudNovels, type CloudNovelSummary } from '../../services/api'
+import { listCloudNovels, type CloudNovelSummary } from '../../services/api'
+import { getCachedReaderCatalog } from '../../services/reader-cloud'
 import { ensureReaderVipAccess } from '../../services/reader-access'
 import { chooseReaderTextFile, readerTitleFromFileName, type ReaderImportProgress } from '../../services/reader-import'
 import {
@@ -27,6 +28,8 @@ const error = ref('')
 const cloudNovels = ref<CloudNovelSummary[]>([])
 const cloudError = ref('')
 const openingId = ref('')
+let openingRequest = 0
+let navigationCommitted = false
 
 const orderedBooks = computed(() => [...books.value].sort((left, right) => (right.progress.updatedAt || right.updatedAt).localeCompare(left.progress.updatedAt || left.updatedAt)))
 const importStep = computed(() => ({ choosing: 1, reading: 2, decoding: 3, organizing: 4, saving: 5 }[importState.value?.phase || 'choosing']))
@@ -87,7 +90,11 @@ function progress(book: ReaderBook) {
 }
 
 function openBook(book: ReaderBook) {
-  uni.navigateTo({ url: `/pages/reader/reader?id=${encodeURIComponent(book.id)}` })
+  if (navigationCommitted) return
+  ++openingRequest
+  openingId.value = ''
+  navigationCommitted = true
+  uni.navigateTo({ url: `/pages/reader/reader?id=${encodeURIComponent(book.id)}`, fail() { navigationCommitted = false } })
 }
 
 async function importBook() {
@@ -137,19 +144,22 @@ function cloudBookAdded(id: string) {
 }
 
 async function openCloudBook(summary: CloudNovelSummary) {
-  if (openingId.value) return
+  if (openingId.value === summary.id || navigationCommitted) return
+  const request = ++openingRequest
   openingId.value = summary.id
   cloudError.value = ''
   try {
-    const catalog = await getCloudNovelCatalog(summary.id)
+    const catalog = await getCachedReaderCatalog(summary.id, { expectedUpdatedAt: summary.updatedAt })
+    if (request !== openingRequest) return
     const book = prepareCloudReaderBook(catalog)
     const saved = saveReaderBook(book)
     refresh()
-    setTimeout(() => openBook(saved), 250)
+    openBook(saved)
   } catch (reason) {
+    if (request !== openingRequest) return
     cloudError.value = reason instanceof Error ? reason.message : '打开失败，请稍后重试'
   } finally {
-    openingId.value = ''
+    if (request === openingRequest) openingId.value = ''
   }
 }
 
@@ -173,29 +183,32 @@ async function checkAccess() {
   }
 }
 
-onShow(checkAccess)
+function cancelOpening() { ++openingRequest; openingId.value = '' }
+onHide(cancelOpening)
+onUnload(cancelOpening)
+onShow(() => { navigationCommitted = false; void checkAccess() })
 </script>
 
 <template>
   <view class="shell">
     <SubpageHeader label="阅读" />
 
-    <view v-if="accessChecking" class="access-state"><text>正在打开书架…</text></view>
+    <view v-if="accessChecking && !accessGranted" class="access-state"><text>正在打开书架…</text></view>
 
     <template v-else-if="accessGranted">
       <view class="library-heading">
         <view><text class="page-title">我的书架</text><text class="book-count">{{ books.length }} 本</text></view>
         <button class="add-book" :disabled="importing" hover-class="button-pressed" @click="importBook"><view v-if="importing" class="mini-spinner" /><view v-else class="mini-plus" /><text>{{ importing ? '处理中' : '导入 TXT' }}</text></button>
       </view>
-      <text class="subtitle">云端书籍按章加载，不用先下载整本；也可以导入手机里的 TXT。阅读进度会保存在当前设备。</text>
+      <text class="subtitle">云端书籍会缓存已读内容，并提前准备后续章节；也可以导入手机里的 TXT。阅读进度会保存在当前设备。</text>
 
       <view v-if="cloudNovels.length || cloudError" class="cloud-library">
-        <view class="cloud-heading"><view><text class="section-title">云端书库</text><text>{{ cloudNovels.length }} 本</text></view><button :disabled="Boolean(openingId)" @click="refreshCloudNovels">刷新</button></view>
+        <view class="cloud-heading"><view><text class="section-title">云端书库</text><text>{{ cloudNovels.length }} 本</text></view><button @click="refreshCloudNovels">刷新</button></view>
         <text v-if="cloudError" class="cloud-error" role="alert">{{ cloudError }}</text>
         <ActionListRow v-for="novel in cloudNovels" :key="novel.id"
           :title="novel.title" :metadata="`${novel.author} · ${novel.characterCount.toLocaleString()} 字`"
           :action-label="openingId === novel.id ? '正在打开' : cloudBookAdded(novel.id) ? '继续阅读' : '开始阅读'"
-          :disabled="Boolean(openingId)" @action="openCloudBook(novel)" />
+          :disabled="openingId === novel.id" @action="openCloudBook(novel)" />
       </view>
 
       <view v-if="importing && importState" class="import-card" role="status" aria-live="polite">
@@ -226,7 +239,7 @@ onShow(checkAccess)
         </view>
       </view>
 
-      <view class="source-note"><text>内容说明</text><text>云端书库由运营后台发布，打开时只请求当前章节；本机导入仍不会上传服务器。</text></view>
+      <view class="source-note"><text>内容说明</text><text>云端书库由运营后台发布，正文缓存在当前设备；本机导入不会上传服务器。</text></view>
     </template>
   </view>
 </template>

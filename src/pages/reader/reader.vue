@@ -5,7 +5,7 @@ import JellyTabs from '../../components/JellyTabs.vue'
 import ReaderPager from '../../components/ReaderPager.vue'
 import ReaderToolIcon from '../../components/ReaderToolIcon.vue'
 import SubpageHeader from '../../components/SubpageHeader.vue'
-import { getCloudNovelCatalog, getCloudNovelChapter } from '../../services/api'
+import { getCachedReaderCatalog, getCachedReaderChapter, prefetchReaderChapters } from '../../services/reader-cloud'
 import { ensureReaderVipAccess } from '../../services/reader-access'
 import { destroyPageTurnSound, playPageTurnSound, preparePageTurnSound } from '../../services/page-turn-sound'
 import {
@@ -20,6 +20,7 @@ const accessChecking = ref(true)
 const chapterIndex = ref(0)
 const chapterContent = ref('')
 const chapterLoading = ref(false)
+const loadingHintVisible = ref(false)
 const chapterError = ref('')
 const characterOffset = ref(0)
 const legacyScrollTop = ref(0)
@@ -37,14 +38,18 @@ const themeTabs = [{ key: 'paper', label: '米白' }, { key: 'butter', label: '�
 const lineHeightTabs = [{ key: '1.8', label: '紧凑' }, { key: '2.15', label: '舒适' }, { key: '2.3', label: '宽松' }]
 const DIRECTORY_PAGE_SIZE = 10
 let saveTimer: ReturnType<typeof setTimeout> | undefined
+let chapterHintTimer: ReturnType<typeof setTimeout> | undefined
 let chapterRequest = 0
 let changingChapter = false
+let active = true
 let previousStatusBarStyle = 'dark'
 let previousStatusBarBackground = '#faf8f2'
-const chapterCache = new Map<number, string>()
 
 const chapter = computed(() => book.value?.chapters[chapterIndex.value] || null)
-const progress = computed(() => book.value ? Math.min(100, Math.round(((chapterIndex.value + (pageInfo.value.index + 1) / pageInfo.value.count) / book.value.chapters.length) * 100)) : 0)
+function readingProgress(index: number, count: number) {
+  return book.value ? Math.min(100, Math.round(((chapterIndex.value + (index + 1) / count) / book.value.chapters.length) * 100)) : 0
+}
+const progress = computed(() => readingProgress(pageInfo.value.index, pageInfo.value.count))
 const readChapterIndexes = computed(() => new Set(book.value?.progress.readChapterIndexes || []))
 const firstPage = computed(() => chapterIndex.value === 0 && pageInfo.value.index === 0)
 const lastPage = computed(() => Boolean(book.value && chapterIndex.value === book.value.chapters.length - 1 && pageInfo.value.index === pageInfo.value.count - 1))
@@ -82,9 +87,11 @@ async function loadChapterContent(index: number) {
   const currentChapter = currentBook?.chapters[index]
   if (!currentBook || !currentChapter) return
   const request = ++chapterRequest
+  clearTimeout(chapterHintTimer)
+  loadingHintVisible.value = false
   chapterError.value = ''
-  if (currentChapter.content || chapterCache.has(index)) {
-    chapterContent.value = currentChapter.content || chapterCache.get(index) || ''
+  if (currentChapter.content) {
+    chapterContent.value = currentChapter.content
     chapterLoading.value = false
     return
   }
@@ -96,16 +103,23 @@ async function loadChapterContent(index: number) {
   }
   chapterContent.value = ''
   chapterLoading.value = true
+  // A persistent cache hit resolves before painting. Show a loading message
+  // only when a real network wait lasts long enough to be noticeable.
+  chapterHintTimer = setTimeout(() => { if (request === chapterRequest) loadingHintVisible.value = true }, 120)
   try {
-    const result = await getCloudNovelChapter(currentBook.cloudId, currentChapter.remoteIndex ?? index)
+    const result = await getCachedReaderChapter(currentBook, index)
     if (request !== chapterRequest) return
-    chapterCache.set(index, result.content)
     chapterContent.value = result.content
+    void prefetchReaderChapters(currentBook, index).catch(() => {})
   } catch (reason) {
     if (request !== chapterRequest) return
     chapterError.value = reason instanceof Error ? reason.message : '本章加载失败'
   } finally {
-    if (request === chapterRequest) chapterLoading.value = false
+    if (request === chapterRequest) {
+      clearTimeout(chapterHintTimer)
+      chapterLoading.value = false
+      loadingHintVisible.value = false
+    }
   }
 }
 
@@ -122,7 +136,10 @@ async function openChapter(index: number, restore = false, atEnd = false, keepCo
   directoryOpen.value = false
   settingsOpen.value = false
   controlsVisible.value = keepControls
-  await loadChapterContent(chapterIndex.value)
+  const loading = loadChapterContent(chapterIndex.value)
+  const request = chapterRequest
+  await loading
+  if (!active || request !== chapterRequest) return
   if (atEnd) characterOffset.value = Math.max(0, chapterContent.value.length - 1)
   changingChapter = false
   persistProgress()
@@ -187,10 +204,32 @@ onLoad(async options => {
   // #endif
   syncStatusBar()
   const bookId = typeof options?.id === 'string' ? decodeURIComponent(options.id) : ''
-  if (!await ensureReaderVipAccess()) { accessChecking.value = false; return }
+  const granted = await ensureReaderVipAccess()
+  if (!active) return
+  if (!granted) { accessChecking.value = false; return }
   book.value = bookId ? getReaderBook(bookId) : null
   if (book.value?.source === 'cloud' && book.value.cloudId) {
-    try { book.value = saveReaderBook(prepareCloudReaderBook(await getCloudNovelCatalog(book.value.cloudId))) }
+    const cloudId = book.value.cloudId
+    try {
+      const catalog = await getCachedReaderCatalog(cloudId, {
+        onUpdate(catalog) {
+          if (!active || book.value?.cloudId !== cloudId) return
+          persistProgress()
+          chapterRequest++
+          changingChapter = false
+          book.value = saveReaderBook(prepareCloudReaderBook(catalog))
+          void openChapter(book.value.progress.chapterIndex || 0, true)
+        },
+        onError(reason) {
+          if (!active || ![401, 403, 404].includes(Number((reason as { status?: number })?.status))) return
+          chapterRequest++
+          chapterContent.value = ''
+          error.value = reason instanceof Error ? reason.message : '这本书暂时无法阅读'
+        },
+      })
+      if (!active) return
+      book.value = saveReaderBook(prepareCloudReaderBook(catalog))
+    }
     catch (reason) { error.value = reason instanceof Error ? reason.message : '目录更新失败，请返回书架重试'; accessChecking.value = false; return }
   }
   accessChecking.value = false
@@ -200,8 +239,11 @@ onLoad(async options => {
 })
 
 function cleanup() {
+  active = false
   clearTimeout(saveTimer)
+  clearTimeout(chapterHintTimer)
   persistProgress()
+  chapterRequest++
   destroyPageTurnSound()
   // #ifdef APP-PLUS
   const navigator = (globalThis as any).plus?.navigator
@@ -224,11 +266,11 @@ onBeforeUnmount(() => clearTimeout(saveTimer))
     <template v-else-if="book && chapter">
       <view class="reading-surface">
         <ReaderPager ref="pager" :content="chapterContent" :position="characterOffset" :legacy-scroll-top="legacyScrollTop" :font-size="settings.fontSize" :line-height="settings.lineHeight" :blocked="panelOpen || chapterLoading" @update:position="onPosition" @page="onPageInfo" @boundary="turnChapter" @turn="pageTurnSound" @tap="toggleControls">
-          <template #header>
-            <view class="reader-meta"><text>{{ book.author }}</text><text>第 {{ chapterIndex + 1 }} / {{ book.chapters.length }} 章 · {{ progress }}%</text></view>
+          <template #header="{ index, count }">
+            <view class="reader-meta"><text>{{ book.author }}</text><text>第 {{ chapterIndex + 1 }} / {{ book.chapters.length }} 章 · {{ readingProgress(index, count) }}%</text></view>
             <view class="chapter-heading"><text class="book-name">{{ book.title }}</text><text class="chapter-title">{{ chapter.title }}</text></view>
           </template>
-          <view v-if="chapterLoading" class="reader-loading"><text>正在加载本章…</text></view>
+          <view v-if="chapterLoading && loadingHintVisible" class="reader-loading"><text>正在加载本章…</text></view>
           <view v-else-if="chapterError" class="state-card chapter-state" @click.stop><text class="state-title">本章暂时没打开</text><text>{{ chapterError }}</text><button @click="loadChapterContent(chapterIndex)">重新加载</button></view>
         </ReaderPager>
       </view>
@@ -275,9 +317,9 @@ onBeforeUnmount(() => clearTimeout(saveTimer))
 </template>
 
 <style scoped>
-.reader-shell{--reader-background:#faf8f2;--reader-text:#3e382d;--reader-muted:#887b65;--reader-border:rgba(111,96,65,.16);--reader-control:rgba(255,255,255,.55);--reader-accent:#9a6b06;--panel-background:#fff;--subpage-background:var(--reader-background);--subpage-text:var(--reader-text);--subpage-muted:var(--reader-muted);position:fixed;inset:0;width:100%;max-width:640px;margin:0 auto;overflow:hidden;overscroll-behavior:none;touch-action:auto;background:var(--reader-background);color:var(--reader-text);box-sizing:border-box}.theme-paper{--reader-background:#faf8f2}.theme-butter{--reader-background:#f8edc4;--panel-background:#fff9e9;--reader-texture:radial-gradient(circle at 13% 17%,rgba(171,126,28,.04) 0 1px,transparent 1.5px),radial-gradient(circle at 79% 41%,rgba(131,96,25,.03) 0 1px,transparent 1.4px)}.theme-white{--reader-background:#fff;--panel-background:#faf8f2}.theme-night{--reader-background:#222321;--reader-text:#c9c7bf;--reader-muted:#a19e93;--reader-border:rgba(211,202,178,.17);--reader-control:#343530;--reader-accent:#dec780;--panel-background:#2b2c28;--subpage-badge-background:#424234;--subpage-badge-text:#e5d29a;--tabs-background:#343530;--tabs-border:#545449;--tabs-text:#bebbb0;--tabs-indicator:#d8c17e;--tabs-active-text:#25251e}.reading-surface{height:100%;padding:calc(14px + max(env(safe-area-inset-top),var(--reader-safe-top,0px))) calc(24px + env(safe-area-inset-right)) calc(12px + max(env(safe-area-inset-bottom),var(--reader-safe-bottom,0px))) calc(24px + env(safe-area-inset-left));overflow:hidden;box-sizing:border-box}.reader-loading{display:flex;align-items:center;justify-content:center;min-height:160px;color:var(--reader-muted)}.reader-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--reader-muted);font-size:10px;line-height:16px}.reader-meta text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-meta text:last-child{flex:0 0 auto}.chapter-heading{padding-top:10px;min-width:0}.book-name{display:block;overflow:hidden;color:var(--reader-muted);font-size:11px;line-height:17px;text-overflow:ellipsis;white-space:nowrap}.chapter-title{display:block;overflow:hidden;margin-top:3px;color:var(--reader-text);font-size:18px;font-weight:650;line-height:26px;text-overflow:ellipsis;white-space:nowrap}.state-card{display:flex;flex-direction:column;align-items:flex-start;margin:20px;padding:22px;border:1px solid var(--reader-border);border-radius:20px;background:var(--panel-background);color:var(--reader-muted);line-height:1.7}.state-title{margin-bottom:5px;color:var(--reader-text);font-size:18px;font-weight:600}.state-card button{height:44px;min-height:44px;margin:17px 0 0;padding:0 15px;border:0;border-radius:13px;background:var(--reader-control);color:var(--reader-text)}.state-card button::after{border:0}
+.reader-shell{--reader-background:#faf8f2;--reader-text:#3e382d;--reader-muted:#887b65;--reader-border:rgba(111,96,65,.16);--reader-control:rgba(255,255,255,.55);--reader-accent:#9a6b06;--panel-background:#fff;--subpage-background:var(--reader-background);--subpage-text:var(--reader-text);--subpage-muted:var(--reader-muted);position:fixed;inset:0;width:100%;max-width:640px;margin:0 auto;overflow:hidden;overscroll-behavior:none;touch-action:auto;background:var(--reader-background);color:var(--reader-text);box-sizing:border-box}.theme-paper{--reader-background:#faf8f2}.theme-butter{--reader-background:#f8edc4;--panel-background:#fff9e9;--reader-texture:radial-gradient(circle at 13% 17%,rgba(171,126,28,.04) 0 1px,transparent 1.5px),radial-gradient(circle at 79% 41%,rgba(131,96,25,.03) 0 1px,transparent 1.4px)}.theme-white{--reader-background:#fff;--panel-background:#faf8f2}.theme-night{--reader-background:#222321;--reader-text:#c9c7bf;--reader-muted:#a19e93;--reader-border:rgba(211,202,178,.17);--reader-control:#343530;--reader-accent:#dec780;--panel-background:#2b2c28;--subpage-badge-background:#424234;--subpage-badge-text:#e5d29a;--tabs-background:#343530;--tabs-border:#545449;--tabs-text:#bebbb0;--tabs-indicator:#d8c17e;--tabs-active-text:#25251e}.reading-surface{height:100%;padding-top:max(env(safe-area-inset-top),var(--reader-safe-top,0px));padding-bottom:max(env(safe-area-inset-bottom),var(--reader-safe-bottom,0px));overflow:hidden;box-sizing:border-box}.reader-loading{display:flex;align-items:center;justify-content:center;min-height:160px;color:var(--reader-muted)}.reader-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--reader-muted);font-size:10px;line-height:16px}.reader-meta text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reader-meta text:last-child{flex:0 0 auto}.chapter-heading{padding-top:10px;min-width:0}.book-name{display:block;overflow:hidden;color:var(--reader-muted);font-size:11px;line-height:17px;text-overflow:ellipsis;white-space:nowrap}.chapter-title{display:block;overflow:hidden;margin-top:3px;color:var(--reader-text);font-size:18px;font-weight:650;line-height:26px;text-overflow:ellipsis;white-space:nowrap}.state-card{display:flex;flex-direction:column;align-items:flex-start;margin:20px;padding:22px;border:1px solid var(--reader-border);border-radius:20px;background:var(--panel-background);color:var(--reader-muted);line-height:1.7}.state-title{margin-bottom:5px;color:var(--reader-text);font-size:18px;font-weight:600}.state-card button{height:44px;min-height:44px;margin:17px 0 0;padding:0 15px;border:0;border-radius:13px;background:var(--reader-control);color:var(--reader-text)}.state-card button::after{border:0}
 .reader-chrome{position:fixed;z-index:40;inset:0;pointer-events:none}.top-chrome,.bottom-chrome{position:fixed;left:50%;width:min(100%,640px);box-sizing:border-box;transform:translateX(-50%);pointer-events:auto}.top-chrome{top:0;padding:0 24px;background:var(--reader-background);box-shadow:0 6px 18px rgba(30,24,18,.08)}.top-chrome :deep(.subpage-header){margin-bottom:0}.bottom-chrome{bottom:0;padding:10px 24px calc(12px + max(env(safe-area-inset-bottom),var(--reader-safe-bottom,0px)));background:var(--reader-background);box-shadow:0 -6px 18px rgba(30,24,18,.08)}.chapter-control-row{display:grid;grid-template-columns:66px minmax(0,1fr) 66px;align-items:center;gap:10px}.chapter-control-row button{height:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:var(--reader-text);font-size:13px;white-space:nowrap}.chapter-control-row button::after,.tool-control-row button::after{border:0}.chapter-control-row button[disabled]{opacity:.35}.progress-control{display:flex;align-items:center;gap:8px;color:var(--reader-muted);font-size:10px}.progress-track{height:6px;flex:1;overflow:hidden;border-radius:9px;background:var(--reader-border)}.progress-track view{height:100%;border-radius:inherit;background:var(--reader-accent)}.tool-control-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:7px}.tool-control-row button{display:flex;height:48px;min-height:48px;align-items:center;justify-content:center;gap:7px;min-width:0;margin:0;padding:0 4px;border:0;border-radius:14px;background:var(--reader-control);color:var(--reader-text);font-size:12px;white-space:nowrap}.tool-control-row image{display:block;width:20px;height:20px}.theme-night .directory-icon{filter:brightness(0) invert(.8)}
 .sheet-layer{position:fixed;z-index:60;inset:0;display:flex;align-items:flex-end;justify-content:center;padding-top:calc(44px + max(env(safe-area-inset-top),var(--reader-safe-top,0px)));overscroll-behavior:none;touch-action:auto;background:rgba(20,19,17,.38);box-sizing:border-box}.sheet{width:min(100%,640px);max-height:88vh;padding:0 24px calc(18px + max(env(safe-area-inset-bottom),var(--reader-safe-bottom,0px)));overflow:hidden;overscroll-behavior:contain;touch-action:auto;border-radius:24px 24px 0 0;background:var(--panel-background);box-shadow:0 -12px 36px rgba(20,19,17,.18);box-sizing:border-box}.directory-sheet{display:flex;height:min(88vh,760px);flex-direction:column}.sheet-handle{width:44px;height:4px;flex:0 0 auto;margin:10px auto 9px;border-radius:5px;background:var(--reader-border)}.sheet-heading{display:flex;min-height:58px;align-items:center;justify-content:space-between;gap:12px}.sheet-heading>view{min-width:0}.sheet-title{display:block;overflow:hidden;color:var(--reader-text);font-size:20px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}.sheet-subtitle{display:block;margin-top:4px;color:var(--reader-muted);font-size:11px}.sheet-heading>button{display:flex;width:44px;height:44px;min-height:44px;align-items:center;justify-content:center;flex:0 0 44px;margin:0 -8px 0 0;border:0;background:transparent;color:var(--reader-muted)}.sheet-heading>button::after{border:0}.close-icon{position:relative;width:16px;height:16px}.close-icon::before,.close-icon::after{content:'';position:absolute;left:1px;top:7px;width:14px;height:1.5px;background:currentColor;transform:rotate(45deg)}.close-icon::after{transform:rotate(-45deg)}.directory-summary{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;padding:8px 0 12px;border-bottom:1px solid var(--reader-border)}.directory-summary>view{min-width:0}.directory-summary>view>text:first-child{display:block;font-size:17px;font-weight:600}.directory-summary>view>text:last-child{display:block;margin-top:3px;color:var(--reader-muted);font-size:10px}.directory-summary>text{color:var(--reader-muted);font-size:11px}.directory-scroll{height:auto;min-height:0;flex:1;overscroll-behavior:contain;touch-action:pan-y}.chapter-row{display:flex;width:100%;height:50px;min-height:50px;align-items:center;justify-content:space-between;gap:12px;margin:0;padding:0;border:0;border-bottom:1px solid var(--reader-border);border-radius:0;background:transparent;color:var(--reader-muted);text-align:left}.chapter-row::after{border:0}.chapter-row>text:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chapter-row.read{color:var(--reader-text)}.chapter-row.current{color:var(--reader-accent);font-weight:650}.current-label{flex:0 0 auto;color:inherit;font-size:10px;font-weight:650}.directory-pagination{display:grid;grid-template-columns:88px minmax(0,1fr) 88px;flex:0 0 auto;align-items:center;gap:8px;padding-top:12px;border-top:1px solid var(--reader-border);background:var(--panel-background)}.directory-pagination button{display:flex;width:88px;height:44px;min-height:44px;align-items:center;justify-content:center;margin:0;padding:0;border:1px solid var(--reader-border);border-radius:14px;background:transparent;color:var(--reader-text);font-size:12px;font-weight:600;line-height:1;box-sizing:border-box}.directory-pagination button::after{border:0}.directory-pagination button[disabled]{border-color:transparent;background:var(--reader-control);color:var(--reader-muted);opacity:.5}.directory-pagination text{display:flex;height:44px;align-items:center;justify-content:center;color:var(--reader-muted);font-size:11px;line-height:1;text-align:center}
 .settings-sheet{padding-bottom:calc(24px + max(env(safe-area-inset-bottom),var(--reader-safe-bottom,0px)))}.setting-label{display:block;margin:15px 0 9px;color:var(--reader-muted);font-size:11px}.font-setting{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:17px;margin-top:17px;border-top:1px solid var(--reader-border)}.font-setting .setting-label{margin:0}.font-setting>view:first-child>text:last-child{display:block;margin-top:4px;font-size:15px;font-weight:600}.stepper{display:flex;gap:8px}.stepper button{display:flex;width:44px;height:44px;min-height:44px;align-items:center;justify-content:center;margin:0;padding:0;border:1px solid var(--reader-border);border-radius:13px;background:transparent;color:var(--reader-text)}.stepper button::after{border:0}.minus-icon,.plus-icon{position:relative;width:15px;height:15px}.minus-icon::before,.plus-icon::before,.plus-icon::after{content:'';position:absolute;left:1px;top:7px;width:13px;height:1.5px;border-radius:2px;background:currentColor}.plus-icon::after{transform:rotate(90deg)}.line-label{padding-top:12px;border-top:1px solid var(--reader-border)}.sound-setting{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:14px;margin-top:17px;border-top:1px solid var(--reader-border)}.sound-setting>view{min-width:0}.sound-setting .setting-label{margin:0;color:var(--reader-text);font-size:13px}.sound-setting>view>text:last-child{display:block;margin-top:4px;color:var(--reader-muted);font-size:10px}.sound-setting switch{flex:0 0 auto;transform:scale(.86)}
-@media(max-width:360px){.reading-surface{padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right))}.top-chrome,.bottom-chrome,.sheet{padding-left:20px;padding-right:20px}.tool-control-row{gap:6px}.tool-control-row button{gap:5px}.chapter-control-row{grid-template-columns:62px minmax(0,1fr) 62px}}
+@media(max-width:360px){.top-chrome,.bottom-chrome,.sheet{padding-left:20px;padding-right:20px}.tool-control-row{gap:6px}.tool-control-row button{gap:5px}.chapter-control-row{grid-template-columns:62px minmax(0,1fr) 62px}}
 </style>

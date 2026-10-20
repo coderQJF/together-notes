@@ -39,6 +39,86 @@ async function waitForText(page, expected, timeout = 10000) {
   throw new Error(`Timed out waiting for text: ${expected}\nObserved: ${observed}`)
 }
 
+async function auditHoldSelection(page, width, screenName) {
+  const evaluate = async expression => (await page.call('Runtime.evaluate', { expression, returnByValue: true })).result.value
+  const state = () => evaluate(`(() => {const scroll=document.querySelector('.feed-scroll .uni-scroll-view-scrollbar-hidden');const card=document.querySelector('.hold-pressed');return {selecting:Boolean(document.querySelector('.bulk-selection-bar')),selected:document.querySelectorAll('.selected-card').length,scroll:scroll?.scrollTop||0,pressed:Boolean(card),scale:card?new DOMMatrixReadOnly(getComputedStyle(card).transform).a:1};})()`)
+  const target = () => evaluate(`(() => {const viewport=document.querySelector('.feed-scroll').getBoundingClientRect();const cards=[...document.querySelectorAll('.feed-list .selectable-card')];const node=cards.find(node=>{const r=node.getBoundingClientRect();return r.top>=viewport.top+2&&r.bottom<=viewport.bottom-2})||cards.find(node=>{const r=node.getBoundingClientRect();return r.bottom>viewport.top+70&&r.top<viewport.bottom-70});if(!node)return null;const r=node.getBoundingClientRect();return {x:r.left+Math.min(45,r.width/3),y:Math.max(viewport.top+24,Math.min(r.top+Math.min(70,r.height/2),viewport.bottom-24))};})()`)
+  const touch = (type, point) => page.call('Input.dispatchTouchEvent', { type, touchPoints: point ? [point] : [] })
+  let point = await target()
+  if (!point) throw new Error('No visible card for selection audit')
+  await touch('touchStart', point)
+  await wait(400)
+  const shortHold = await state()
+  if (shortHold.selecting || !shortHold.pressed || shortHold.scale > .99 || shortHold.scale < .96) throw new Error('400ms must show press feedback without selecting: '+JSON.stringify(shortHold))
+  const pressShot = await page.call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
+  await writeFile(join(outputDir, `${width}-${screenName}-press.png`), Buffer.from(pressShot.data, 'base64'))
+  await touch('touchCancel')
+  await wait(340)
+  if ((await state()).selecting || (await state()).pressed) throw new Error('Cancelled short hold leaked selection or press feedback')
+  point = await target()
+  const scrollBefore = (await state()).scroll
+  await touch('touchStart', point)
+  await wait(90)
+  await touch('touchMove', { ...point, y: point.y - 32 })
+  await wait(850)
+  await touch('touchMove', { ...point, y: point.y - 75 })
+  await wait(200)
+  await touch('touchEnd')
+  await wait(220)
+  const swipe = await state()
+  if (swipe.selecting || swipe.pressed) throw new Error('Slow scrolling with a pause incorrectly selected a card: '+JSON.stringify(swipe))
+  if (swipe.scroll <= scrollBefore + 1) throw new Error('Gesture fixture did not actually scroll: '+JSON.stringify({ scrollBefore, swipe }))
+  console.log(`${width} ${screenName}: short hold and scroll passed`)
+  point = await target()
+  const anchoredScroll = (await state()).scroll
+  await touch('touchStart', point)
+  await wait(700)
+  await touch('touchEnd')
+  await waitForText(page, '已选择 1 项')
+  await wait(350)
+  const selected = await state()
+  console.log(`${width} ${screenName}: intentional hold passed`)
+  if (selected.selected !== 1 || Math.abs(selected.scroll - anchoredScroll) > 1) throw new Error('Intentional hold moved the list or failed to preserve one selected card: '+JSON.stringify({ anchoredScroll, selected }))
+  const rightToggle = await evaluate(`(() => {const card=document.querySelector('.selected-card'),button=card?.querySelector('.selection-toggle');if(!button)return null;const c=card.getBoundingClientRect(),b=button.getBoundingClientRect();return {width:b.width,height:b.height,right:b.right<=c.right,offset:b.left-c.left,cardWidth:c.width};})()`)
+  if (!rightToggle || rightToggle.width < 44 || rightToggle.height < 44 || !rightToggle.right || rightToggle.offset < rightToggle.cardWidth / 2) throw new Error('Selection indicator is not a right-side 44px control: '+JSON.stringify(rightToggle))
+  // Android may cancel the touch or background the WebView while a system panel
+  // opens. Replay both interruption signals and verify the durable selection UI.
+  await touch('touchStart', point)
+  await touch('touchCancel')
+  await evaluate(`window.dispatchEvent(new Event('blur'));document.dispatchEvent(new Event('visibilitychange'))`)
+  await wait(100)
+  await evaluate(`window.dispatchEvent(new Event('focus'))`)
+  await wait(200)
+  const resumed = await state()
+  console.log(`${width} ${screenName}: interruption resumed`)
+  if (!resumed.selecting || resumed.selected !== 1 || resumed.pressed || Math.abs(resumed.scroll - selected.scroll) > 1) throw new Error('System interruption cleared selection or changed the scroll position: '+JSON.stringify(resumed))
+  for (const expected of [0, 1]) {
+    await touch('touchStart', point)
+    await wait(50)
+    await touch('touchEnd')
+    await wait(200)
+    if ((await state()).selected !== expected) throw new Error('Fresh card tap could not toggle selection after a cancelled/system-interrupted hold')
+  }
+  await evaluate(`document.querySelector('.bulk-selection-toolbar .selection-all').click()`)
+  const all = await evaluate(`({count:document.querySelectorAll('.selected-card').length,cards:document.querySelectorAll('.selectable-card:not(.selection-locked)').length,checked:Boolean(document.querySelector('.selection-all .status-icon.checked'))})`)
+  if (!all.checked || all.count !== all.cards || all.count < 2) throw new Error('Select-all did not select only available cards: '+JSON.stringify(all))
+  await evaluate(`document.querySelector('.bulk-selection-toolbar .selection-all').click()`)
+  if ((await state()).selected !== 0 || !(await state()).selecting) throw new Error('Deselect-all should retain the explicit selection mode')
+  await evaluate(`document.querySelector('.selection-cancel').click()`)
+  if ((await state()).selecting) throw new Error('Explicit cancel did not leave selection mode')
+  point = await target()
+  await touch('touchStart', point)
+  await wait(700)
+  await touch('touchEnd')
+  await waitForText(page, '已选择 1 项')
+  await evaluate(`document.querySelector('.bulk-selection-toolbar .selection-delete').click()`)
+  await waitForText(page, '删除选中的 1 条内容？')
+  await evaluate(`document.querySelector('.uni-modal__btn_default').click()`)
+  await wait(200)
+  if (!(await state()).selecting || (await state()).selected !== 1) throw new Error('Cancelling deletion lost the selected items')
+  return { shortHoldMs: 400, selectionHoldMs: 700, scale: shortHold.scale, swipeScroll: swipe.scroll - scrollBefore, preservedScroll: resumed.scroll, rightToggle, interruptedSelectionPreserved: true, selectAll: all.count }
+}
+
 async function getJson(url, options) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
@@ -117,6 +197,7 @@ class Cdp {
       const pending = this.pending.get(message.id)
       if (!pending) return
       this.pending.delete(message.id)
+      clearTimeout(pending.timer)
       if (message.error) pending.reject(new Error(message.error.message))
       else pending.resolve(message.result)
     })
@@ -125,7 +206,8 @@ class Cdp {
   call(method, params = {}) {
     const id = this.nextId++
     return new Promise((resolveCall, reject) => {
-      this.pending.set(id, { resolve: resolveCall, reject })
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`CDP command timed out: ${method}`)) }, 20000)
+      this.pending.set(id, { resolve: resolveCall, reject, timer })
       this.socket.send(JSON.stringify({ id, method, params }))
     })
   }
@@ -213,6 +295,16 @@ if (!baseUrl) {
     advance: 0,
     done: true,
   }, session)
+  for (const kind of ['note', 'reminder']) {
+    for (let index = 1; index <= 5; index += 1) {
+      await apiRequest('/api/items', 'POST', {
+        kind, title: `${kind === 'note' ? '旅途随记' : '出行待办'} ${index}`,
+        content: '长列表中可以慢慢滑动、停顿，只有原地持续长按才进入选择。', links: [], scope: 'mine',
+        ...(kind === 'reminder' ? { nextAt: new Date(Date.now() + (index + 3) * 86400000).toISOString(), repeat: 'none', recipient: 'me', advance: 0 } : {}),
+      }, session)
+    }
+  }
+
 }
 
 function route(path, nonce) {
@@ -234,9 +326,9 @@ const screens = [
   { name: 'guest-import-accept', path: '/pages/index/index?login=1', ready: '以前用过微信小程序', anonymous: true, guestImport: 'accept' },
   { name: 'guest-import-decline', path: '/pages/index/index?login=1', ready: '以前用过微信小程序', anonymous: true, guestImport: 'decline' },
   { name: 'index-notes', path: '/pages/index/index', ready: '周末一起去看展' },
-  { name: 'index-notes-selection', path: '/pages/index/index', ready: '周末一起去看展', longPressSelector: '.feed-list .card' },
+  { name: 'index-notes-selection', path: '/pages/index/index', ready: '周末一起去看展', holdSelection: true },
   { name: 'index-reminders', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事' },
-  { name: 'index-reminders-selection', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事', longPressSelector: '.feed-list .card' },
+  { name: 'index-reminders-selection', path: '/pages/index/index', ready: '周末一起去看展', click: '提醒', clicked: '别忘了这些小事', holdSelection: true },
   { name: 'index-search', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记' },
   { name: 'index-search-result', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '周末看什么？', answered: '相关内容' },
   { name: 'index-search-model', path: '/pages/index/index', ready: '周末一起去看展', click: '搜搜', clicked: '搜搜我们的小记', ask: '猪什么时候会飞', answered: '现实中的猪不会自主飞行' },
@@ -280,6 +372,9 @@ if (!screens.length) throw new Error('CAPTURE_SCREENS did not match any known sc
 await mkdir(outputDir, { recursive: true })
 const browser = spawn(edge, [
   '--headless=new',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disable-sync',
   '--disable-gpu',
   '--hide-scrollbars',
   '--disable-web-security',
@@ -483,18 +578,7 @@ try {
           await waitForText(page, screen.clicked)
         }
       }
-      if (screen.longPressSelector) {
-        const longPressTarget = await page.call('Runtime.evaluate', {
-          expression: `(() => { const node = document.querySelector(${JSON.stringify(screen.longPressSelector)}); if (!node) return null; const rect = node.getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + Math.min(rect.height / 2, 80) } })()`,
-          returnByValue: true,
-        })
-        const point = longPressTarget.result.value
-        if (!point) throw new Error(`Could not long-press: ${screen.longPressSelector}`)
-        await page.call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
-        await wait(650)
-        await page.call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-        await waitForText(page, '已选择 1 项')
-      }
+      const holdAudit = screen.holdSelection ? await auditHoldSelection(page, width, screen.name) : undefined
       if (screen.todoFlow) {
         await page.call('Runtime.evaluate', { expression: `(() => { const field=document.querySelector('.todo-row input'); field.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'回车继续下一项'); field.dispatchEvent(new Event('input',{bubbles:true,composed:true})); })()` })
         const before = await page.call('Runtime.evaluate', { expression: `document.querySelectorAll('.todo-row input').length`, returnByValue: true })
@@ -601,7 +685,7 @@ try {
         clip: { x: 0, y: 0, width, height, scale: 1 },
       })
       await writeFile(join(outputDir, `${width}-${screen.name}.png`), Buffer.from(shot.data, 'base64'))
-      report.push({ width, screen: screen.name, ...audit.result.value })
+      report.push({ width, screen: screen.name, ...audit.result.value, ...(holdAudit ? { holdAudit } : {}) })
       if (screen.guestCrud) {
         await page.call('Runtime.evaluate',{expression:`document.querySelector('.actions .primary').click()`})
         await waitForText(page,'标题')

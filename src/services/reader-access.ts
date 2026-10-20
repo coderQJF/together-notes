@@ -19,7 +19,7 @@ export async function ensureReaderVipAccess() {
   }
   try {
     const user = await request<User>('/me')
-    if (user.vip) return true
+    if (user.vip && (!user.vipExpiresAt || Date.parse(user.vipExpiresAt) > Date.now())) return true
     leaveReader('小说阅读暂未开放')
   } catch {
     leaveReader(uni.getStorageSync('session') ? '暂时无法验证阅读权限' : '请先登录')

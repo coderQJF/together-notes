@@ -38,7 +38,8 @@ const book = { id: 'qa-reader', title: longTitle, author: '江南', chapters: pa
 const twoChapters = { ...book, id: 'qa-two', title: '仅两章的长正文', chapters: [{ title: '第一章 这是一段很长的章节标题用于检查顶部胶囊省略和操作按钮边界', content: Array.from({ length: 150 }, (_, index) => `第${index}段。这是只有两个目录项时仍然可以左右翻页的长正文。\tMixed English + 中文，所有文字都应该留在当前页内。`).join('\n\n\n') }, { title: '尾声', content: '结束。' }] }
 const directoryBook = { ...book, id: 'qa-directory', title: longTitle, chapters: Array.from({ length: 25 }, (_, index) => ({ title: `第${index + 1}章 目录内滚动与十章分页检查`, content: '章节正文。' })) }
 const insertNovel = app.db.prepare('INSERT INTO novels(id,title,author,filename,content,published,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?)')
-for (const [id, title] of [['long-cloud', longTitle], ['short-cloud', '龙族I']]) insertNovel.run(id, title, '江南', title + '.txt', '第一章\n测试正文。', Date.now(), Date.now())
+const cacheContent = ['一', '二', '三', '四', '五', '六'].map((number, index) => `第${number}章 缓存${index + 1}\n` + `第${index + 1}章预加载正文，提前缓存后再次打开不用等待。`.repeat(70)).join('\n')
+for (const [id, title] of [['long-cloud', longTitle], ['short-cloud', '龙族I']]) insertNovel.run(id, title, '江南', title + '.txt', id === 'long-cloud' ? cacheContent : '第一章\n测试正文。', Date.now(), Date.now())
 const port = Number(process.env.CDP_PORT || 9234)
 const browser = spawn(process.env.EDGE_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', ['--headless=new', '--disable-gpu', `--remote-debugging-port=${port}`, `--user-data-dir=${join(root, 'profile')}`, '--no-first-run', 'about:blank'], { windowsHide: true, stdio: 'ignore' })
 const wait = ms => new Promise(done => setTimeout(done, ms))
@@ -54,7 +55,21 @@ try {
   await new Promise(done => socket.once('open', done))
   let id = 0
   const pending = new Map()
-  socket.on('message', raw => { const message = JSON.parse(String(raw)); if (!message.id) return; const job = pending.get(message.id); pending.delete(message.id); message.error ? job.reject(new Error(message.error.message)) : job.done(message.result) })
+  const chapterRequests = []
+  let heldCatalogId = ''
+  socket.on('message', raw => {
+    const message = JSON.parse(String(raw))
+    if (message.method === 'Network.requestWillBeSent' && /\/api\/novels\/[^/]+\/chapters(?:\/\d+)?$/.test(message.params.request.url)) chapterRequests.push(message.params.request.url)
+    if (message.method === 'Fetch.requestPaused') {
+      const delay = heldCatalogId && message.params.request.url.endsWith('/' + heldCatalogId + '/chapters') ? 450 : 0
+      setTimeout(() => { void call('Fetch.continueRequest', { requestId: message.params.requestId }) }, delay)
+      return
+    }
+    if (!message.id) return
+    const job = pending.get(message.id)
+    pending.delete(message.id)
+    message.error ? job.reject(new Error(message.error.message)) : job.done(message.result)
+  })
   const call = (method, params = {}) => new Promise((done, reject) => { const next = ++id; pending.set(next, { done, reject }); socket.send(JSON.stringify({ id: next, method, params })) })
   const evaluate = async expression => {
     const result = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
@@ -88,6 +103,7 @@ try {
   }
   const report = []
   await call('Page.enable')
+  await call('Network.enable')
   await call('Page.navigate', { url: base })
   await wait(700)
   await evaluate(`localStorage.setItem('session',${JSON.stringify(auth.token)})`)
@@ -106,13 +122,28 @@ try {
       await wait(250)
       await assertPage(current, width)
       await capture(`${width}-${current.id}-day`)
-      if (width === 390 && current === book) {
+      if (current === book) {
+        // The turning sheet includes the entire page, not only the measured
+        // body box. Keep native safe areas and the operation chrome stationary.
+        await evaluate(`(()=>{const shell=document.querySelector('.reader-shell');shell.style.setProperty('--reader-safe-top','24px');shell.style.setProperty('--reader-safe-bottom','18px');window.dispatchEvent(new Event('resize'))})()`)
+        await wait(250)
+        await click('.reader-page-viewport')
+        const chromeAtRest = await evaluate(`JSON.stringify([...document.querySelectorAll('.top-chrome,.bottom-chrome')].map(node=>({top:node.getBoundingClientRect().top,left:node.getBoundingClientRect().left,height:node.getBoundingClientRect().height})))`)
+        const rest = await evaluate(`(()=>{const current=document.querySelector('${leaf}');return {leaf:current.getBoundingClientRect().toJSON(),header:current.querySelector('.pager-header').getBoundingClientRect().toJSON(),footer:current.querySelector('.pager-footer').getBoundingClientRect().toJSON(),guard:document.querySelector('.reader-pager').getBoundingClientRect().toJSON()}})()`)
+        if (rest.leaf.left !== 0 || rest.leaf.width !== width || rest.guard.top !== 24 || rest.guard.bottom !== 826) throw new Error('Page does not reach full reading surface edges: ' + JSON.stringify(rest))
         await call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: width * .82, y: 400 }] })
         await call('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: width * .5, y: 402 }] })
         await wait(70)
+        const dragged = await evaluate(`(()=>{const current=document.querySelector('${leaf}'),preview=document.querySelector('.reader-leaf-preview');return {leaf:current.getBoundingClientRect().toJSON(),header:current.querySelector('.pager-header').getBoundingClientRect().toJSON(),footer:current.querySelector('.pager-footer').getBoundingClientRect().toJSON(),preview:preview.getBoundingClientRect().toJSON(),counter:current.querySelector('.page-counter').textContent,previewCounter:preview.querySelector('.page-counter').textContent,currentMeta:current.querySelector('.reader-meta').textContent,previewMeta:preview.querySelector('.reader-meta').textContent,guard:document.querySelector('.reader-pager').getBoundingClientRect().toJSON()}})()`)
+        const chromeDuringDrag = await evaluate(`JSON.stringify([...document.querySelectorAll('.top-chrome,.bottom-chrome')].map(node=>({top:node.getBoundingClientRect().top,left:node.getBoundingClientRect().left,height:node.getBoundingClientRect().height})))`)
+        if (dragged.header.left >= rest.header.left - 40 || dragged.footer.left >= rest.footer.left - 40 || dragged.leaf.right >= width - 40 || dragged.preview.left !== 0 || dragged.preview.width !== width || !dragged.counter.startsWith('1 /') || !dragged.previewCounter.startsWith('2 /') || dragged.guard.top !== 24 || chromeAtRest !== chromeDuringDrag) throw new Error('Whole-page turn or fixed chrome failed: ' + JSON.stringify({ rest, dragged }))
         await capture(`${width}-page-turn-preview`)
+        report.push({ width, fixture: 'full-page-turn', fullWidth: rest.leaf.width, movingHeader: dragged.header.left - rest.header.left, movingFooter: dragged.footer.left - rest.footer.left, safeAreaGuard: true, fixedChrome: true, previewCounter: dragged.previewCounter })
         await call('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
         await wait(520)
+        await evaluate(`(()=>{const shell=document.querySelector('.reader-shell');shell.style.removeProperty('--reader-safe-top');shell.style.removeProperty('--reader-safe-bottom');window.dispatchEvent(new Event('resize'))})()`)
+        await wait(250)
+        await click('.reader-page-viewport')
       }
       await swipe(width * .82, 400, width * .18, 402)
       const second = await assertPage(current, width)
@@ -148,7 +179,7 @@ try {
       await call('Page.navigate', { url: url.replace('?qa=', '?reopen=') })
       await until(`Boolean(document.querySelector('${leaf} .reader-line'))`)
       const reopened = await assertPage(current, width)
-      if (reopened.start !== enlarged.start || !await evaluate(`Boolean(document.querySelector('.theme-night'))`)) throw new Error('Reopening lost position or night mode')
+      if (reopened.start !== enlarged.start || !await evaluate(`Boolean(document.querySelector('.theme-night'))`)) throw new Error('Reopening lost position or night mode: ' + JSON.stringify({ enlarged, reopened }))
       await click('.reader-page-viewport')
       await click('[aria-label="切换白天模式"]')
       if (!await evaluate(`Boolean(document.querySelector('.theme-butter'))`)) throw new Error('Day mode did not restore selected paper background')
@@ -194,8 +225,62 @@ try {
     if (actions.some(action => action.right > width || action.height < 44 || action.whiteSpace !== 'nowrap') || actions[0].width !== actions[1].width || actions[0].height !== actions[1].height) throw new Error('Book title changes action shape: ' + JSON.stringify(actions))
     await capture(`${width}-library-titles`)
   }
+  // Exercise real cloud routes: one row opens, current text is persisted and
+  // the following three chapters are fetched ahead of the reader.
+  await call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
+  await call('Page.navigate', { url: base + '/?cloud-cache=1#/pages/library/library' })
+  await until(`document.querySelectorAll('.cloud-library .row-action').length===2`)
+  await evaluate(`(()=>{const rows=[...document.querySelectorAll('.cloud-library .action-list-row')];window.__qaCloudRows=rows.map(row=>({node:row.querySelector('.row-action'),text:row.querySelector('.row-action').textContent}));rows.find(row=>row.querySelector('.row-title').textContent===${JSON.stringify(longTitle)}).querySelector('.row-action').dataset.qaChosen='true'})()`)
+  heldCatalogId = 'long-cloud'
+  await call('Fetch.enable', { patterns: [{ urlPattern: '*/api/novels/long-cloud/chapters', requestStage: 'Request' }] })
+  const cloudStart = chapterRequests.length
+  await click('[data-qa-chosen="true"]')
+  await wait(120)
+  const rowState = await evaluate(`window.__qaCloudRows.map(({node,text})=>({chosen:node.dataset.qaChosen==='true',sameNode:node.isConnected,text:node.textContent,previous:text,disabled:node.hasAttribute('disabled')}))`)
+  if (rowState.some(row => !row.sameNode || !row.chosen && (row.text !== row.previous || row.disabled))) throw new Error('Opening one book refreshed other row buttons: ' + JSON.stringify(rowState))
+  await capture('390-cloud-one-row-opening')
+  await until(`Boolean(document.querySelector('${leaf} .reader-line'))`)
+  await until(`localStorage.getItem('reader-cloud-cache-v1')?.includes('chapter')`)
+  for (let attempt = 0; attempt < 60 && [0, 1, 2, 3].some(index => !chapterRequests.slice(cloudStart).some(url => url.endsWith('/long-cloud/chapters/' + index))); attempt++) await wait(100)
+  const firstRequests = chapterRequests.slice(cloudStart)
+  if ([0, 1, 2, 3].some(index => firstRequests.filter(url => url.endsWith('/long-cloud/chapters/' + index)).length !== 1) || firstRequests.filter(url => url.endsWith('/long-cloud/chapters')).length !== 1) throw new Error('Cloud initial request or prefetch duplication: ' + JSON.stringify(firstRequests))
+  await wait(250)
+  heldCatalogId = ''
+  await call('Fetch.disable')
+  await evaluate(`(()=>{window.__qaLoadingSeen=false;window.__qaLoadingObserver=new MutationObserver(()=>{if(document.body.innerText.includes('正在加载本章'))window.__qaLoadingSeen=true});window.__qaLoadingObserver.observe(document.body,{childList:true,subtree:true,characterData:true})})()`)
+  await click('.reader-page-viewport')
+  await click('[aria-label="打开目录"]')
+  await click('.chapter-row:nth-child(2)')
+  await until(`document.querySelector('${leaf} .reader-meta')?.textContent.includes('第 2 /') && Boolean(document.querySelector('${leaf} .reader-line'))`)
+  await capture('390-cloud-prefetched-chapter')
+  if (await evaluate('window.__qaLoadingSeen')) throw new Error('Prefetched chapter displayed loading text')
+  await click('.reader-page-viewport')
+  await click('.top-chrome .back')
+  await until(`document.querySelectorAll('.cloud-library .row-action').length===2`)
+  const afterFirstRead = chapterRequests.length
+  await evaluate(`(()=>{window.__qaLoadingSeen=false;[...document.querySelectorAll('.cloud-library .action-list-row')].find(row=>row.querySelector('.row-title').textContent===${JSON.stringify(longTitle)}).querySelector('.row-action').click()})()`)
+  await until(`document.querySelector('${leaf} .reader-meta')?.textContent.includes('第 2 /') && Boolean(document.querySelector('${leaf} .reader-line'))`)
+  await wait(300)
+  const reopenedRequests = chapterRequests.slice(afterFirstRead)
+  if (reopenedRequests.some(url => /\/chapters(?:\/1)?$/.test(url)) || await evaluate('window.__qaLoadingSeen')) throw new Error('Reopen refetched catalog/current chapter or displayed loading: ' + JSON.stringify(reopenedRequests))
+  await capture('390-cloud-cached-reopen')
+  report.push({ width: 390, fixture: 'cloud-cache', initialRequests: firstRequests.map(url => new URL(url).pathname), reopenedRequests: reopenedRequests.map(url => new URL(url).pathname), cachedNextChapter: true, noCachedLoadingHint: true, otherRowsUnchanged: true })
+  await click('.reader-page-viewport')
+  await click('.top-chrome .back')
+  await until(`document.querySelectorAll('.cloud-library .row-action').length===2`)
+  heldCatalogId = 'short-cloud'
+  await call('Fetch.enable', { patterns: [{ urlPattern: '*/api/novels/short-cloud/chapters', requestStage: 'Request' }] })
+  await evaluate(`(()=>{[...document.querySelectorAll('.cloud-library .action-list-row')].find(row=>row.querySelector('.row-title').textContent==='龙族I').querySelector('.row-action').click()})()`)
+  await wait(70)
+  await evaluate(`(()=>{const chosen=[...document.querySelectorAll('.cloud-library .action-list-row')].find(row=>row.querySelector('.row-title').textContent===${JSON.stringify(longTitle)}).querySelector('.row-action');if(chosen.hasAttribute('disabled'))throw new Error('Unrelated row is disabled');chosen.click()})()`)
+  await until(`location.hash.includes('cloud-long-cloud') && Boolean(document.querySelector('${leaf} .reader-line'))`)
+  await wait(650)
+  if (!await evaluate(`location.hash.includes('cloud-long-cloud')`)) throw new Error('Slower earlier book selection replaced the latest choice')
+  heldCatalogId = ''
+  await call('Fetch.disable')
+  report.push({ width: 390, fixture: 'latest-book-selection', latestChoiceWins: true, earlierSlowRequestIgnored: true })
   await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2))
-  console.log('Reader pages, source text, font anchors, day/night, fixed controls, directory touch scroll and title bounds passed at 320/390/430px')
+  console.log('Reader whole-page turns, source text, font anchors, day/night, fixed chrome, directory touch scroll and title bounds passed at 320/390/430px; cloud cache and row isolation passed')
 } finally {
   socket?.close()
   browser.kill()
