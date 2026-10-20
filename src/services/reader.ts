@@ -212,8 +212,10 @@ export function removeReaderBook(id: string) {
   }
 }
 
-export function saveReaderProgress(id: string, chapterIndex: number, scrollTop: number, characterOffset?: number) {
-  const book = loadReaderLibrary().find(item => item.id === id)
+export function saveReaderProgress(id: string, chapterIndex: number, scrollTop: number, characterOffset?: number, knownBook?: Pick<ReaderBook, 'id' | 'chapters' | 'progress'>) {
+  // The open reader already has the book. Avoid decoding every stored TXT body
+  // on each page turn just to look up its chapter count and previous progress.
+  const book = knownBook?.id === id ? knownBook : loadReaderLibrary().find(item => item.id === id)
   if (!book) return null
   const progress = loadProgressMap()
   const normalizedChapter = Math.max(0, Math.min(book.chapters.length - 1, Math.floor(chapterIndex)))

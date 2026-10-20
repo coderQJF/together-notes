@@ -316,12 +316,26 @@ test('reader pages turn a complete reading sheet with fixed controls and visible
   assert.match(pager, /@touchstart="onTouchStart"/)
   assert.match(pager, /@touchmove\.stop\.prevent="onTouchMove"/)
   assert.match(pager, /paginateReaderText/)
-  assert.match(pager, /class="reader-leaf reader-leaf-current"[\s\S]*class="pager-header"[\s\S]*class="reader-page-viewport reader-copy"[\s\S]*class="pager-footer"/)
-  assert.match(pager, /class="reader-leaf reader-leaf-preview"[\s\S]*:index="previewIndex"[\s\S]*class="pager-footer"/)
+  assert.match(pager, /reader-leaf-current/)
+  assert.match(pager, /reader-leaf-preview/)
+  assert.match(pager, /class="pager-header"[\s\S]*class="reader-page-viewport reader-copy"[\s\S]*class="pager-footer"/)
   assert.match(pager, /\.reader-leaf\{[^}]*inset:0[^}]*padding:/)
   assert.match(reader, /#header="\{ index, count \}"/)
   assert.match(progress, /characterOffset/)
   assert.match(routes, /"navigationBarTitleText": "小说阅读", "disableScroll": true/)
+})
+
+test('reading metadata stays minimal and chapter headings only reserve opening-page space', async () => {
+  const reader = await readFile('src/pages/reader/reader.vue', 'utf8')
+  const pager = await readFile('src/components/ReaderPager.vue', 'utf8')
+  const header = reader.match(/<template #header="\{ index, count \}">([\s\S]*?)<\/template>/)?.[1] || ''
+  assert.match(header, /class="reader-progress"/)
+  assert.doesNotMatch(header, /book\.title|book\.author|chapter\.title/)
+  assert.match(reader, /:chapter-title="chapter\.title"/)
+  assert.match(reader, /\.reader-meta\{[^}]*justify-content:flex-end/)
+  assert.match(pager, /reader-chapter-title/)
+  assert.match(pager, /firstPageTopInset/)
+  assert.doesNotMatch(pager, /左右滑动翻页|轻触显示操作|tap-hint/)
 })
 
 test('Android home widget isolates text cards from its image carousel and keeps image payloads small', async () => {

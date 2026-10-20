@@ -18,6 +18,8 @@ export interface ReaderPageLayout {
   fontSize: number
   lineHeight: number
   letterSpacing?: number
+  /** Space reserved for the chapter heading on the first page only. */
+  firstPageTopInset?: number
   measureCharacter?: (character: string) => number
 }
 
@@ -90,6 +92,7 @@ export function paginateReaderText(content: string, layout: ReaderPageLayout): R
   const pages: ReaderTextPage[] = []
   let page: ReaderTextPage = { start: 0, end: 0, lines: [] }
   let usedHeight = 0
+  const availableHeight = () => Math.max(lineHeight, height - (pages.length ? 0 : Math.max(0, layout.firstPageTopInset || 0)))
   const finishPage = () => {
     const last = page.lines[page.lines.length - 1]
     if (last) last.height = lineHeight
@@ -97,7 +100,7 @@ export function paginateReaderText(content: string, layout: ReaderPageLayout): R
   }
   for (const line of lines) {
     // A paragraph gap belongs between lines, never by itself on another page.
-    if (page.lines.length && usedHeight + lineHeight > height) {
+    if (page.lines.length && usedHeight + lineHeight > availableHeight()) {
       finishPage()
       page = { start: line.start, end: line.end, lines: [] }
       usedHeight = 0

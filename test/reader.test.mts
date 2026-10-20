@@ -16,6 +16,70 @@ import {
 import { decodeReaderText, readerTitleFromFileName } from '../src/services/reader-import.ts'
 import { chapterStepFromSwipe } from '../src/services/reader-gesture.ts'
 import { paginateReaderText, readerPageAtOffset, readerOffsetFromLegacyScroll } from '../src/services/reader-pagination.ts'
+import { completeReaderSheet, createReaderSheets, isReaderSheetTransition, prepareReaderSheet, readerTurnDuration, readerTurnTarget, spareReaderSheet } from '../src/services/reader-pager-motion.ts'
+
+test('chapter opening reserves title space once while later pages use the complete body area', () => {
+  const content = '标题仅在章首出现，正文始终连续。😀\n'.repeat(100)
+  for (const width of [280, 342, 382]) {
+    for (const fontSize of [15, 21, 26]) {
+      const layout = { width, height: 600, fontSize, lineHeight: 2.15, firstPageTopInset: fontSize * 3.4 }
+      const pages = paginateReaderText(content, layout)
+      assert.equal(pages.map(page => content.slice(page.start, page.end)).join(''), content)
+      assert.ok(pages.length > 2)
+      assert.ok(pages[0].lines.length < pages[1].lines.length, 'Only the opening page gives body space to the title')
+      for (const [index, page] of pages.entries()) {
+        const available = layout.height - (index ? 0 : layout.firstPageTopInset)
+        assert.ok(page.lines.reduce((sum, line) => sum + line.height, 0) <= available)
+        if (index) assert.equal(page.start, pages[index - 1].end)
+      }
+      const anchor = pages[3].start + 5
+      const resized = paginateReaderText(content, { ...layout, firstPageTopInset: 160, fontSize: fontSize + 2 })
+      const restored = resized[readerPageAtOffset(resized, anchor)]
+      assert.ok(restored.start <= anchor && restored.end > anchor)
+    }
+  }
+})
+
+test('reader sheet handoff keeps the painted incoming page on the same physical sheet in both directions', () => {
+  let sheets = createReaderSheets(2, 9)
+  const outgoing = sheets.active
+  sheets = prepareReaderSheet(sheets, 3)
+  const incoming = spareReaderSheet(sheets)
+  const paintedPages = sheets.pages
+  assert.equal(sheets.pages[outgoing], 2)
+  assert.equal(sheets.pages[incoming], 3)
+  sheets = completeReaderSheet(sheets)
+  assert.equal(sheets.active, incoming)
+  assert.equal(sheets.pages, paintedPages, 'Completion changes roles without replacing painted page content')
+  assert.equal(sheets.pages[sheets.active], 3)
+  sheets = prepareReaderSheet(sheets, 2)
+  sheets = completeReaderSheet(sheets)
+  assert.equal(sheets.active, outgoing)
+  assert.equal(sheets.pages[sheets.active], 2)
+  assert.equal(createReaderSheets(99, 9).pages[0], 8)
+})
+
+test('released reader drags finish their remaining distance instead of restarting a full animation', () => {
+  for (const width of [320, 390, 430]) {
+    for (const direction of [-1, 1] as const) {
+      const target = readerTurnTarget(direction, width)
+      assert.ok(Math.abs(target) > width, 'A completed sheet clears the full viewport')
+      assert.equal(Math.sign(target), -direction)
+      const fromRest = readerTurnDuration(0, direction, width)
+      const released = readerTurnDuration(target * .6, direction, width)
+      assert.ok(released < fromRest)
+      assert.ok(released >= 90 && fromRest <= 240)
+    }
+  }
+})
+
+test('reader completes native serialized leaf transitions without accepting bubbled child transitions', () => {
+  assert.equal(isReaderSheetTransition({ target: { dataset: { sheet: '1' } }, currentTarget: { dataset: { sheet: 1 } }, detail: { propertyName: 'transform' } }, 1), true)
+  assert.equal(isReaderSheetTransition({ target: { id: 'reader-sheet-0' }, currentTarget: { id: 'reader-sheet-0' } }, 0), true)
+  assert.equal(isReaderSheetTransition({ target: { id: 'line-1' }, currentTarget: { id: 'reader-sheet-0' }, propertyName: 'transform' }, 0), false)
+  assert.equal(isReaderSheetTransition({ target: { dataset: { sheet: 0 } }, propertyName: 'opacity' }, 0), false)
+  assert.equal(isReaderSheetTransition({ target: { dataset: { sheet: 1 } }, propertyName: 'transform' }, 0), false)
+})
 
 test('fixed reading pages preserve every source character and fit the available line area at mobile sizes', () => {
   const content = ('\t初见。When you feel most lonely and desperate, there will be a door open for you.\n\n\n\n路明非看着窗外的灯，慢慢合上书。😀\n\n' + '长'.repeat(72) + '\n').repeat(16)

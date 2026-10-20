@@ -78,7 +78,7 @@ try {
   }
   const until = async expression => { for (let i = 0; i < 80; i++) { if (await evaluate(expression)) return; await wait(100) } throw new Error(`Reader QA timed out: ${expression}\n${await evaluate('document.body.innerText')}`) }
   const click = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
-  const capture = async name => { const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, name + '.png'), Buffer.from(shot.data, 'base64')) }
+  const capture = async name => { const shot = await call('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true }); await writeFile(join(output, name + '.png'), Buffer.from(shot.data, 'base64')) }
   const store = (key, value) => evaluate(`localStorage.setItem(${JSON.stringify(key)},JSON.stringify({type:'object',data:${JSON.stringify(value)}}))`)
   const swipe = async (x1, y1, x2, y2) => {
     await call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x1, y: y1 }] })
@@ -89,9 +89,9 @@ try {
     await call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
     await wait(400)
   }
-  const leaf = '.reader-leaf:not(.reader-leaf-preview)'
+  const leaf = '.reader-leaf-current'
   const offset = () => evaluate(`Number(document.querySelector(${JSON.stringify(leaf)}).dataset.start)`)
-  const pageMetrics = () => evaluate(`(()=>{const leaf=document.querySelector(${JSON.stringify(leaf)}),viewport=document.querySelector('.reader-page-viewport').getBoundingClientRect(),lines=[...leaf.querySelectorAll('.reader-line')];return {start:Number(leaf.dataset.start),end:Number(leaf.dataset.end),page:Number(leaf.dataset.page),count:Number(leaf.dataset.pages),bottom:Math.max(...lines.map(line=>line.getBoundingClientRect().bottom)),viewportBottom:viewport.bottom,viewportTop:viewport.top,lines:lines.length,overflow:lines.some(line=>{const range=document.createRange();range.selectNodeContents(line);return range.getBoundingClientRect().right>viewport.right+1}),bodyScroll:Math.max(scrollY,document.body.scrollTop),scrollWidth:document.documentElement.scrollWidth}})()`)
+  const pageMetrics = () => evaluate(`(()=>{const leaf=document.querySelector(${JSON.stringify(leaf)}),viewport=leaf.querySelector('.reader-page-viewport').getBoundingClientRect(),lines=[...leaf.querySelectorAll('.reader-line')],title=leaf.querySelector('.reader-chapter-title');return {start:Number(leaf.dataset.start),end:Number(leaf.dataset.end),page:Number(leaf.dataset.page),count:Number(leaf.dataset.pages),bottom:Math.max(...lines.map(line=>line.getBoundingClientRect().bottom)),bodyTop:lines[0]?.getBoundingClientRect().top,viewportBottom:viewport.bottom,viewportTop:viewport.top,lines:lines.length,title:title?.textContent||'',overflow:lines.some(line=>{const range=document.createRange();range.selectNodeContents(line);return range.getBoundingClientRect().right>viewport.right+1}),bodyScroll:Math.max(scrollY,document.body.scrollTop),scrollWidth:document.documentElement.scrollWidth}})()`)
   const assertPage = async (current, width) => {
     const metrics = await pageMetrics()
     const rendered = await evaluate(`[...document.querySelector(${JSON.stringify(leaf)}).querySelectorAll('.reader-line')].map(line=>line.textContent).join('')`)
@@ -99,7 +99,57 @@ try {
     const expected = content.slice(metrics.start, metrics.end).replace(/\n/g, '').replace(/\t/g, '  ')
     if (rendered !== expected) throw new Error('Page dropped or duplicated text: ' + JSON.stringify({ rendered, expected, metrics }))
     if (metrics.bottom > metrics.viewportBottom + .5 || metrics.overflow || metrics.bodyScroll > 1 || metrics.scrollWidth > width) throw new Error('Page overflow: ' + JSON.stringify(metrics))
+    const clean = await evaluate(`(()=>{const leaf=document.querySelector('${leaf}'),meta=leaf.querySelector('.reader-meta'),progress=leaf.querySelector('.reader-progress');return {meta:meta.textContent,metaRight:meta.getBoundingClientRect().right,progressRight:progress.getBoundingClientRect().right,extra:leaf.querySelectorAll('.book-name,.chapter-heading,.tap-hint').length}})()`)
+    if (!/^第 \d+ \/ \d+ 章 · \d+%$/.test(clean.meta) || Math.abs(clean.metaRight - clean.progressRight) > 1 || clean.extra || (metrics.page === 1) !== Boolean(metrics.title)) throw new Error('Reader retains repeated headings or hint: ' + JSON.stringify({ clean, metrics }))
+    if (metrics.page > 1 && metrics.viewportTop > 70) throw new Error('Continued pages still reserve opening-heading space: ' + JSON.stringify(metrics))
     return metrics
+  }
+  const startMotionTrace = () => evaluate(`(()=>{
+    window.__readerMotionFrames=[];window.__readerMotionRelease=0;window.__readerMotionSampling=true;
+    const sample=time=>{if(!window.__readerMotionSampling)return;const pager=document.querySelector('.reader-pager'),guard=pager.getBoundingClientRect();
+      window.__readerMotionFrames.push({time,state:pager.dataset.turnState,activeSheet:pager.dataset.activeSheet,leaves:[...pager.querySelectorAll('.reader-leaf')].map(node=>{const rect=node.getBoundingClientRect(),style=getComputedStyle(node);return {sheet:node.dataset.sheet,current:node.classList.contains('reader-leaf-current'),page:Number(node.dataset.sheetPage||node.dataset.page),start:Number(node.dataset.start),end:Number(node.dataset.end),x:rect.left,right:rect.right,visible:style.visibility!=='hidden'&&style.display!=='none'&&Number(style.opacity)>0,lines:node.querySelectorAll('.reader-line').length,text:[...node.querySelectorAll('.reader-line')].map(line=>line.textContent).join('').slice(0,100),transform:style.transform}}),probes:[.08,.5,.92].map(part=>document.elementFromPoint(guard.left+guard.width*part,guard.top+guard.height*.5)?.closest('.reader-leaf')?.dataset.sheet??null)});
+      requestAnimationFrame(sample)};requestAnimationFrame(sample);
+  })()`)
+  const finishMotionTrace = async (width, name, direction = 1) => {
+    await evaluate('window.__readerMotionRelease=performance.now()')
+    await call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await capture(`${width}-${name}-release`)
+    await wait(400)
+    const trace = await evaluate('window.__readerMotionSampling=false;({releaseAt:window.__readerMotionRelease,frames:window.__readerMotionFrames})')
+    await writeFile(join(output, `${width}-${name}-motion.json`), JSON.stringify(trace, null, 2))
+    const before = trace.frames.filter(frame => frame.time < trace.releaseAt).at(-1)
+    const after = trace.frames.filter(frame => frame.time >= trace.releaseAt)
+    const outgoing = before?.leaves.find(sheet => sheet.current)
+    const incoming = before?.leaves.find(sheet => !sheet.current && sheet.visible && sheet.text)
+    if (!outgoing || !incoming || after.length < 8 || !after.some(frame => frame.state === 'settling')) throw new Error('Motion trace missed its real touch release: ' + JSON.stringify({ width, name, releaseAt: trace.releaseAt, states: [...new Set(after.map(frame => frame.state))], frames: after.length, before, traceFile: `${width}-${name}-motion.json` }))
+    let previousX = outgoing.x
+    for (const frame of after) {
+      const old = frame.leaves.find(sheet => sheet.sheet === outgoing.sheet)
+      const target = frame.leaves.find(sheet => sheet.sheet === incoming.sheet)
+      if (!target || !target.visible || Math.abs(target.x) > 1 || target.text !== incoming.text || !target.lines || frame.probes.some(sheet => sheet === null)) throw new Error('Incoming page flashed, blanked or changed during handoff: ' + JSON.stringify(frame))
+      if (old.current && old.text === outgoing.text) {
+        if ((old.x - previousX) * direction > 5) throw new Error('Release snapped the outgoing sheet backward: ' + JSON.stringify({ previousX, frame }))
+        previousX = old.x
+      }
+    }
+    const settled = after.at(-1)
+    const active = settled.leaves.find(sheet => sheet.current)
+    if (settled.state !== 'idle' || active.sheet !== incoming.sheet || active.text !== incoming.text || Math.abs(active.x) > 1) throw new Error('Page handoff did not preserve the painted incoming sheet: ' + JSON.stringify(settled))
+    await capture(`${width}-${name}-settled`)
+    return { frames: trace.frames.length, releaseFrames: after.length, releaseX: outgoing.x, incomingSheet: incoming.sheet, stablePaint: true, noBackwardSnap: true }
+  }
+  const traceSwipe = async (width, direction, name) => {
+    const startX = width * (direction === 1 ? .82 : .18)
+    await startMotionTrace()
+    await call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: startX, y: 400 }] })
+    // Keep the live gesture below the reader's 900 ms swipe limit. A blocking
+    // screenshot here can extend a CDP gesture well beyond a human swipe.
+    for (let step = 1; step <= 6; step++) {
+      await call('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: startX - direction * width * .57 * step / 6, y: 400 + step / 3 }] })
+      await wait(12)
+    }
+    await wait(35)
+    return finishMotionTrace(width, name, direction)
   }
   const report = []
   await call('Page.enable')
@@ -120,14 +170,14 @@ try {
       await call('Page.navigate', { url })
       await until(`Boolean(document.querySelector('${leaf} .reader-line')) && Number(document.querySelector('${leaf}').dataset.pages)>1`)
       await wait(250)
-      await assertPage(current, width)
+      const opening = await assertPage(current, width)
       await capture(`${width}-${current.id}-day`)
       if (current === book) {
         // The turning sheet includes the entire page, not only the measured
         // body box. Keep native safe areas and the operation chrome stationary.
         await evaluate(`(()=>{const shell=document.querySelector('.reader-shell');shell.style.setProperty('--reader-safe-top','24px');shell.style.setProperty('--reader-safe-bottom','18px');window.dispatchEvent(new Event('resize'))})()`)
         await wait(250)
-        await click('.reader-page-viewport')
+        await click(`${leaf} .reader-page-viewport`)
         const chromeAtRest = await evaluate(`JSON.stringify([...document.querySelectorAll('.top-chrome,.bottom-chrome')].map(node=>({top:node.getBoundingClientRect().top,left:node.getBoundingClientRect().left,height:node.getBoundingClientRect().height})))`)
         const rest = await evaluate(`(()=>{const current=document.querySelector('${leaf}');return {leaf:current.getBoundingClientRect().toJSON(),header:current.querySelector('.pager-header').getBoundingClientRect().toJSON(),footer:current.querySelector('.pager-footer').getBoundingClientRect().toJSON(),guard:document.querySelector('.reader-pager').getBoundingClientRect().toJSON()}})()`)
         if (rest.leaf.left !== 0 || rest.leaf.width !== width || rest.guard.top !== 24 || rest.guard.bottom !== 826) throw new Error('Page does not reach full reading surface edges: ' + JSON.stringify(rest))
@@ -143,13 +193,26 @@ try {
         await wait(520)
         await evaluate(`(()=>{const shell=document.querySelector('.reader-shell');shell.style.removeProperty('--reader-safe-top');shell.style.removeProperty('--reader-safe-bottom');window.dispatchEvent(new Event('resize'))})()`)
         await wait(250)
-        await click('.reader-page-viewport')
+        await click(`${leaf} .reader-page-viewport`)
       }
-      await swipe(width * .82, 400, width * .18, 402)
+      let motion
+      if (current === book) {
+        motion = { next: await traceSwipe(width, 1, 'page-turn') }
+      } else await swipe(width * .82, 400, width * .18, 402)
       const second = await assertPage(current, width)
       if (second.page !== 2 || second.start <= 0) throw new Error('Horizontal swipe did not advance exactly one page')
+      if (second.title || second.bodyTop >= opening.bodyTop || Math.abs(second.bodyTop - second.viewportTop) > 1) throw new Error('Chapter title is repeated or opening-title space remains on following pages: ' + JSON.stringify({ opening, second }))
+      await capture(`${width}-${current.id}-continued`)
+      if (current === book) {
+        motion.previous = await traceSwipe(width, -1, 'page-turn-previous')
+        const returned = await assertPage(current, width)
+        if (returned.page !== 1 || !returned.title) throw new Error('Reverse swipe lost chapter opening title')
+        motion.repeatedNext = await traceSwipe(width, 1, 'page-turn-repeat')
+        const repeated = await assertPage(current, width)
+        if (repeated.page !== 2 || repeated.start !== second.start) throw new Error('Repeated swipe changed the measured page position')
+      }
       const savedOffset = second.start
-      await click('.reader-page-viewport')
+      await click(`${leaf} .reader-page-viewport`)
       await until(`Boolean(document.querySelector('.reader-chrome'))`)
       const chromeBefore = await evaluate(`JSON.stringify([...document.querySelectorAll('.top-chrome,.bottom-chrome')].map(node=>({top:node.getBoundingClientRect().top,height:node.getBoundingClientRect().height})))`)
       await swipe(width / 2, 640, width / 2, 220)
@@ -171,7 +234,7 @@ try {
       await wait(250)
       await capture(`${width}-${current.id}-night-settings`)
       await click('[aria-label="关闭阅读设置"]')
-      await click('.reader-page-viewport')
+      await click(`${leaf} .reader-page-viewport`)
       await until(`!document.querySelector('.reader-chrome')`)
       const enlarged = await assertPage(current, width)
       if (!(enlarged.start <= savedOffset && enlarged.end > savedOffset)) throw new Error('Font resize lost the original passage')
@@ -180,7 +243,7 @@ try {
       await until(`Boolean(document.querySelector('${leaf} .reader-line'))`)
       const reopened = await assertPage(current, width)
       if (reopened.start !== enlarged.start || !await evaluate(`Boolean(document.querySelector('.theme-night'))`)) throw new Error('Reopening lost position or night mode: ' + JSON.stringify({ enlarged, reopened }))
-      await click('.reader-page-viewport')
+      await click(`${leaf} .reader-page-viewport`)
       await click('[aria-label="切换白天模式"]')
       if (!await evaluate(`Boolean(document.querySelector('.theme-butter'))`)) throw new Error('Day mode did not restore selected paper background')
       // At the final page, the next button crosses to the following chapter.
@@ -189,20 +252,20 @@ try {
       await call('Page.navigate', { url: url.replace('?qa=', '?last=') })
       await until(`Boolean(document.querySelector('${leaf} .reader-line'))`)
       await assertPage(current, width)
-      await click('.reader-page-viewport')
+      await click(`${leaf} .reader-page-viewport`)
       await click('[aria-label="下一页"]')
       await until(`document.querySelector('.reader-meta')?.textContent.includes('第 ${chapterIndex + 2} /')`)
       await click('[aria-label="上一页"]')
       await until(`document.querySelector('.reader-meta')?.textContent.includes('第 ${chapterIndex + 1} /')`)
       const previousLast = await pageMetrics()
       if (previousLast.page !== previousLast.count) throw new Error('Previous page did not return to previous chapter ending')
-      report.push({ width, fixture: current.id, pageCount21: second.count, pageCount26: enlarged.count, anchor: savedOffset, reopenedStart: reopened.start, fixedControls: true, noOverflow: true })
+      report.push({ width, fixture: current.id, pageCount21: second.count, pageCount26: enlarged.count, anchor: savedOffset, reopenedStart: reopened.start, openingBodyTop: opening.bodyTop, continuedBodyTop: second.bodyTop, titleOnlyAtOpening: true, progressOnlyHeader: true, noBottomHint: true, motion, fixedControls: true, noOverflow: true })
     }
     // A scrollable directory must still accept a native vertical gesture.
     await call('Emulation.setDeviceMetricsOverride', { width, height: 640, deviceScaleFactor: 1, mobile: true })
     await call('Page.navigate', { url: base + '/?directory=' + width + '#/pages/reader/reader?id=qa-directory' })
     await until(`Boolean(document.querySelector('${leaf} .reader-line'))`)
-    await click('.reader-page-viewport')
+    await click(`${leaf} .reader-page-viewport`)
     await click('[aria-label="打开目录"]')
     const directoryScroll = '.directory-scroll .uni-scroll-view .uni-scroll-view'
     const before = await evaluate(`document.querySelector('${directoryScroll}').scrollTop`)
@@ -248,13 +311,13 @@ try {
   heldCatalogId = ''
   await call('Fetch.disable')
   await evaluate(`(()=>{window.__qaLoadingSeen=false;window.__qaLoadingObserver=new MutationObserver(()=>{if(document.body.innerText.includes('正在加载本章'))window.__qaLoadingSeen=true});window.__qaLoadingObserver.observe(document.body,{childList:true,subtree:true,characterData:true})})()`)
-  await click('.reader-page-viewport')
+  await click(`${leaf} .reader-page-viewport`)
   await click('[aria-label="打开目录"]')
   await click('.chapter-row:nth-child(2)')
   await until(`document.querySelector('${leaf} .reader-meta')?.textContent.includes('第 2 /') && Boolean(document.querySelector('${leaf} .reader-line'))`)
   await capture('390-cloud-prefetched-chapter')
   if (await evaluate('window.__qaLoadingSeen')) throw new Error('Prefetched chapter displayed loading text')
-  await click('.reader-page-viewport')
+  await click(`${leaf} .reader-page-viewport`)
   await click('.top-chrome .back')
   await until(`document.querySelectorAll('.cloud-library .row-action').length===2`)
   const afterFirstRead = chapterRequests.length
@@ -265,7 +328,7 @@ try {
   if (reopenedRequests.some(url => /\/chapters(?:\/1)?$/.test(url)) || await evaluate('window.__qaLoadingSeen')) throw new Error('Reopen refetched catalog/current chapter or displayed loading: ' + JSON.stringify(reopenedRequests))
   await capture('390-cloud-cached-reopen')
   report.push({ width: 390, fixture: 'cloud-cache', initialRequests: firstRequests.map(url => new URL(url).pathname), reopenedRequests: reopenedRequests.map(url => new URL(url).pathname), cachedNextChapter: true, noCachedLoadingHint: true, otherRowsUnchanged: true })
-  await click('.reader-page-viewport')
+  await click(`${leaf} .reader-page-viewport`)
   await click('.top-chrome .back')
   await until(`document.querySelectorAll('.cloud-library .row-action').length===2`)
   heldCatalogId = 'short-cloud'
@@ -280,7 +343,7 @@ try {
   await call('Fetch.disable')
   report.push({ width: 390, fixture: 'latest-book-selection', latestChoiceWins: true, earlierSlowRequestIgnored: true })
   await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2))
-  console.log('Reader whole-page turns, source text, font anchors, day/night, fixed chrome, directory touch scroll and title bounds passed at 320/390/430px; cloud cache and row isolation passed')
+  console.log('Reader opening-only titles, whole-page turns, release/handoff paint continuity, source text, font anchors, day/night, fixed chrome and directory touch scroll passed at 320/390/430px; cloud cache and row isolation passed')
 } finally {
   socket?.close()
   browser.kill()
