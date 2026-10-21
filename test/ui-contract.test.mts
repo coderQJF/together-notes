@@ -4,6 +4,7 @@ import { access, readFile, readdir } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { appFriendShare, appTimelineShare } from '../src/services/app-share.ts'
+import { createPageShareHandler } from '../src/services/share-handler.ts'
 
 test('app recommendations always use public artwork and a clean guest-capable home route', async () => {
   assert.deepEqual(appFriendShare(), { title: '小记｜一个人记事，两个人共享', path: '/pages/index/index', imageUrl: '/static/share/app-card.png' })
@@ -16,13 +17,38 @@ test('app recommendations always use public artwork and a clean guest-capable ho
   const home = await readFile('src/pages/index/index.vue', 'utf8')
   const space = await readFile('src/pages/us/us.vue', 'utf8')
   const card = await readFile('src/components/RecommendAppCard.vue', 'utf8')
-  assert.match(home, /onShareAppMessage\(appFriendShare\)/)
-  assert.match(home, /onShareTimeline\(appTimelineShare\)/)
+  assert.match(home, /onShareAppMessage\(createPageShareHandler\(appFriendShare\)\)/)
+  assert.match(home, /onShareTimeline\(createPageShareHandler\(appTimelineShare\)\)/)
   assert.match(home, /enableAppShareMenu\(true\)/)
-  assert.match(space, /onShareAppMessage\(appFriendShare\)/)
+  assert.match(space, /onShareAppMessage\(createPageShareHandler\(appFriendShare\)\)/)
   assert.equal((space.match(/<RecommendAppCard\s*\/>/g) || []).length, 2)
   assert.match(card, /open-type="share"/)
   assert.doesNotMatch(await readFile('src/services/app-share.ts', 'utf8'), /cachedHome|getStorageSync|item\.title|user\./)
+})
+
+test('mini-program share callbacks still return artwork after leaving and reopening a page', async () => {
+  // Use the installed mini-program Vue runtime, which caches hook.__weh.
+  // Returning the imported payload function directly would fail on the second visit.
+  const { injectHook } = await import('@dcloudio/uni-mp-vue')
+  const target = () => {
+    const page: any = { isUnmounted: false, scope: { on() {}, off() {} } }
+    page.root = page
+    return page
+  }
+  for (const [name, payload] of [['onShareAppMessage', appFriendShare], ['onShareTimeline', appTimelineShare]] as const) {
+    let previous: any
+    for (let visit=0;visit<4;visit++) {
+      if (previous) previous.isUnmounted=true
+      const page=target()
+      injectHook(name,createPageShareHandler(payload),page)
+      assert.deepEqual(page[name][0](),payload(),`share payload lost on visit ${visit+1}`)
+      previous=page
+    }
+    const other=target()
+    injectHook(name,createPageShareHandler(payload),other)
+    previous.isUnmounted=true
+    assert.deepEqual(other[name][0](),payload(),'unmounting one page must not invalidate another page share')
+  }
 })
 
 async function vueFiles(directory: string): Promise<string[]> {

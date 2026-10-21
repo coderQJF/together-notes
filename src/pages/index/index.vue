@@ -2,6 +2,7 @@
 import {ref,reactive,computed,onMounted,onUnmounted,nextTick,watch} from 'vue';
 import {onLoad,onShow,onHide,onShareAppMessage,onShareTimeline} from '@dcloudio/uni-app';
 import {appFriendShare,appTimelineShare,enableAppShareMenu} from '../../services/app-share';
+import {createPageShareHandler} from '../../services/share-handler';
 import BulkSelectionBar from '../../components/BulkSelectionBar.vue';
 import BulkSelectionToolbar from '../../components/BulkSelectionToolbar.vue';
 import SelectableCard from '../../components/SelectableCard.vue';
@@ -163,8 +164,8 @@ function format(v?:string){return formatDateTime(v)}
 function inbox(){uni.navigateTo({url:'/pages/inbox/inbox'})}
 function start(){clearInterval(timer);timer=setInterval(()=>{if(user.value&&!selectionMode.value)refresh().catch(()=>{})},30000)}
 // #ifdef MP-WEIXIN
-onShareAppMessage(appFriendShare);
-onShareTimeline(appTimelineShare);
+onShareAppMessage(createPageShareHandler(appFriendShare));
+onShareTimeline(createPageShareHandler(appTimelineShare));
 // #endif
 onShow(()=>enableAppShareMenu(true));
  onLoad(async(options)=>{restoreHomeSnapshot();authRoute=options?.login==='1';if(authRoute)openLogin();try{

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { onShow, onShareAppMessage } from '@dcloudio/uni-app'
 import { appFriendShare, enableAppShareMenu } from '../../services/app-share'
+import { createPageShareHandler } from '../../services/share-handler'
 import RecommendAppCard from '../../components/RecommendAppCard.vue'
 import LegalLinks from '../../components/LegalLinks.vue'
 import GuestNotice from '../../components/GuestNotice.vue'
@@ -228,7 +229,7 @@ async function deleteAccount() {
 onShow(load)
 onShow(() => enableAppShareMenu())
 // #ifdef MP-WEIXIN
-onShareAppMessage(appFriendShare)
+onShareAppMessage(createPageShareHandler(appFriendShare))
 // #endif
 </script>
 

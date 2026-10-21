@@ -10,6 +10,7 @@ import { WATER_CUP_ML } from '../../services/water-mood'
 import { enableAppShareMenu } from '../../services/app-share'
 import { shareWaterReminder, waterFriendShare, waterTimelineShare } from '../../services/water-share'
 import { cachedHome, request } from '../../services/api'
+import { createPageShareHandler } from '../../services/share-handler'
 
 const day = ref(waterDay()), cups = ref(0), active = ref(false), error = ref(''), revision = ref(0), feedback = ref<'add' | 'undo' | ''>('')
 const message = computed(() => cups.value >= 4 ? '已超过日常参考量，不用为了杯数继续喝。' : cups.value === 3 ? '少量多次，按自己的身体感受来。' : '喝完再点，慢慢来就好。')
@@ -51,7 +52,7 @@ function stop() { active.value=false;loadEpoch++;clearInterval(timer) }
 onShow(async()=>{active.value=true;const epoch=++loadEpoch;enableAppShareMenu(true);try{if(uni.getStorageSync('session')&&!cachedHome())await request('/me');if(!active.value||epoch!==loadEpoch)return;read();error.value=''}catch(e){fail(e)}if(!active.value||epoch!==loadEpoch)return;void sync();clearInterval(timer);timer=setInterval(()=>{try{read()}catch(e){fail(e)}},15000)})
 onHide(stop);onUnmounted(stop)
 // #ifdef MP-WEIXIN
-onShareAppMessage(waterFriendShare);onShareTimeline(waterTimelineShare)
+onShareAppMessage(createPageShareHandler(waterFriendShare));onShareTimeline(createPageShareHandler(waterTimelineShare))
 // #endif
 </script>
 <template>
