@@ -1,0 +1,42 @@
+name: Diagnose production connectivity
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-production.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe public HTTPS independently
+        run: |
+          curl -v --connect-timeout 10 --max-time 20 https://notes.coder-f-nowork.cn/api/health || true
+          timeout 15 openssl s_client -connect notes.coder-f-nowork.cn:443 -servername notes.coder-f-nowork.cn -brief </dev/null || true
+      - name: Inspect server listeners and TLS configuration
+        env:
+          SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          test -n "$SSH_KEY" && test -n "$ECS_HOST" && test -n "$ECS_USER"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 10 -H "$ECS_HOST" >> ~/.ssh/known_hosts
+          timeout 90 ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 "$ECS_USER@$ECS_HOST" 'sh -s' <<'INSPECT'
+          uptime
+          systemctl is-active nginx together-notes || true
+          ss -lnt '( sport = :443 or sport = :80 or sport = :22 or sport = :8787 )'
+          curl -sS --max-time 10 http://127.0.0.1:8787/api/health || true
+          curl -v --connect-timeout 5 --max-time 10 --resolve notes.coder-f-nowork.cn:443:127.0.0.1 https://notes.coder-f-nowork.cn/api/health || true
+          nginx -t
+          nginx -T 2>/dev/null | grep -E '^[[:space:]]*(listen|server_name|ssl_certificate|ssl_protocols|ssl_ciphers|ssl_reject_handshake)[[:space:]]' || true
+          if command -v ufw >/dev/null; then ufw status; fi
+          INSPECT
