@@ -110,6 +110,25 @@ try {
     await writeFile(resolve(outputDir, outputName), Buffer.from(shot.data, 'base64'))
   }
 
+  if (!process.argv.includes('--covers-only')) {
+    // Bake water motion into transparent frames; sway belongs to the shared
+    // component. No runtime SVG support is needed on WeChat.
+    const source = await readFile(resolve(sourceDir, 'water-cup.svg'), 'utf8')
+    const frames = Array.from({ length: 24 }, (_, index) => {
+      const phase = Math.cos(index / 24 * Math.PI * 2)
+      return source
+        .replace('width="24" height="24"', `x="${index * 72}" width="72" height="72"`)
+        .replace('<path d="M30 138', `<g transform="translate(0 ${phase}) rotate(${phase * 2} 120 145)"><path d="M30 138`)
+        .replace('<path d="M55 60', '</g><path d="M55 60')
+    }).join('')
+    const width = 24 * 72
+    await page.call('Emulation.setDeviceMetricsOverride', { width, height: 72, deviceScaleFactor: 1, mobile: false })
+    await page.call('Page.setDocumentContent', { frameId, html: `<style>html,body{margin:0;background:transparent;overflow:hidden}</style><svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="72">${frames}</svg>` })
+    await wait(100)
+    const shot = await page.call('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width, height: 72, scale: 1 } })
+    await writeFile(resolve(outputDir, 'water-cup-wave.png'), Buffer.from(shot.data, 'base64'))
+  }
+
   const shareDir = resolve(root, 'src/static/share')
   await mkdir(shareDir, { recursive: true })
   const noteIcon = `data:image/png;base64,${(await readFile(resolve(outputDir, 'note-active.png'))).toString('base64')}`
