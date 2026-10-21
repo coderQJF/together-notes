@@ -1,6 +1,6 @@
 {
   "name": "together-notes",
-  "version": "0.10.14",
+  "version": "0.10.15",
   "scripts": {
     "dev:h5": "uni",
     "build:h5": "uni build",
@@ -8,7 +8,7 @@
     "dev:mp-weixin": "uni -p mp-weixin",
     "prebuild:mp-weixin": "node scripts/configure-wechat.mjs",
     "build:mp-weixin": "uni build -p mp-weixin",
-    "postbuild:mp-weixin": "node scripts/verify-no-app-game-runtime.mjs mp-weixin",
+    "postbuild:mp-weixin": "node scripts/verify-no-app-game-runtime.mjs mp-weixin && node scripts/verify-mp-cards.mjs",
     "prebuild:app": "node scripts/configure-app.mjs",
     "build:app": "uni build -p app",
     "postbuild:app": "node scripts/verify-no-app-game-runtime.mjs app",

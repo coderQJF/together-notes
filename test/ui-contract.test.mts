@@ -240,7 +240,7 @@ test('games are App-only, componentized, and never bundle a Pokemon ROM', async 
   assert.match(nativeNotices, /Mozilla Public License 2\.0/)
   assert.match(packageJson, /"postbuild:app": "node scripts\/verify-no-app-game-runtime\.mjs app"/)
   assert.match(packageJson, /"postbuild:h5": "node scripts\/verify-no-app-game-runtime\.mjs h5"/)
-  assert.match(packageJson, /"postbuild:mp-weixin": "node scripts\/verify-no-app-game-runtime\.mjs mp-weixin"/)
+  assert.match(packageJson, /"postbuild:mp-weixin": "node scripts\/verify-no-app-game-runtime\.mjs mp-weixin && node scripts\/verify-mp-cards\.mjs"/)
   assert.match(crossPlatformGuard, /'h5', 'mp-weixin', 'app'/)
   assert.match(crossPlatformGuard, /dist\/build\/\$\{platform\}\/static\/games\/emulatorjs/)
   await assert.rejects(access('src/static/games/emulatorjs'))
